@@ -36,13 +36,8 @@ let energyRealtimeDebounce = null;
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('Initializing app...');
-        console.log('Supabase URL:', SUPABASE_CONFIG.url);
-        
-        if (!SUPABASE_CONFIG.url || SUPABASE_CONFIG.url.includes('YOUR_SUPABASE_URL')) {
-            console.error('Supabase not configured');
-            showError('Please configure Supabase in config.js');
-            return;
-        }
+        const config = await loadSupabaseConfig();
+        console.log('Supabase URL:', config.url);
 
         if (!window.supabase) {
             console.error('Supabase library not loaded');
@@ -58,7 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             removeItem: () => {},
         };
 
-        supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+        supabase = window.supabase.createClient(config.url, config.anonKey, {
             auth: {
                 persistSession: false,
                 autoRefreshToken: false,
@@ -115,6 +110,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         showError('Failed to connect to database: ' + (error.message || 'Unknown error'));
     }
 });
+
+async function loadSupabaseConfig() {
+    // Preferred: fetch from serverless config endpoint (keeps repo free of config files).
+    try {
+        const res = await fetch('/api/config', { cache: 'no-store' });
+        if (res.ok) {
+            const json = await res.json();
+            if (json?.url && json?.anonKey) return { url: String(json.url), anonKey: String(json.anonKey) };
+        }
+    } catch (_) {
+        // Ignore and fall back below
+    }
+
+    // Back-compat: if a global SUPABASE_CONFIG is present (e.g., local dev), use it.
+    if (typeof SUPABASE_CONFIG !== 'undefined' && SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey) {
+        return { url: String(SUPABASE_CONFIG.url), anonKey: String(SUPABASE_CONFIG.anonKey) };
+    }
+
+    throw new Error('SUPABASE_CONFIG is not defined (set SUPABASE_URL and SUPABASE_ANON_KEY on the host)');
+}
 
 function setupEnergyRealtimeSubscription() {
     if (!supabase) return;
