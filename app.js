@@ -112,23 +112,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadSupabaseConfig() {
-    // Preferred: fetch from serverless config endpoint (keeps repo free of config files).
+    // Fast path: public config injected via `supabase_public_config.js`
+    if (typeof SUPABASE_CONFIG !== 'undefined' && SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey) {
+        return { url: String(SUPABASE_CONFIG.url), anonKey: String(SUPABASE_CONFIG.anonKey) };
+    }
+
+    // Optional: fetch from serverless config endpoint (if enabled on the host).
     try {
         const res = await fetch('/api/config', { cache: 'no-store' });
         if (res.ok) {
             const json = await res.json();
             if (json?.url && json?.anonKey) return { url: String(json.url), anonKey: String(json.anonKey) };
         }
-    } catch (_) {
-        // Ignore and fall back below
-    }
+    } catch (_) {}
 
-    // Back-compat: if a global SUPABASE_CONFIG is present (e.g., local dev), use it.
-    if (typeof SUPABASE_CONFIG !== 'undefined' && SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey) {
-        return { url: String(SUPABASE_CONFIG.url), anonKey: String(SUPABASE_CONFIG.anonKey) };
-    }
-
-    throw new Error('SUPABASE_CONFIG is not defined (set SUPABASE_URL and SUPABASE_ANON_KEY on the host)');
+    throw new Error('Supabase config missing (expected `supabase_public_config.js` or /api/config)');
 }
 
 function setupEnergyRealtimeSubscription() {
