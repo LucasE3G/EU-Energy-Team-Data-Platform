@@ -1,0 +1,79 @@
+Bulgaria NBRP – Table Index
+================================================================================
+
+Table No1 (page 16): Residential buildings by regime and type of occupancy by7.09.2021
+Table No1 (page 69): Number and total floor area of buildings (m²) by building type
+Table No1 (page 71): a. Output cadastral data on the number and total floor area of non-
+Table No1 (page 214): Regulatory and methodological requirements (life cycle carbon cap, assessment and reporting)
+Table No2 (page 17): Residential buildings by occupation by area as at 07.09.2021
+Table No2 (page 72): Breakdown of buildings by energy consumption class according to valid energy
+Table No2 (page 215): Circular economy and management of material flows (consistent with point (g))
+Table No3 (page 19): Residential buildings by type and type of occupancy as at 07.09.202117
+Table No3 (page 74): Number and surface area of buildings complying with the national definition of
+Table No3 (page 215): Promotion of low carbon and natural materials; carbon Capture and Storage
+Table No4 (page 24): Occupied dwellings by type and construction system as of07.09.2021
+Table No4 (page 75): Number and surface area of worst performing buildings
+Table No4 (page 216): Data, traceability and control
+Table No5 (page 27): Occupied dwellings by type of building and construction period as of
+Table No5 (page 77): Number of valid EPCs per building type
+Table No5 (page 79): a. Total floor area of non-residential buildings with valid certificates – breakdown
+Table No5 (page 216): Programmes and funding (synchronisation with NFC and renewal programmes)
+Table No6 (page 29): Occupied dwellings by type of building and by floor area as of 07.09.2021
+Table No6 (page 79): Number of valid energy performance certificates by energy consumption class
+Table No6 (page 80): a. Total floor area of non-residential buildings with valid energy performance
+Table No6 (page 80): b. Number and floor area of non-residential buildings with valid or invalid energy
+Table No6 (page 217): Capacity and awareness
+Table No7 (page 31): Expert distribution of rooftop types in apartment blocks and cooperatives
+Table No8 (page 33): Distribution of dwellings by type of building and occupancy rate (%) as at 7
+Table No8 (page 82): Primary and final energy consumption in different building types in 2023 (ktoe)
+Table No8 (page 87): above, namely 1263.38 ktoe, represents a share of 25.7 %. However, it should be
+Table No9 (page 35): Distribution of occupied/unoccupied dwellings in occupied dwellings as at
+Table No9 (page 84): Primary and final energy consumption of buildings by type of final consumption
+Table No10 (page 37): Characteristics of occupied dwellings as at 07.09.2021
+Table No10 (page 85): Realised primary and final energy consumption savings in buildings as of 2023
+Table No11 (page 45): Panel dwellings with their characteristics as of 7.09.2021
+Table No11 (page 87): Annual operational carbon emissions by building type for 2023
+Table No12 (page 49): Determination of the number, type and surface area of the dwelling stock by
+Table No12 (page 89): Reduction of annual operational carbon emissions by building type by 2023
+Table No13 (page 51): Determination of the number, type and surface area of social housing – base
+Table No13 (page 120): Primary energy factors
+Table No14 (page 53): Breakdown of buildings by energy consumption class according to valid
+Table No14 (page 52): (residential) only includes information on residential buildings with valid energy
+Table No14 (page 122): Cost-effective minimum energy performance requirements for new and existing
+Table No15 (page 54): Number and surface area of buildings complying with the national definition
+Table No15 (page 125): Targets for expected primary and final energy consumption in buildings for the
+Table No15 (page 126): a. Renovation targets for non-residential buildings 2030-2050, m2
+Table No15 (page 128): b presents the estimated distribution of the non-residential building stock per
+Table No15 (page 128): b. Estimated change in distribution of buildings by energy consumption class
+Table No15 (page 129): c. Residential renovation targets 2030-2050, m2
+Table No16 (page 57): Number and surface area of worst performing buildings
+Table No16 (page 129): Targets for expected primary and final energy consumption in buildings for the
+Table No17 (page 58): Number of valid EPCs per building type
+Table No17 (page 131): Primary energy factors used for primary energy consumption calculations for
+Table No18 (page 59): Total floor area of residential buildings with valid certificates – breakdown by
+Table No18 (page 132): presents the expected energy savings for the non-residential and residential
+Table No18 (page 133): Primary and final energy savings targets for buildings for 2030-2050
+Table No19 (page 59): Number of valid energy performance certificates by energy consumption
+Table No19 (page 133): of the template provides for the presentation of an estimated share of renewable
+Table No19 (page 133): Targets for the share of energy from renewable sources in buildings for 2026-
+Table No20 (page 60): Total floor area of residential buildings with valid energy performance
+Table No20 (page 135): Targets for the share of energy produced by solar installations in buildings for
+Table No20 (page 136): a. Expected energy production from solar installations in non-residential
+Table No21 (page 60): Number and floor area of multi-apartment buildings with valid or invalid
+Table No21 (page 137): Targets for expected operational greenhouse gas emissions in buildings for
+Table No22 (page 61): Annual renovation rates of residential buildings
+Table No22 (page 139): Targets for expected greenhouse gas emission savings in buildings for 2030-
+Table No23 (page 62): Primary and final energy consumption in different building types in 2023
+Table No24 (page 62): Primary and final energy consumption of buildings by type of final
+Table No24 (page 250): Estimated investment needs for building renovation 2030-2050
+Table No25 (page 63): Realised primary and final energy consumption savings in buildings as of
+Table No25 (page 263): Specific non-renewable primary energy use thresholds for zero-rated buildings
+Table No26 (page 65): Annual operational carbon emissions by building type for 2023
+Table No27 (page 66): Reduction of annual operational carbon emissions by building type by 2023
+Table No28 (page 114): Number and share of households in energy poverty by type of dwelling and
+Table No29 (page 114): Number and share of households energy poor by type of measure and energy
+Table No30 (page 115): Number and share of households energy poor by year of construction of the
+Table No31 (page 116): Estimated number of households in energy poverty
+Table No32 (page 118): Total average cost per person per household for 2015, 2023 and 2024
+Table No33 (page 118): Material and social deprivation indicators in 2 024
+Table No34 (page 151): Implemented and planned interventions for the energy efficiency renovation

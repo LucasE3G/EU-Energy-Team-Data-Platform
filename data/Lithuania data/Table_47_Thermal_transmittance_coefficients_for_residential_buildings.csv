@@ -1,0 +1,31 @@
+Buildings,Building element,Building type/destination,Optimal level of expenditure (W/m²K),Current requirement in force (W/m²K)
+New,Walls,Residential building,0.18,0.11
+New,Walls,Administrative,0.15,0.12
+New,Walls,Scientific,0.15,0.12
+Modernised,Walls,Residential building,0.19,0.18
+Modernised,Walls,Administrative,0.20,0.22
+Modernised,Walls,Scientific,0.20,0.22
+New,Roof,Residential building,0.18,0.1
+New,Roof,Administrative,0.16,0.11
+New,Roof,Scientific,0.16,0.11
+Modernised,Roof,Residential building,0.2,0.18
+Modernised,Roof,Administrative,0.2,0.22
+Modernised,Roof,Scientific,0.2,0.22
+New,Windows,Residential building,1.4,0.8
+New,Windows,Administrative,1.6,0.9
+New,Windows,Scientific,1.35,0.9
+Modernised,Windows,Residential building,1.4,1.4
+Modernised,Windows,Administrative,1.4,1.4
+Modernised,Windows,Scientific,1.4,1.4
+New,External access doors,Residential building,2.1,1.2
+New,External access doors,Administrative,2.1,1.4
+New,External access doors,Scientific,2.1,1.4
+Modernised,External access doors,Residential building,2.0,1.2
+Modernised,External access doors,Administrative,2.0,1.4
+Modernised,External access doors,Scientific,2.0,1.4
+New,Partitions in contact with the ground or ceilings above unheated underground,Residential building,0.25,0.12
+New,Partitions in contact with the ground or ceilings above unheated underground,Administrative,0.27,0.14
+New,Partitions in contact with the ground or ceilings above unheated underground,Scientific,0.27,0.14
+Modernised,Partitions in contact with the ground or ceilings above unheated underground,Residential building,0.31,0.22
+Modernised,Partitions in contact with the ground or ceilings above unheated underground,Administrative,0.32,0.24
+Modernised,Partitions in contact with the ground or ceilings above unheated underground,Scientific,0.32,0.24

@@ -1,0 +1,56 @@
+Croatia NBRP – Table Index
+================================================================================
+
+Table 8-1 (page 6): Indicators for key periods of the national trajectory for the progressive renovation of residential
+Table 2-1 (page 12): gives an overview of the national building stock by type in 2020 and 2023.
+Table 2-1 (page 12): Overview of the national stock by building type in 2020 and 2023
+Table 2-2 (page 12): and Table 2-3 show the area of residential and non-residential buildings in 2023 by construction
+Table 2-2 (page 13): Overview of residential buildings by construction period and climate zone for 2023
+Table 2-3 (page 13): Distribution of non-residential buildings by construction period and climate zone for 2023
+Table 2-4 (page 14): provides an overview of valid energy performance certificates by energy class determined by
+Table 2-4 (page 14): View of the building stock by energy class for primary energy in 2023
+Table 2-5 (page 14): View of the building stock by energy class for primary energy in 2023
+Table 2-6 (page 15): shows the maximum energy performance limits for new NZEBs per building type.
+Table 2-6 (page 16): Maximum allowed energy performance values for new nearly zero-energy buildings (nZEB)
+Table 2-7 (page 16): Buildings eligible for the NZEB in 2023
+Table 2-8 (page 17): worst-performing buildings in 2020 and 2023
+Table 2-9 (page 18): Distribution of the number of valid energy performance certificates by building type in 2023
+Table 2-10 (page 18): Table 2-10 Number of valid energy performance certificates by energy class for primary energy in
+Table 2-11 (page 21): Renovated buildings by renovation depth in 2023
+Table 2-12 (page 22): Energy consumption by typeof activity in 2020 and 2023
+Table 2-13 (page 23): Primary energy factors and CO2 emissions
+Table 2-14 (page 25): Immediate energy consumption in buildings by purpose of consumption in 2023
+Table 2-15 (page 25): Primary energy consumption in buildings by purpose of consumption in 2023
+Table 2-16 (page 26): Immediate energy consumption for residential heating by system performance in
+Table 2-17 (page 26): Direct energy consumption for heating of buildings by energy product in 2023
+Table 2-18 (page 28): Savings in primary energy consumption and in final energy consumption in 2023
+Table 2-19 (page 28): Immediate consumption of energy from RES in 2023
+Table 2-20 (page 29): GHG emissions of buildings by building type in 2023
+Table 2-21 (page 29): The annual greenhouse gas emission reduction in buildings has been calculated as the difference betweenthe CO2
+Table 2-21 (page 29): Reduction of annual greenhouse gas emissions in buildings
+Table 2-22 (page 32): Overview of barriers to building stock renovation in the Republic of Croatia
+Table 2-23 (page 34): Overview of existing capacities of relevant stakeholders in Croatia
+Table 2-24 (page 40): Comparison between cost-optimal levels and current regulatory requirements
+Table 3-1 (page 45): Indicative Roadmap targets and indicators for a decarbonised building stock by period
+Table 3-2 (page 49): Energy consumption in buildings by building type in 2030, 2040 and 2050
+Table 3-5 (page 50): –32
+Table 3-3 (page 50): Primary energy factors and CO2 emissionsfor different energy products
+Table 3-4 (page 51): Primary energy factors and CO2 emissionsfor existing central (CTS) and closed (CTS) heating systems,
+Table 3-5 (page 53): Common values of primary energy factors and CO2 emissionsfor other central (CTS) and closed (CTS)
+Table 3-6 (page 54): Immediate energy consumption in buildings by purpose in 2030, 2040 and 2050
+Table 3-7 (page 55): Primary energy consumption in buildings by type in 2030, 2040 and 2050
+Table 3-8 (page 56): Expected end-use and primary energy savings in 2030, 2040 and
+Table 3-9 (page 56): Indicative national 2030 RES targets
+Table 3-10 (page 56): Indicative RES target for final energy consumption in buildings for 2026-2030
+Table 3-11 (page 58): Targets for the development of solar energy in buildings in 2030, 2040 and 2050
+Table 3-12 (page 61): shows the operational greenhouse gas emissions by building type in 2030, 2040 and 2050.
+Table 3-12 (page 62): Operational greenhouse gas emissions of buildings by building type in 2030, 2040 and
+Table 3-13 (page 62): Expected reduction in annual operational greenhouse gas emissions in 2030, 2040 and
+Table 3-14 (page 63): Share of households in energy poverty and relative rate of reduction of energy poverty in 2030, 2040
+Table 4-1 (page 67): shows that all relevant areas to be covered by this LLP are already covered by policies and
+Table 4-1 (page 68): Overview of existing policies and measures and their contribution to mandatory EPBD indicators
+Table 5-1 (page 90): Estimate of investment needs for building renovation and overview of funding sources
+Table 6-1 (page 92): provides an estimate of the expected allowed values for specific primary energy and specific
+Table 6-1 (page 92): Estimated allowed values for specific primary energy and operational emissions
+Table 7-1 (page 95): Area of non-residential buildings by type in base year 2020
+Table 7-2 (page 97): Presentation of the MEPS for non-residential buildings and expected surface area for renovation in

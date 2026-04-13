@@ -1,0 +1,10 @@
+CTS and TSG,Non-renewable component fp,NREN [-],Renewable component fp,ren [-],Total fp,tot [-],Specific CO2 emissions [kg/MWh]
+Based on natural gas cogeneration**,0.77,0.01,0.77,192
+Biomass-based cogeneration (wood chips pellets)**,0.2,2.06,2.26,55
+Fossil fuel boiler (gaseous liquid solid),1.42,0,1.43,289
+Biomass boiler (wood chips pellets),0.28,1.38,1.66,55
+Solar energy (solar thermal collectors),0,1.18,1.18,0
+Geothermal energy (heat exchanger),0,1.18,1.18,0
+Heat pump based**,0.62,1.03,1.65,110
+Electric boiler,1.96,0.77,2.73,374
+Waste heat (industrial processes),0,0,0,0

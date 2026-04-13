@@ -1,0 +1,8 @@
+Building type,Occupied dwellings (No),Share of occupied dwellings (%),Empty dwellings (No),Share of vacant dwellings (%),Share of all dwellings (%),Weighting by type (%)
+House,1 225 170,47.1,896 137,54.1,49.8,57.8
+"Apartment block, cooperative",1 333 674,51.2,625 837,37.8,46.0,68.1
+Mixed-type building (over 60 % residential),17 543,0.7,16 128,1,0.8,52.1
+Dormitory,16 115,0.6,12 676,0.8,0.7,56
+Vila,6 852,0.3,106 915,6.4,2.7,6
+Collective household building,824,0,48,0,0,94.5
+Other,3 535,0.1,0,0,0.1,100

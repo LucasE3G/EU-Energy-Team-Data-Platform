@@ -1,0 +1,18 @@
+CTS and TSG,Non-renewable component fp,NREN [-],Renewable component fp,ren [-],Total fp,tot [-],Specific CO2 emissions [kg/MWh]
+Zagreb – heat and industrial steam (cogeneration)*,0.92,0.01,0.93,215
+Zagreb – Heat (CHP)*,0.89,0.01,0.9,212
+Zagreb – Industrial Parameter (Cogeneration)*,1.01,0.01,1.02,225
+Osijek – heat and industrial vapour (cogeneration)*,1.15,0.43,1.58,249
+Osijek – Heat (CHP)*,1.07,0.43,1.5,236
+Osijek – Industrial Parameter (Cogeneration)*,1.35,0.43,1.78,290
+Sisak – heat (cogeneration)*,0,2.89,2.89,0
+Sisak – Industrial Parameter (Cogeneration)*,1.07,0.01,1.08,235
+Rijeka,1.53,0.01,1.53,328
+River (without cogeneration),1.6,0.01,1.6,344
+River (CHP Cancer)*,0.9,0.01,0.9,190
+Karlovac,1.57,0.01,1.58,321
+Vukovar,1.33,0,1.33,274
+Slavonski Brod,1.4,0,1.4,283
+Vinkovci,1.54,0.01,1.55,344
+Average HR – CTS/TSG based on cogeneration,0.94,0.12,1.05,216
+Average HR – CTS/TSG based on gas boiler,1.49,0.01,1.5,311

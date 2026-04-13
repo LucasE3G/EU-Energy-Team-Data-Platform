@@ -1,0 +1,6 @@
+Building element,Reference requirements for U (W/(m²·K)) - Residential buildings,Reference requirements for U (W/(m²·K)) - Administrative destination buildings,Reference requirements for U (W/(m²·K)) - Scientific destination buildings,Optimum value of U (W/(m²·K)) - Residential buildings,Optimum value of U (W/(m²·K)) - Administrative destination buildings,Optimum value of U (W/(m²·K)) - Scientific destination buildings,Difference between optimal level of requirements and regulatory requirements (%) - Residential buildings,Difference between optimal level of requirements and regulatory requirements (%) - Administrative destination buildings,Difference between optimal level of requirements and regulatory requirements (%) - Scientific destination buildings
+Walls,0.18,0.22,0.22,0.19,0.20,0.20,5,-10,-10
+Roofs,0.15,0.18,0.18,0.20,0.20,0.20,23,10,8
+Floor,0.22,0.24,0.24,0.31,0.32,0.32,29,25,25
+Windows,1.40,1.40,1.40,1.40,1.40,1.40,0,0,0
+Doors,1.20,1.40,1.40,2.00,2.00,2.00,40,30,30

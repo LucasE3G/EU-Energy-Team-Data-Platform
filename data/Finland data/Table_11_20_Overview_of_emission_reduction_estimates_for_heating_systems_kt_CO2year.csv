@@ -1,0 +1,9 @@
+Indicator,Mandatory checks,Scenario 1: Limited target group,Scenario 2: Broad target group
+,KTCO2/year,KTCO2/year,KTCO2/year
+Oil boilers,"1,2-1,8",BETWEEN 3.1 AND,BETWEEN 8.1 AND 10
+Bio-boilers,0,4 6 0,0
+Gas boilers,"0,016-0,023","0,03-0,058","0,7-8"
+Geothermal,"0,0054-0.040","0,013-0.10","8,01"
+Electric heating,"0,020 – 0,15","0,049-0,37","5,7"
+District heating,"1,6-12","3,8-28",56
+Total,"2,9-14","7,0-34",79-81

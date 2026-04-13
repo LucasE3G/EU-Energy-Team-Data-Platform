@@ -1,0 +1,16 @@
+Energy - supplied over long distances,Non-renewable component fp,NREN [-],Renewable component fp,ren [-],Total fp,tot [-],Specific CO2 emissions [g/kWh]
+Fossil fuel – Solid,1.1,0,1.1,360
+Fossil fuel – liquid,1.181,0.015,1.197,308
+Fossil fuel – gaseous,1.149,0.003,1.151,233
+Heating DRVon,1,0,1,40
+Wooden briquetteand,1,0,1,40
+Wood pellets,0.2,0.8,1,40
+Wood chips,0.2,0.8,1,40
+Biofuel – liquid,0.5,0.5,1,70
+Biofuel – gaseous,0.4,0.6,1,40
+Electricity – taken from the grid,1.583,0.618,2.201,280
+Solar power – electricity (Produced on site),0,1,1,0
+Solar – Heat (Produced on site),0,1,1,0
+Wind power – electric (Produced on site),0,1,1,0
+Geothermal energy (Produced on site),0,1,1,0
+Electricity (Delivered to the network),2.5,0,2.5,480

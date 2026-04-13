@@ -1,0 +1,6 @@
+﻿Climate Zone,Office EP [kWh/m².yr],Office CO2 [kg/m².yr],Education EP [kWh/m².yr],Education CO2 [kg/m².yr],Multi-family EP [kWh/m².yr],Multi-family CO2 [kg/m².yr],Single-family EP [kWh/m².yr],Single-family CO2 [kg/m².yr]
+I,94.7,10.1,61.6,7.3,99.1,12.0,120.1,14.7
+II,98.4,10.9,66.8,8.1,103.7,12.8,127.9,16.0
+III,98.9,11.5,71.0,8.8,105.9,13.5,133.3,17.1
+IV,100.6,12.2,76.5,9.7,109.5,14.3,140.6,18.5
+V,102.6,13.0,82.0,10.6,113.1,15.1,147.9,19.9

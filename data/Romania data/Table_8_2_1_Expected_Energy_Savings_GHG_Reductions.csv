@@ -1,0 +1,10 @@
+﻿Category,Building Type,2030,2040,2050
+Expected Primary Energy Savings (GWh),Residential,"1,901","3,195","4,700"
+Expected Primary Energy Savings (GWh),Non-residential,"1,106","1,280","1,413"
+Expected Primary Energy Savings (GWh),Total,"3,007","4,476","6,112"
+Expected Final Energy Savings (GWh),Residential,"1,497","2,523","3,716"
+Expected Final Energy Savings (GWh),Non-residential,945,"1,094","1,208"
+Expected Final Energy Savings (GWh),Total,"2,442","3,617","4,923"
+Targets for expected GHG emissions (MtCO2eq) and reduction %,Residential,4.5 (-26%),3.1 (-49%),1.9 (-69%)
+Targets for expected GHG emissions (MtCO2eq) and reduction %,Non-residential,1.4 (-36%),1.1 (-51%),0.8 (-64%)
+Targets for expected GHG emissions (MtCO2eq) and reduction %,Total,5.9 (-27%),4.2 (-48%),2.7 (-67%)

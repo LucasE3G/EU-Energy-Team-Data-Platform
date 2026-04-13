@@ -1,0 +1,13 @@
+Code,Building Type,M/Miav,No of valid EPC in Year X-2
+R,Residential,M,77133
+(a),Single-family houses of different types,Miav,73715
+(b1),Apartment blocks or multi-family buildings,Miav,3418
+NR,Non-residential,Out of which M,13208
+(c),Offices,Miav,2337
+(d),Educational buildings,Miav,1259
+(e),Hospitals and healthcare buildings,Miav,506
+(f),Hotels and restaurants,Miav,660
+(g),Sport facilities,Miav,174
+(h),Wholesale and retail trade services buildings,Miav,3968
+(i),Other type (describe if any),Miav,4304
+T,Total,,90341

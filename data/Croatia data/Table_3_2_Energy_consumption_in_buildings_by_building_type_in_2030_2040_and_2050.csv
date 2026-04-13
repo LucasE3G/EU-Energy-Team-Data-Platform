@@ -1,0 +1,13 @@
+Type of building,Final energy consumption [kten] - 2030,Final energy consumption [kten] - 2040,Final energy consumption [kten] - 2050,Primary energy consumption [kten] - 2030,Primary energy consumption [kten] - 2040,Primary energy consumption [kten] - 2050
+Residential buildings,1896,1440,1144,2102,1521,1226
+Family houses,1210,888,678,1266,871,666
+Multi-dwelling buildings,686,552,466,836,650,560
+Non-residential buildings,662,584,540,860,732,673
+Office,113,99,92,146,124,114
+Educational,66,58,54,86,73,67
+Hospitals,33,29,27,43,37,34
+Hotels and restaurants,46,41,38,60,51,47
+Sports halls,7,6,5,9,7,7
+Shops,139,123,114,181,154,141
+Other,258,228,211,335,286,262
+TOTAL,2558,2023,1685,2962,2253,1899

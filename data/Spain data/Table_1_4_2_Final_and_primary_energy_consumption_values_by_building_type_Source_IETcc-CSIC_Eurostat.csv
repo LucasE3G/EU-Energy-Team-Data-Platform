@@ -1,0 +1,4 @@
+Code,Building type,Mandatory / if available Year X-2 (2023),Final energy consumption year X-2 (2023) (ktoe),Final energy consumption 2020 (ktoe),Primary energy consumption year X-2 (2023) (ktoe),Primary energy consumption 2020 (ktoe)
+R,Residential,Mandatory,8.170,8.792,7.836,8.699
+NR,Non-residential,Mandatory,5.609,5.205,6.954,6.454
+T,Total,Mandatory,13.779,13.997,14.789,15.153

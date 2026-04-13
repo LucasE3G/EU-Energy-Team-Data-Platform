@@ -1,0 +1,4 @@
+Building type,Total GHG emissions 2023 (MtCO2eq),Total GHG emissions 2030 (MtCO2eq),Total GHG emissions 2040 (MtCO2eq),Total GHG emissions 2050 (MtCO2eq),GHG emissions per m² 2023 (kgCO2eq/(m² y)),GHG emissions per m² 2030 (kgCO2eq/(m² y)),GHG emissions per m² 2040 (kgCO2eq/(m² y)),GHG emissions per m² 2050 (kgCO2eq/(m² y))
+R Residential,18.39,10.80,6.69,0.00,9.32,5.47,3.39,0.00
+NR Non-residential,12.98,6.55,1.91,0.00,21.84,11.02,3.21,0.00
+T Total,31.35,17.35,8.60,0.00,12.18,6.74,3.35,0.00

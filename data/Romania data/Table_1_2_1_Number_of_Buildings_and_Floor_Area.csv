@@ -1,0 +1,14 @@
+Code,Building Type,Indicator,Number of buildings In Year X-2,Number of buildings In 2020,Floor area (m2) In Year X-2,Floor area (m2) In 2020
+R,Total Residential,Mandatory,5720992,5052567,748323335,657021936
+(a),single-family houses of different types,Miav,5306457,4659027,511891305,449436495
+(b1),apartment blocks or multi-family buildings,Miav,172080,151085,,
+(b2),residential building units in apartment blocks or multi-family buildings,Miav,,,3742050,3285490
+,out of which social housing (buildings),Mandatory,33098,33098,2161689,2161689
+NR,Total Non-residential,Mandatory,242455,242455,62013600,62013600
+(c),offices,Miav,7500,7500,8360000,8360000
+(d),educational buildings,Miav,18000,18000,17500000,17500000
+(e),hospitals,Miav,51313,51313,9273600,9273600
+(f),hotels and restaurants,Miav,43642,43642,6048000,6048000
+(h),wholesale and retail trade services buildings,Miav,122000,122000,20832000,20832000
+,out of which public buildings,Mandatory,75313,75313,32030000,32030000
+T,Total Residential and Non-Residential,Mandatory,5963447,5295022,810336935,719035536

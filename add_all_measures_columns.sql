@@ -1,0 +1,30 @@
+-- Add all missing columns to measures table
+-- Run this in Supabase SQL Editor
+
+ALTER TABLE measures 
+ADD COLUMN IF NOT EXISTS epbd_article_2a TEXT,
+ADD COLUMN IF NOT EXISTS directive TEXT,
+ADD COLUMN IF NOT EXISTS status TEXT,
+ADD COLUMN IF NOT EXISTS objective TEXT,
+ADD COLUMN IF NOT EXISTS planned_budget_and_sources TEXT,
+ADD COLUMN IF NOT EXISTS state_of_execution TEXT,
+ADD COLUMN IF NOT EXISTS date_of_entry_into_force TEXT,
+ADD COLUMN IF NOT EXISTS instrument_type TEXT,
+ADD COLUMN IF NOT EXISTS source TEXT,
+ADD COLUMN IF NOT EXISTS quantitative_target TEXT,
+ADD COLUMN IF NOT EXISTS short_description TEXT,
+ADD COLUMN IF NOT EXISTS quantified_objective TEXT,
+ADD COLUMN IF NOT EXISTS authorities_responsible TEXT,
+ADD COLUMN IF NOT EXISTS expected_impacts TEXT,
+ADD COLUMN IF NOT EXISTS implementation_status TEXT,
+ADD COLUMN IF NOT EXISTS effective_date TEXT,
+ADD COLUMN IF NOT EXISTS section TEXT,
+ADD COLUMN IF NOT EXISTS section_topic TEXT,
+ADD COLUMN IF NOT EXISTS measure_number VARCHAR(50),
+ADD COLUMN IF NOT EXISTS content TEXT,
+ADD COLUMN IF NOT EXISTS amending_legislation TEXT,
+ADD COLUMN IF NOT EXISTS lead_institution TEXT,
+ADD COLUMN IF NOT EXISTS participating_institutions TEXT,
+ADD COLUMN IF NOT EXISTS sources_of_funding TEXT,
+ADD COLUMN IF NOT EXISTS time_limit TEXT,
+ADD COLUMN IF NOT EXISTS additional_data JSONB;

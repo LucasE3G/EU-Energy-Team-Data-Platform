@@ -1,0 +1,5 @@
+Depth of renovation,Number of renovated buildings,Renovation rate (%)
+Light renovations (3% < energy savings < 30%),10746,0.60%
+Average renovations (30% < energy savings < 60%),3294,0.18%
+Heavy renovations (energy savings > 60%),1703,0.09%
+Total,15743,0.88%

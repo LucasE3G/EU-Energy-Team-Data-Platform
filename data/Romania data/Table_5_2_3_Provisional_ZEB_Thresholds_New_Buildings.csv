@@ -1,0 +1,41 @@
+﻿Climate Zone,Building Type,NZEB EP [kWh/m².yr],ZEB EP_max [kWh/m².yr],NZEB CO2 [kg/m².yr],ZEB GHG_max [kg/m².yr]
+I,Office,94.7,85.2,10.1,9.1
+I,Education,61.6,55.4,7.3,6.6
+I,Multi-family residential,99.1,89.2,12.0,10.8
+I,Single-family residential,120.1,108.1,14.7,13.2
+I,Healthcare,162.5,146.2,19.0,17.1
+I,Tourism,96.5,86.9,11.7,10.5
+I,Commercial,95.5,86.0,11.0,9.9
+I,Sports,93.4,84.1,10.4,9.4
+II,Office,98.4,88.6,10.9,9.8
+II,Education,66.8,60.1,8.1,7.3
+II,Multi-family residential,103.7,93.3,12.8,11.5
+II,Single-family residential,127.9,115.1,16.0,14.4
+II,Healthcare,168.8,151.9,20.2,18.2
+II,Tourism,101.0,90.9,12.5,11.2
+II,Commercial,102.9,92.6,12.2,11.0
+II,Sports,98.2,88.4,11.3,10.2
+III,Office,98.9,89.0,11.5,10.3
+III,Education,71.0,63.9,8.8,7.9
+III,Multi-family residential,105.9,95.3,13.5,12.2
+III,Single-family residential,133.3,120.0,17.1,15.4
+III,Healthcare,170.9,153.8,21.1,19.0
+III,Tourism,103.7,93.3,13.1,11.8
+III,Commercial,107.7,96.9,13.3,12.0
+III,Sports,100.3,90.3,12.0,10.8
+IV,Office,100.6,90.5,12.2,11.0
+IV,Education,76.5,68.9,9.7,8.7
+IV,Multi-family residential,109.5,98.5,14.3,12.9
+IV,Single-family residential,140.6,126.5,18.5,16.7
+IV,Healthcare,174.8,157.3,22.3,20.1
+IV,Tourism,107.4,96.7,13.9,12.5
+IV,Commercial,114.5,103.0,14.6,13.1
+IV,Sports,103.8,93.4,12.9,11.6
+V,Office,102.6,92.3,13.0,11.7
+V,Education,82.0,73.8,10.6,9.5
+V,Multi-family residential,113.1,101.8,15.1,13.6
+V,Single-family residential,147.9,133.1,19.9,17.9
+V,Healthcare,179.3,161.4,23.5,21.2
+V,Tourism,111.6,100.4,14.7,13.2
+V,Commercial,121.4,109.3,16.0,14.4
+V,Sports,107.5,96.8,13.7,12.3

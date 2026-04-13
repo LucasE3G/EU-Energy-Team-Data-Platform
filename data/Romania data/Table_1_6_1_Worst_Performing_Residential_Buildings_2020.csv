@@ -1,0 +1,10 @@
+Indicator,Value (2020),Unit,Notes / source
+Total number of residential buildings,4659027,number of buildings,"NBRP indicator 1, ""Overview building stock"""
+Total residential floor area used in WPB analysis,657021936,m2,Adjusted LTRS stock from 2021 Census data
+Number of worst performing residential buildings (WPB-43),2068348,number of buildings,"NBRP indicator 7, ""Number of worst performing buildings"""
+Floor area of worst performing residential buildings (WPB-43),282519432,m2,"NBRP indicator 8, ""Floor area of worst performing buildings"""
+Share of worst performing buildings in residential stock (by number),~44.4,% of residential,2068348 / 4659027
+Share of worst performing buildings in residential stock (by area),43.0,% of residential,282.5 / 657.0 million m2
+Average primary energy - entire residential stock,~218,kWh/m2 year,Weighted average of EPC PEC average subset
+Average primary energy - WPB-43 sub-stock,~327,kWh/m2 year,"wpb43_avg_pe in INPUT_WPB"
+Average primary energy - non-WPB residential stock,~181,kWh/m2 year,"non_wpb_pe in INPUT_WPB"

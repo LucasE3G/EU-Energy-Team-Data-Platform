@@ -1,0 +1,6 @@
+﻿Decision Step,EPB-Aligned Evidence to Retain
+Define reference case,"As-is EPB model; EPC baseline; constraints (heritage, usage, grid/DH context)."
+Select packages,Fabric/system/RES combinations that can meet mandatory EPB checks; Article-10 applicability confirmed.
+Run EPB & LCC,Mc 001-2022 model + SR EN 15459-1 global cost; include residual values and mandatory financial parameters.
+Compliance gating,Reject packages failing any compulsory EPB metric; record reasons.
+Selection & staging,Pick lowest-global-cost compliant package; stage works with lifecycle triggers and funding windows.

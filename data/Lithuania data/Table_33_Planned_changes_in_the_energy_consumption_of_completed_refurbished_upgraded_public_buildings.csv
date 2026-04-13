@@ -1,0 +1,6 @@
+Order No,Municipality,Energy performance class of the building (before/after renewal),Comparative thermal energy savings (kWh/m²/year),Thermal energy before (kWh/m²/year) (heating + hot water),Thermal energy after (kWh/m²/year) (heating + hot water),GHG emissions after update (tCO2e)
+1,UAB Utena's heat networks,F/B,280.44,391.47,111.03,18.35
+2,AB Šiauliai Energija,F/B,120.41,181.98,61.57,11.36
+3,UAB Infina,F/B,333.03,405.74,72.71,30.56
+4,Kaišiadorys Consumer Cooperative,G/B,511.99,600.08,88.09,30.32
+5,Kaišiadorys Consumer Cooperative,G/B,841.84,880.71,38.87,25.18

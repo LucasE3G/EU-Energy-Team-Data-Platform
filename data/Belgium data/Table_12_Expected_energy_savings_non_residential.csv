@@ -1,0 +1,17 @@
+Type of energy,Type of buildings,2030 [GWh],2030 [%],2040 [GWh],2040 [%],2050 [GWh],2050 [%]
+Primary energy,Public - Schools,-15,-1%,-919,-56%,-1008,-61%
+Primary energy,Public - Offices,-164,-11%,-899,-60%,-969,-65%
+Primary energy,Public - Health,-93,-6%,-1141,-69%,-1209,-73%
+Primary energy,Public - Other,-69,-7%,-601,-63%,-655,-69%
+Primary energy,Private - Offices,-208,-13%,-1140,-71%,-1202,-75%
+Primary energy,Private - Other,-261,-19%,-1132,-81%,-1169,-84%
+Primary energy,Private - Shops,-637,-15%,-2309,-54%,-2559,-60%
+Primary energy,Total,-1446,-11%,-8141,-63%,-8771,-67%
+Final energy,Public - Schools,-182,-15%,-700,-57%,-700,-57%
+Final energy,Public - Offices,-155,-15%,-587,-57%,-587,-57%
+Final energy,Public - Health,-212,-17%,-847,-69%,-847,-69%
+Final energy,Public - Other,-99,-16%,-379,-61%,-379,-61%
+Final energy,Private - Offices,-205,-19%,-768,-70%,-768,-70%
+Final energy,Private - Other,-176,-19%,-724,-80%,-724,-80%
+Final energy,Private - Shops,-331,-13%,-1172,-45%,-1172,-45%
+Final energy,Total,-1359,-16%,-5178,-59%,-5178,-59%

@@ -1,0 +1,14 @@
+Ref,Building Type,Representativeness [%],Floor area [m2],Investment CO [EUR/m2] Without PV,Investment U-conf [EUR/m2] Without PV,Investment CO [EUR/m2] With PV,Investment U-conf [EUR/m2] With PV,Base Ew,CO Ew Without PV,U-conf Ew Without PV,CO Ew With PV,U-conf Ew With PV
+BUE1,Large office (high) <1945,31.3%,5725,151,174,158,181,415,120,101,107,89
+BUE2,Bureau Earned (Little High) 1970s,21.0%,4953,65,337,/,/,186,83,49,/,/
+BUE3,Small office for independent 1984,13.5%,105,22,222,/,/,151,114,62,/,/
+BUE4,Compact office 2000s,3.0%,2247,55,246,/,/,174,81,59,/,/
+BUE5,Existing office <1945,31.3%,278,85,534,/,/,195,186,51,/,/
+EE1,Pre-1945 kindergarten/primary school,89.8%,1159,418,559,453,594,197,58,42,38,22
+EE2,Kindergarten/primary school of 1950,3.4%,1499,353,353,/,/,253,31,31,/,/
+EE3,Secondary school after 1970,3.4%,5044,235,276,/,/,206,34,32,/,/
+EE4,1968 university building,3.4%,9662,228,251,/,/,176,41,40,/,/
+MRE1,Rest home 1,50%,1372,233,356,262,385,106,70,65,61,56
+MRE2,Rest home 2,50%,1550,271,320,/,/,98,59,56,/,/
+HOE1,Hotel 1,50%,459,504,560,/,/,188,65,64,/,/
+HOE2,Hotel 2,50%,5349,159,185,166,193,142,46,43,43,40

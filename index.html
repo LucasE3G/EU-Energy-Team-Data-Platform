@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EU Energy Team Data Platform</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-container">
+                <img src="https://rvxukmupuzxbrwicowyn.supabase.co/storage/v1/object/public/logo/logo.png" alt="E3G Logo" class="e3g-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div class="e3g-logo-text" style="display: none; color: #C5B772; font-size: 32px; font-weight: bold;">E3G</div>
+            </div>
+            <h1 class="logo">EU Energy Team</h1>
+            <p class="logo-subtitle">Data Platform</p>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-header">Platform</div>
+                <a href="#" class="nav-item active" data-page="dashboard">
+                    <span class="nav-icon">🏗️</span>
+                    <span>National renovation building plans</span>
+                </a>
+                <a href="#" class="nav-item" data-page="energy-meter">
+                    <span class="nav-icon">⚡</span>
+                    <span>EU energy meter</span>
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-header">Countries</div>
+                <div id="countryNavList" class="country-nav-list">
+                    <div class="nav-loading">Loading countries...</div>
+                </div>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="top-bar-content">
+                <div class="top-bar-logo">
+                    <img src="https://rvxukmupuzxbrwicowyn.supabase.co/storage/v1/object/public/logo/logo.png" alt="E3G Logo" class="e3g-logo-small" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+                    <span class="e3g-logo-text-small" style="display: none; color: #C5B772; font-weight: bold; font-size: 18px;">E3G</span>
+                </div>
+                <h2 id="pageTitle">National renovation building plans</h2>
+                <div class="top-bar-actions">
+                    <button class="btn-icon" id="sidebarToggle" title="Toggle sidebar">
+                        <span>☰</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <div class="page-content">
+            <!-- Dashboard Page -->
+            <div id="dashboardPage" class="page active">
+                <div class="page-header">
+                    <h1>National renovation building plans</h1>
+                    <p class="page-subtitle">Comprehensive data visualization platform for policy and sector experts</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🌍</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalCountries">-</div>
+                            <div class="stat-label">Countries</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalTables">-</div>
+                            <div class="stat-label">Data Tables</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="timeSeriesTables">-</div>
+                            <div class="stat-label">Time-Series Tables</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📋</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="totalMeasures">-</div>
+                            <div class="stat-label">Policy Measures</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target Charts Section -->
+                <div class="section">
+                    <h2 class="section-title">Key Targets & Metrics</h2>
+                    <div id="dashboardCharts" class="dashboard-charts-grid">
+                        <!-- Charts will be loaded here -->
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">Countries Overview</h2>
+                    <div id="countriesGrid" class="countries-grid">
+                        <!-- Countries will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Country Pages -->
+            <div id="countryPage" class="page">
+                <div class="page-header">
+                    <div class="breadcrumb">
+                        <a href="#" data-page="dashboard">Dashboard</a>
+                        <span>/</span>
+                        <span id="countryBreadcrumb">Country</span>
+                    </div>
+                    <h1 id="countryPageTitle">Country Data</h1>
+                    <p class="page-subtitle" id="countryPageSubtitle">Comprehensive renovation plan data and policy measures</p>
+                </div>
+
+                <!-- Country Tabs -->
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="overview">Overview</button>
+                    <button class="tab-btn" data-tab="data-tables">Data Tables</button>
+                    <button class="tab-btn" data-tab="measures">Policy Measures</button>
+                    <button class="tab-btn" data-tab="stakeholders">Stakeholders</button>
+                    <button class="tab-btn" data-tab="analysis">Analysis</button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Overview Tab -->
+                    <div id="overviewTab" class="tab-pane active">
+                        <div class="section">
+                            <h2 class="section-title">Country Statistics</h2>
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-icon">📊</div>
+                                    <div class="stat-content">
+                                        <div class="stat-value" id="countryTableCount">-</div>
+                                        <div class="stat-label">Data Tables</div>
+                                    </div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon">📈</div>
+                                    <div class="stat-content">
+                                        <div class="stat-value" id="countryTimeSeriesCount">-</div>
+                                        <div class="stat-label">Time-Series Tables</div>
+                                    </div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon">📋</div>
+                                    <div class="stat-content">
+                                        <div class="stat-value" id="countryMeasuresCount">-</div>
+                                        <div class="stat-label">Policy Measures</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Important Time-Series Charts -->
+                        <div class="section">
+                            <h2 class="section-title">Key Time-Series Data</h2>
+                            <div id="countryOverviewCharts" class="dashboard-charts-grid">
+                                <div class="chart-loading">Loading charts...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data Tables Tab -->
+                    <div id="data-tablesTab" class="tab-pane">
+                        <div class="section">
+                            <div class="section-header">
+                                <h2 class="section-title">Data Tables</h2>
+                                <div class="section-actions">
+                                    <input type="text" id="tableSearch" placeholder="Search tables..." class="search-input">
+                                    <select id="tableFilter" class="filter-select">
+                                        <option value="all">All Tables</option>
+                                        <option value="time-series">Time-Series Only</option>
+                                        <option value="regular">Regular Tables</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="dataTablesList" class="tables-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- Measures Tab -->
+                    <div id="measuresTab" class="tab-pane">
+                        <div class="section">
+                            <div class="section-header">
+                                <h2 class="section-title">Policy Measures</h2>
+                                <div class="section-actions">
+                                    <input type="text" id="measuresSearch" placeholder="Search measures..." class="search-input">
+                                </div>
+                            </div>
+                            <div id="measuresList" class="measures-list"></div>
+                        </div>
+                    </div>
+
+                    <!-- Stakeholders Tab -->
+                    <div id="stakeholdersTab" class="tab-pane">
+                        <div class="section">
+                            <h2 class="section-title">Stakeholder Mapping</h2>
+                            <p class="section-description" style="color: var(--text-secondary); margin-bottom: 24px;">
+                                Overview of stakeholders responsible for policy measures and their involvement across different measures.
+                            </p>
+                            
+                            <!-- Stakeholder Summary -->
+                            <div id="stakeholderSummary" style="margin-bottom: 32px;">
+                                <!-- Will be populated by JavaScript -->
+                            </div>
+                            
+                            <!-- Stakeholder Chart -->
+                            <div id="stakeholderChartContainer" style="margin-bottom: 32px;">
+                                <div class="chart-card">
+                                    <h3>Measures per Stakeholder</h3>
+                                    <div class="chart-container">
+                                        <canvas id="stakeholderChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Stakeholder-Measure Matrix -->
+                            <div id="stakeholderMatrix">
+                                <div class="section-header" style="margin-bottom: 16px;">
+                                    <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Stakeholder-Measure Matrix</h3>
+                                    <div class="section-actions">
+                                        <input type="text" id="stakeholderMatrixSearch" placeholder="Search measures..." class="search-input">
+                                    </div>
+                                </div>
+                                <div id="stakeholderMatrixContent">
+                                    <!-- Will be populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Analysis Tab -->
+                    <div id="analysisTab" class="tab-pane">
+                        <div class="section">
+                            <div class="section-header">
+                                <h2 class="section-title">Cross-Country Comparison</h2>
+                                <div class="section-actions">
+                                    <select id="comparisonTableSelect" class="filter-select">
+                                        <option value="">Select table to compare...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="comparisonChartContainer" style="margin-top: 24px;">
+                                <p style="text-align: center; color: var(--text-secondary); padding: 40px;">
+                                    Select a table above to compare data across countries
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Energy Meter Page -->
+            <div id="energyMeterPage" class="page">
+                <div class="page-header">
+                    <h1>EU energy meter</h1>
+                    <p class="page-subtitle">Near real-time electricity renewable share (EU + EEA + UK) with historical filters</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🕒</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="energyLastUpdated">-</div>
+                            <div class="stat-label">Last updated</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🌍</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="energyZones">-</div>
+                            <div class="stat-label">Zones</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🌿</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="energyAvgRenewable">-</div>
+                            <div class="stat-label">Avg renewables</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🏭</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="energyAvgCO2">-</div>
+                            <div class="stat-label">Avg CO₂ intensity</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">EU + EEA + UK aggregate renewable share (ENTSO‑E)</h2>
+                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <button class="btn-secondary" id="energyEuRangeDayBtn">Day</button>
+                            <button class="btn-secondary" id="energyEuRangeWeekBtn">Week</button>
+                            <button class="btn-secondary" id="energyEuRangeMonthBtn">Month</button>
+                            <button class="btn-secondary" id="energyEuRange6mBtn">6m</button>
+                            <button class="btn-secondary" id="energyEuRange1yBtn">1y</button>
+                            <button class="btn-secondary" id="energyEuRange5yBtn">5y</button>
+                            <button class="btn-secondary" id="energyEuAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                        </div>
+                    </div>
+                    <div id="energyEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                    <div class="chart-card">
+                        <h3 id="energyEuChartTitle">EU — Renewable share (%)</h3>
+                        <div class="chart-container">
+                            <canvas id="energyEuChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">EU renewable share map (latest)</h2>
+                        <div class="section-actions">
+                            <button class="btn-secondary" id="energyRefreshBtn">Refresh</button>
+                        </div>
+                    </div>
+                    <div id="energyMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                    <div id="energyMapContainer" class="energy-map-card">
+                        <div class="chart-loading">Loading map...</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">Selected zone renewable share</h2>
+                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <button class="btn-secondary" id="energyRangeDayBtn">Day</button>
+                            <button class="btn-secondary" id="energyRangeWeekBtn">Week</button>
+                            <button class="btn-secondary" id="energyRangeMonthBtn">Month</button>
+                            <button class="btn-secondary" id="energyRange6mBtn">6m</button>
+                            <button class="btn-secondary" id="energyRange1yBtn">1y</button>
+                            <button class="btn-secondary" id="energyRange5yBtn">5y</button>
+                            <button class="btn-secondary" id="energyAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                        </div>
+                    </div>
+                    <div id="energyFranceStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                    <div class="chart-card">
+                        <h3 id="energyFranceChartTitle">Click a zone to chart</h3>
+                        <div class="chart-container">
+                            <canvas id="energyFranceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">Latest snapshot</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Zone</th>
+                                    <th>Timestamp</th>
+                                    <th>Renewables %</th>
+                                    <th>CO₂ g/kWh</th>
+                                    <th>Source</th>
+                                </tr>
+                            </thead>
+                            <tbody id="energyMeterTableBody">
+                                <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Visualization Modal -->
+        <div id="dataModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modalTitle">Data Visualization</h2>
+                    <button class="modal-close" id="modalClose">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-actions">
+                        <button id="toggleView" class="btn-secondary" style="display: none;">Switch to Chart View</button>
+                    </div>
+                    <div id="dataVisualization" class="data-viz"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Measure Detail Modal -->
+        <div id="measureModal" class="modal">
+            <div class="modal-content" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h2 id="measureModalTitle">Measure Details</h2>
+                    <button class="modal-close" id="measureModalClose">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="measureDetailContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading data...</p>
+        </div>
+    </main>
+    
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

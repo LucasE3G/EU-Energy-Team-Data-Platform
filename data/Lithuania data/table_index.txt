@@ -1,0 +1,109 @@
+Lithuania NBRP – Table Index
+================================================================================
+
+Table 1 (section 9.2): Fuel and energy consumption in households, GWh
+Table 2 (section 9.2): Fuel and energy consumption in the building stock, GWh
+Table 3 (section 9.2): Building stock by building type and purpose
+Table 4 (section 9.2): Summary of cultural heritage buildings by type of building
+Table 5 (section 9.2): Distribution of the building stock by EPC
+Table 6 (section 9.2): Attributed energy performance certificates by building type and EPC, units
+Table 7 (section 9.2): Attributed EPCs by building type and area
+Table 8 (section 9.2): Nearly zero-energy building requirements (A++)
+Table 9 (section 9.2): Number and surface area of nearly zero-energy buildings
+Table 10 (section 9.2): Worst-performing buildings
+Table 11 (section 9.2): Characteristics of the 43 % worst-performing buildings
+Table 12 (section 9.2): Distribution of the 43 % worst-performing buildings by county
+Table 13 (section 9.2): Distribution of the 43 % worst-performing buildings by type and year of construction
+Table 14 (section 9.2): Distribution of the 43 % worst-performing buildings by year of construction and heat source
+Table 15 (section 9.2): Buildings exempted by Article 9(6) of the Directive
+Table 16 (section 9.2): Summary of the number of buildings by type, purpose and year of construction, number
+Table 17 (section 9.2): Summary of total surface area of buildings by type, use and year of construction, thousand m 2.
+Table 18 (section 9.2): Number of buildings registered in the RPR by ownership form and by municipality in Q2-2024
+Table 19 (section 9.2): Building stock by type, purpose and form of ownership
+Table 20 (section 9.2): Number of pens by building type, purpose and EPC, units
+Table 21 (section 9.2): Number of pens by year of construction of the building, units
+Table 22 (section 9.2): PENs issued and valid certificates 2014-2025
+Table 23 (section 9.2): Number and total floor area of buildings renovated between 2019 and 2025
+Table 24 (section 9.2): Results of the measure for the modernisation of indoor heating and hot water systems in multi-apartment buildings
+Table 25 (section 9.2): Works carried out in 2013-2024 for the renovation (modernisation) of multi-apartment buildings
+Table 26 (section 9.2): Calculated indicators for thermal energy savings in renovated buildings 2013-2024
+Table 27 (section 9.2): Works carried out between 2014 and 2023 for the renovation (modernisation) of multi-apartment buildings
+Table 28 (section 9.2): Calculated indicators for thermal energy savings in renovated buildings from 2013 to 2023 for buildings that were
+Table 29 (section 9.2): Planned changes in the energy consumption of completed refurbished/upgraded public buildings
+Table 30 (section 9.2): Summary of planned refurbishment of government public buildings
+Table 31 (section 9.2): Summary of renovated government public buildings
+Table 32 (section 9.2): Indicators for the deployment of efficient heat generation installations and energy savings
+Table 33 (section 9.2): Planned changes in the energy consumption of completed refurbished/upgraded public buildings
+Table 34 (section 9.2): Primary and final energy consumption in 2020
+Table 35 (section 9.2): Primary and final energy consumption in buildings by purpose
+Table 36 (section 9.2): Energy savings
+Table 37 (section 9.2): Installed capacity and electricity generation of RES installations in 2024
+Table 38 (section 9.2): Installed capacity of power plants of natural persons (ordinary prosumers and remote prosumers) and electricity
+Table 39 (section 9.2): Installed capacity and electricity production of power plants by legal entities (ordinary prosumers and remote
+Table 40 (section 9.2): Heat generation installations using energy from renewable sources (in operation) and the amount of heat produced by
+Table 41 (section 9.2): Annual operational greenhouse gas emissions and reductions, 2020
+Table 42 (section 9.2): Emission savings calculated on the basis of the requirements of Directive 2024/1275
+Table 43 (section 9.2): % Of people living in households unable to afford sufficient heating due to lack of money
+Table 44 (section 9.2): Total population living in a dwelling with a leaking roof, damp walls, floors or foundation, or rotten window frames or
+Table 45 (section 9.2): Percentage of people close to the poverty line or social exclusion
+Table 46 (section 9.2): Non-renewable primary energy factor (fPRn) and renewable primary energy factor (FPR,r) values for energy sources
+Table 47 (section 9.2): Thermal transmittance coefficients for residential buildings
+Table 48 (section 9.2): Thermal transmittance coefficients for residential buildings
+Table 49 (section 9.2): Targets for 2030, 2040, 2050 in the NRRP
+Table 50 (section 9.2): Share of buildings to be renovated in the total building stock
+Table 51 (section 9.2): Building renovation targets under Directive 2024/1275: number of buildings (units)
+Table 52 (section 9.2): Building renovation targets under Directive 2024/1275: surface area of buildings, m 2
+Table 53 (section 9.2): Building renovation targets under Directive 2023/1791: building units and area, units and m 2
+Table 54 (section 9.2): Building renovation rates based on Directive 2024/1275, %
+Table 55 (section 9.2): Summary of buildings by building group potentially exempted from energy performance requirements, June 2025
+Table 56 (section 9.2): Primary energy consumption targets by building type for the implementation of Directive 2024/1275, GWh
+Table 57 (section 9.2): Estimated annual primary energy consumption targets by final customer, GWh
+Table 58 (section 9.2): Final annual energy consumption targets by building type, GWh
+Table 59 (section 9.2): Estimated final annual energy consumption targets by final customer, ktoe
+Table 60 (section 9.2): Primary and final energy consumption savings resulting from the implementation of Directive 2024/1275, ktoe
+Table 61 (section 9.2): Share of RES in gross final energy consumption in the NECP, %
+Table 62 (section 9.2): RES share in gross final consumption of energy in the building sector as a result of the implementation of Directive
+Table 63 (section 9.2): GHG emission reduction targets
+Table 64 (section 9.2): Estimated operational GHG emissions reduction
+Table 65 (section 9.2): % Of people living in households unable to afford sufficient heating due to lack of money
+Table 66 (section 9.2): Renovation packages
+Table 67 (section 9.2): Measures and legal framework for the renovation of cost-effective buildings
+Table 68 (section 9.2): National minimum energy performance standards and accompanying policy measures
+Table 69 (section 9.2): Measures to promote the renovation of buildings
+Table 70 (section 9.2): Energy poverty indicator and targets for 2025 and 2030
+Table 71 (section 9.2): Share of population unable to afford sufficient heating by county, 2024 (%)
+Table 72 (section 9.2): Existing policy measures strengthening the rights of vulnerable consumers and alleviating energy poverty
+Table 73 (section 9.2): Policy action plan for one-stop shops for improving the energy performance of buildings
+Table 74 (section 9.2): Measures to decarbonise heating and cooling, including DH and cooling networks, and reduce the use of fossil fuels
+Table 75 (section 9.2): Waste prevention and management measures
+Table 76 (section 9.2): Measures to promote RES in buildings
+Table 77 (section 9.2): Measures to promote the deployment of solar energy in buildings in the NECPs
+Table 78 (section 9.2): Measures to reduce GHG emissions in the construction, renovation, operation and end-of-life phases and to deploy carbon removal technologies
+Table 79 (section 9.2): Measures to promote district and rural approaches and integrated renovation programmes
+Table 80 (section 9.2): Modernisation measures for buildings owned by public bodies
+Table 81 (section 9.2): Measures to promote the deployment of advanced technologies and infrastructures for sustainable mobility in buildings
+Table 82 (section 9.2): Measures to increase public awareness and training of professionals
+Table 83 (section 9.2): Awareness-raising and campaigning measures
+Table 84 (section 9.2): Measures to promote modular and industrialised solutions for construction and building renovation
+Table 85 (section 9.2): Policies and clusters of measures assigned to them
+Table 86 (section 9.2): Toolkits and materiality by building type for the period 2025-2030
+Table 87 (section 9.2): Toolkits and materiality by building type for the period 2031-2040
+Table 88 (section 9.2): Toolkits and materiality by building type over the 2041-2050 period
+Table 89 (section 9.2): Proposed policies and measures
+Table 90 (section 9.2): Renovation Average Leveraged Rate at Recalculated Prices 2025, EUR/m 2
+Table 91 (section 9.2): Summary of investments required for building renovation, EUR
+Table 92 (section 9.2): Need for subsidies and private funds for building renovation with 20 % intensity for individual building groups, EUR
+Table 93 (section 9.2): Need for subsidies and private funds for building renovation with an intensity of 25 % for individual building groups,
+Table 94 (section 9.2): Need for subsidies and private funds for building renovation with an intensity of 30 % for individual building groups,
+Table 95 (section 9.2): Primary energy use of nearly zero-energy buildings (A++)
+Table 96 (section 9.2): Cost-optimal level of primary energy consumption of buildings
+Table 97 (section 9.2): Distribution of worst-performing buildings by county, number and m 2
+Table 98 (section 9.2): Distribution of worst-performing buildings by year of construction, units
+Table 99 (section 9.2): Distribution of worst-performing buildings by year of construction and heat source
+Table 100 (section 9.2): Breakdown of the Lithuanian building stock by type of ownership and municipalities, units
+Table 101 (section 9.2): Distribution of the Lithuanian building stock by type of ownership and municipalities, area (m²)
+Table 102 (section 9.2): Worst-performing residential and non-residential buildings, units and area to be renovated (m 2)
+Table 103 (section 9.2): Installed capacity of RES installations and amount of electricity produced per municipality in 2024
+Table 104 (section 9.2): Installed capacity of power plants of natural persons (ordinary prosumers and remote prosumers) and amount of
+Table 105 (section 9.2): Installed capacity of power plants of legal persons (ordinary prosumers and remote prosumers) and amount of
+Table 106 (section 9.2): Heat generation installations using energy from renewable sources (in operation) and the amount of heat produced

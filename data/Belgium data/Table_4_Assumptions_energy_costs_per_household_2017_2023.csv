@@ -1,0 +1,23 @@
+Indicator,2017 (RSLT reference year),2023
+Final energy consumption for PEB uses [TWh/year],29.96,24.22
+Number of dwellings [#],1688468,1781943
+Average consumption per dwelling [kWh/year],17742,13591
+Breakdown by vector - Coal - Share [%],0.81%,0.32%
+Breakdown by vector - Coal - Costs [c_EUR/kWh],0,0
+Breakdown by vector - Fuel oil - Share [%],49.52%,36.59%
+Breakdown by vector - Fuel oil - Costs [c_EUR/kWh],5.33,8.93
+Breakdown by vector - Butane-propane - Share [%],1.82%,3.05%
+Breakdown by vector - Butane-propane - Costs [c_EUR/kWh],6.83,9.93
+Breakdown by vector - Natural gas - Share [%],29.10%,31.44%
+Breakdown by vector - Natural gas - Costs [c_EUR/kWh],6.18,10.43
+Breakdown by vector - Wood - Share [%],9.61%,14.21%
+Breakdown by vector - Wood - Costs [c_EUR/kWh],5.02,8.91
+Breakdown by vector - Ambient heat (PAC) - Share [%],0.58%,3.11%
+Breakdown by vector - Ambient heat (PAC) - Costs [c_EUR/kWh],0,0
+Breakdown by vector - Solar thermal - Share [%],0.29%,0.38%
+Breakdown by vector - Solar thermal - Costs [c_EUR/kWh],0,0
+Breakdown by vector - Solar Photovoltaic - Share [%],0.82%,2.03%
+Breakdown by vector - Solar Photovoltaic - Costs [c_EUR/kWh],0,0
+Breakdown by vector - Non-PV electricity - Share [%],7.43%,8.87%
+Breakdown by vector - Non-PV electricity - Costs [c_EUR/kWh],25.45,41.2
+Annual energy costs per household [EUR],1230,1600

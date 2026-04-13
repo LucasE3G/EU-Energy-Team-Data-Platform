@@ -1,0 +1,4 @@
+Building type / ventilation strategy,n50 at 50 Pa (h-1),q50 at 50 Pa (m3/(h m2))
+Buildings with natural ventilation only,< 3.0,< 3.0
+Buildings with mechanical ventilation,< 1.5,< 1.5
+NZEBs (target level),< 1.0,< 1.0

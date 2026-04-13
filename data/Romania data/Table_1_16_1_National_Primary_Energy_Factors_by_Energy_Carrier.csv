@@ -1,0 +1,22 @@
+Energy carrier (NBRP template),National fuel / source definition,fPnren,fPren,fPtot
+Gas,Natural gas (pipeline) / LNG,1.17,0.00,1.17
+Electricity grid,Electricity from SEN (national grid),2.00,0.50,2.50
+Oil,Fuel oil (heating oil),1.10,0.00,1.10
+Oil,Diesel (where used in boilers),1.23,0.00,1.23
+GPL,LPG,1.15,0.00,1.15
+Coal,Coal,1.20,0.00,1.20
+Coal,Lignite,1.30,0.00,1.30
+Solid biomass,Firewood - certified sustainable,0.18,0.90,1.08
+Solid biomass,Biomass briquettes / pellets,0.28,0.80,1.08
+Solid biomass,Firewood - unsustainable / uncertified,1.20,0.00,1.20
+Liquid biomass,Liquid biofuels,0.50,1.00,1.50
+Liquid biomass,Biogas,0.40,1.00,1.40
+Solar PV (on-site self-used),Electricity from PV used on-site,0.00,1.00,1.00
+Solar PV (exported),Electricity from PV exported to SEN (credited as grid electricity),2.00,0.50,2.50
+Solar thermal,Thermal energy from solar collectors,0.00,1.00,1.00
+Wind (on-site self-used),Electricity from wind used on-site,0.00,1.00,1.00
+Wind (exported),Electricity from wind exported to SEN (credited as grid electricity),2.00,0.50,2.50
+Hydropower (on-site self-used),Electricity from small hydro used on-site,0.00,1.00,1.00
+District heating / cooling,District heating from remote CHP (national average),0.92,0.00,0.92
+Other - waste,Waste used as fuel (certified fraction treated as RES),0.05,1.00,1.05
+Other - ambient heat,Aerothermal / hydrothermal / geothermal energy (environmental heat for heat pumps),0.00,1.00,1.00

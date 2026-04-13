@@ -1,0 +1,6 @@
+﻿Climate Zone,Healthcare EP [kWh/m².yr],Healthcare CO2 [kg/m².yr],Tourism EP [kWh/m².yr],Tourism CO2 [kg/m².yr],Commercial EP [kWh/m².yr],Commercial CO2 [kg/m².yr],Sports EP [kWh/m².yr],Sports CO2 [kg/m².yr]
+I,162.5,19.0,96.5,11.7,95.5,11.0,93.4,10.4
+II,168.8,20.2,101.0,12.5,102.9,12.2,98.2,11.3
+III,170.9,21.1,103.7,13.1,107.7,13.3,100.3,12.0
+IV,174.8,22.3,107.4,13.9,114.5,14.6,103.8,12.9
+V,179.3,23.5,111.6,14.7,121.4,16.0,107.5,13.7

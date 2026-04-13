@@ -1,0 +1,9 @@
+Indicator,Mandatory checks,Scenario 1: Limited target group,Scenario 2: Broad target group1
+,GWh/year,GWh/year,GWh/year
+Oil boilers,"4,8-7,1",12-18,31-39
+Bio-boilers,"0,7-1,8",BETWEEN 1.7 AND 4.5,41-163
+Gas boilers,"0,08-0,12","0,19-0,29",4-8
+Geothermal,"0,1 – 1,1",BETWEEN 0.3 AND 2.5,210 2
+Electric heating,"0,5 – 3,9","1,3-10",150
+District heating,15-111,34 – 259,510
+Total,21 – 125,50 – 293,945 – 1079

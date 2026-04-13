@@ -1,0 +1,35 @@
+Energy,Primary energy factor [-],Emission [kg CO2/MWh]
+Hard coal,1.038,343.78
+Lignite,1.054,353.14
+Lignite,1.081,378.48
+Wood for use as firewood,1.000,29.09
+Wood briquettes,1.000,32.76
+Wood pellets,0.123,34.40
+Wood chips,0.154,42.35
+Wood charcoal,1.000,26.17
+Solar energy,0,0
+Geothermal energy,0,0
+Natural gas,1.095,220.20
+LPG,1.160,260.88
+Kerosene,1.033,264.73
+Extra light fuel oil,1.138,299.57
+Fuel oil,1.130,310.31
+Electricity – taken from the grid,1.614,234.81
+Remote heat - Croatian average,1.494,362.49
+CTS ZG+OS (CHP),1.466,351.33
+KO6 – average for HR,1.597,394.46
+CTS TSG (CHP),1.462,345.78
+CTS OS (CHP),1.478,396.53
+Co – Average for ZG,1.559,388.31
+Co – Average for OS,1.529,337.18
+Co – average for RI,1.569,384.62
+Co – average for Sl. Brod,1.385,360.42
+Co – average for Split,1.540,476.94
+Co – Average for KA,1.434,416.97
+Co – average for LRU,1.489,328.79
+Co – average for Vinkovce,1.442,372.69
+Co – average for Vukovar,1.363,309.61
+Co – Sisak average,2.419,533.25
+Co – natural gas,1.350,297.88
+Co – Fuel oil,1.444,447.88
+Co – Extra Light Fuel Oil,1.429,427.94

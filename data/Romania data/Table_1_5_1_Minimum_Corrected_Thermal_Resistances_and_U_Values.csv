@@ -1,0 +1,9 @@
+Envelope Element,Minimum corrected thermal resistance R' (m2K/W),Maximum corrected U-value (W/m2K),Notes
+External walls above ground,">= 2.50","<= 0.40","Continuous insulation, thermal bridges minimized."
+Windows and external doors,"approx 0.90","<= 1.10","Triple glazing, warm-edge spacers, insulated frames."
+Roof / terrace slabs above heated space,">= 7.00","<= 0.14",Thick insulation layer above structure.
+Intermediate floors above unheated spaces,">= 2.90","<= 0.35",Includes floors above garages/unheated basements.
+Walls towards closed joints / unheated voids,">= 1.10","<= 0.90",Improved insulation compared to older stock.
+Ground floors and slabs towards ground,">= 4.50","<= 0.22",Perimeter insulation carefully detailed.
+Basement walls below ground (heated basement),">= 4.80","<= 0.21",Vertical insulation down to frost line.
+External walls below CTS of heated basements,">= 2.90","<= 0.35",Combined with floor and slab insulation.

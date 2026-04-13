@@ -1,0 +1,14 @@
+Code,Description,No of buildings (Year X-2),No of buildings (2020),No of building units (Year X-2),No of building units (2020),Area (m²) (Year X-2),Area (m²) (2020)
+R,Residential,8.878.545,8.835.714,26.583.915,26.379.899,3.755.385.320,3.725.796.729
+(a),single-family dwellings of different types,6.745.964,6.713.661,6.745.964,6.713.661,1.259.881.344,1.253.377.264
+(B1),block buildings or multi-family dwelling buildings,2.132.581,2.122.053,,,,
+(B2),multiple residential units in block buildings or multi-family residential buildings,,,,19.837.951,19.666.238,2.495.503.976,2.472.419.465
+,Non-residential,373.195,371.022,,,594.364.919,584.651.331
+(c),offices,51.605,51.370,292.830,291.505,113.100.168,111.217.367
+(d),educational establishments,34.428,34.274,20.944,20.737,92.262.770,91.376.111
+(e),hospitals and buildings of medical care,15.444,15.360,39.434,38.885,31.363.421,30.704.284
+(f),hotels and restaurants,,,,,,
+(g),sports facilities,32.634,32.349,93.401,92.165,49.535.787,49.040.112
+(h),commercial buildings intended for wholesale or retail sale,85.764,85.151,1.312.446,1.309.512,95.122.016,92.768.950
+(I),"Other types (Restoration, Recreational, Public Residential, Cultural, Religious, Transport and Other)",153.420,152.518,305.049,300.407,212.980.758,209.544.507
+T,Total,9.251.740,9.206.736,28.648.019,28.433.110,4.349.750.239,4.310.448.060

@@ -1,0 +1,15 @@
+Code,Building Type,M/Miav,No of valid EPCs in 2025
+R,Residential (total),M,6 226
+(a),Single-family houses of different types,Miav,907
+(B1),Apartment blocks or Multi-Family buildings,Miav,5 319
+NR,Non-residential (total),M,3 789
+(c),Offices,Miav,1 078
+(d),Educational buildings,Miav,530
+(e),Kindergartens and nursery,Miav,395
+(f),Hospitals & healthcare buildings,Miav,192
+(g),Hotels and restaurants,Miav,252
+(h),Wholesale and retail trade services buildings,Miav,654
+(i),Sport facilities,Miav,139
+(j),Culture and art buildings,Miav,303
+(K),Other type (individual energy class scales),Miav,246
+T,Total,M,10 015

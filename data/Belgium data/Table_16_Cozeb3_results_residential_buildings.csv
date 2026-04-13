@@ -1,0 +1,24 @@
+Ref,Building Type,Representativeness,Floor area [m2],Investment CO [EUR/m2] Without PV,Investment SRLT [EUR/m2] Without PV,Investment CO [EUR/m2] With PV,Investment SRLT [EUR/m2] With PV,Base Label,CO Label Without PV,SRLT Label Without PV,CO Label With PV,SRLT Label With PV
+HE1,Vernacular house,6.2%,183.29,487,504,/,/,G,B,A,/,/
+HE2,House type worker 3 facades,4.1%,104.27,629,768,/,/,G,B,A,/,/
+HE3,House type worker adjoining,15.5%,104.27,404,449,/,/,E,B,A,/,/
+HE4,Village house,4.1%,228,513,513,/,/,G,A,A,/,/
+HE5,Townhouse,16.5%,224.65,515,521,568,568,F,B,A,A,A
+HE6,Villa of the first urban extensions,10.3%,123.95,776,750,/,/,G,B,A,/,/
+HE7,Villa on one level,6.2%,119.8,690,927,/,/,G,C,A,/,/
+HE8,Beautiful semi-detached house,4.1%,126.84,402,437,/,/,F,B,A,/,/
+HE9,Villa 4 facades of type subdivision,12.4%,220.32,336,517,/,/,E,C,A,/,/
+HE10,House type social housing bar,3.1%,95.17,616,665,/,/,F,B,A,/,/
+HE11,Villa 4 facades K70,6.2%,195.74,102,571,/,/,D,C,A,/,/
+HE12,House 3 facades K70,2.1%,105.2,161,612,/,/,D,C,A,/,/
+HE13,Terraced house beautiful floor K70,2.1%,228.98,75,102,/,/,B,B,A,/,/
+HE14,Villa 4 facades K55,7.2%,174.45,100,336,/,/,C,C,A,/,/
+IAE1,Apartment building before 1919,10.4%,911.8,715,/,777,777,F,B,/,A,A
+IAE2,House divided into apartments <1919,7.9%,344.87,629,759,/,/,F,B,A,/,/
+IAE3,House divided into apartments & services <1919,7.9%,236.99,730,789,/,/,F,B,A,/,/
+IAE4,House divided into apartments 1919-1945,12.6%,417.48,460,650,/,/,E,C,A,/,/
+IAE5,Apartment building 1946-1970,14.9%,1381.6,132,627,/,/,D,C,A,/,/
+IAE6,Apartment building 1946-1970,14.9%,2132,29,579,/,/,D,C,A,/,/
+IAE7,House divided into apartments 1946-1970,12.3%,158,537,663,/,/,E,B,A,/,/
+IAE9,Apartment building after 1990,9.6%,379,128,318,/,/,C,C,A,/,/
+IAE10,Apartment building after 1990,9.6%,920.15,120,795,/,/,C,C,A,/,/

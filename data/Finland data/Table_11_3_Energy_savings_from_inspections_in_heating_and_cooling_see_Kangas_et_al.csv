@@ -1,0 +1,9 @@
+System,Savings effect in the interval %/5a,Saving effect per year %/a
+Oil boilers,2,"0,4"
+Bio boilers (other than split boilers),"1 (cleaning and maintenance) 2,5-5 (other saving measures)","0,2 (cleaning and maintenance) 0,5-1 (other saving measures)"
+Gas boilers,1,"0,2"
+Electric heating,1-5,"0,2 – 1"
+District heating,1-5,"0,2 – 1"
+Geothermal,1-5,"0,2 – 1"
+Long-distance refrigeration,1-5,"0,2 – 1"
+Compressor or heat pump cooling,1-5,"0,2 – 1"

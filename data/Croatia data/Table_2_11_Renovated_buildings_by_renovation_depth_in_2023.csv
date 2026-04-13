@@ -1,0 +1,13 @@
+Type of buildings,Renovation depth,Number of renovated buildings in 2023,Total useful floor area of building renovated in 2023 (m²),Renovation rate in 2023 (%),Estimated average renovation depth %
+Residential,Light,5377,241902,0.40,
+Residential,Medium,30,20876,0.02,
+Residential,Deep*,0,0,0,
+Residential,Total,5407,558415,0.41,40
+Non-residential,Light,0,0,0,
+Non-residential,Medium,20,70333,0.17,
+Non-residential,Deep*,0,0,0,
+Non-residential,Total,20,70333,0.17,
+Public buildings,Light,0,0,0,
+Public buildings,Medium,20,70333,0.62,
+Public buildings,Deep*,0,0,0,
+Public buildings,Total,20,70333,0.62,63

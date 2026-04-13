@@ -1,0 +1,33 @@
+Building type,Climate location,Type,Specific annual primary energy (kWh/m²a),Specific operational emissions (kgCO2eq/(m²a))
+Family houses,continent,new,49.50,< 30
+Family houses,seams,new,45.00,< 30
+Family houses,continent,renovated,112.50,< 65
+Family houses,seams,renovated,76.50,< 35
+Multi-dwelling buildings,continent,new,49.50,< 25
+Multi-dwelling buildings,seams,new,45.00,< 20
+Multi-dwelling buildings,continent,renovated,99.00,< 50
+Multi-dwelling buildings,seams,renovated,85.50,< 45
+Office buildings,continent,new,54,< 20
+Office buildings,seams,new,49.50,< 20
+Office buildings,continent,renovated,63.00,< 40
+Office buildings,seams,renovated,58.50,< 30
+Education buildings,continent,new,58.50,< 25
+Education buildings,seams,new,58.50,< 20
+Education buildings,continent,renovated,85.50,< 50
+Education buildings,seams,renovated,72.00,< 50
+Hospitals,continent,new,225.00,< 65
+Hospitals,seams,new,207.00,< 65
+Hospitals,continent,renovated,243.00,< 100
+Hospitals,seams,renovated,225.00,< 70
+Hotels and restaurants,continent,new,207.00,< 55
+Hotels and restaurants,seams,new,207.00,< 50
+Hotels and restaurants,continent,renovated,225.00,< 60
+Hotels and restaurants,seams,renovated,225.00,< 55
+Sports halls,continent,new,99.00,< 30
+Sports halls,seams,new,67.50,< 20
+Sports halls,continent,renovated,108.00,< 55
+Sports halls,seams,renovated,94.50,< 40
+Shop buildings – retail and wholesale,continent,new,99.00,< 35
+Shop buildings – retail and wholesale,seams,new,81.00,< 25
+Shop buildings – retail and wholesale,continent,renovated,117.00,< 65
+Shop buildings – retail and wholesale,seams,renovated,105.30,< 50

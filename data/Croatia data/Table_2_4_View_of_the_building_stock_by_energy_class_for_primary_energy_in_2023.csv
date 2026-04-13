@@ -1,0 +1,12 @@
+Energy class according to specific annual primary energy Eprim [kWh/(m²·a)],Number of residential buildings in 2023,Area of residential buildings in 2023 [m²],Number of non-residential buildings in 2023,Surface area of non-residential buildings in 2023 [m²]
+A+,11056,4111546,3008,4453026
+A,8782,2302239,2000,2150254
+B,8053,1710422,1781,1062691
+C,27565,5861336,2305,1914005
+D,13352,2171516,1636,1366561
+E,3188,367717,1112,582550
+F,1205,139532,810,596607
+G,702,64307,1935,1115688
+Total number of valid energy performance certificates,73903,16827615,14587,13241383
+No valid EPCs,892584,118067569,32986,4453026
+TOTAL,966487,134796184,47573,41074155
