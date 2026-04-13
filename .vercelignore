@@ -1,0 +1,15 @@
+# Prevent Vercel from auto-detecting this repo as a Python project.
+# These scripts are for local data ingestion/analysis and should not be deployed.
+**/*.py
+python/
+
+# Large/local datasets and tooling (not needed for the web app)
+data/
+tmp/
+*.sql
+*.md
+
+# Local-only config/secrets
+.env
+config.js
+
