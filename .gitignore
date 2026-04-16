@@ -3,3 +3,7 @@ node_modules/
 *.log
 .env
 /config.js
+__pycache__/
+*.pyc
+python/zero_persistence_report.json
+python/mixed_months_rebudget_report.json

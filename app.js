@@ -261,6 +261,11 @@ function navigateToPage(page, countryId = null) {
         document.querySelector('[data-page="energy-meter"]')?.classList.add('active');
         document.getElementById('pageTitle').textContent = 'EU energy meter';
         loadEnergyMeterPage();
+    } else if (page === 'gas-meter') {
+        document.getElementById('gasMeterPage')?.classList.add('active');
+        document.querySelector('[data-page="gas-meter"]')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'EU gas meter';
+        loadGasMeterPage();
     } else if (page === 'country' && countryId) {
         document.getElementById('countryPage').classList.add('active');
         document.getElementById('pageTitle').textContent = 'National renovation building plans';
@@ -1343,6 +1348,568 @@ function setupEnergyEuAutoRefresh() {
         if (!pageActive) return;
         loadEnergyEuAggregateChart(energyEuRange);
     }, 60_000);
+}
+
+// =========================
+// EU Gas Meter (v2_bruegel_power_entsoe)
+// =========================
+
+const GAS_METHOD_VERSION = 'v2_bruegel_power_entsoe';
+const GAS_EU27 = ['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'];
+
+const GAS_SECTOR_COLORS = {
+    power: '#f59e0b',      // amber
+    household: '#3b82f6',  // blue
+    industry: '#8b5cf6',   // violet
+};
+
+let gasEuRange = '1y';
+let gasCountryRange = '1y';
+let gasSelectedCountry = null;
+let gasEuChart = null;
+let gasCountryChart = null;
+
+function gasRangeStartISO(range) {
+    const now = new Date();
+    const d = new Date(now);
+    if (range === 'month') d.setDate(d.getDate() - 31);
+    else if (range === '3m') d.setMonth(d.getMonth() - 3);
+    else if (range === '6m') d.setMonth(d.getMonth() - 6);
+    else if (range === '1y') d.setFullYear(d.getFullYear() - 1);
+    else if (range === '2y') d.setFullYear(d.getFullYear() - 2);
+    else if (range === '5y') d.setFullYear(d.getFullYear() - 5);
+    else d.setMonth(d.getMonth() - 3);
+    return d.toISOString().slice(0, 10);
+}
+
+function fmtGWh(mwh) {
+    if (mwh == null || !Number.isFinite(Number(mwh))) return '-';
+    const gwh = Number(mwh) / 1000;
+    if (Math.abs(gwh) >= 1000) return `${(gwh / 1000).toFixed(2)} TWh`;
+    if (Math.abs(gwh) >= 10) return `${gwh.toFixed(0)} GWh`;
+    return `${gwh.toFixed(1)} GWh`;
+}
+
+function gasBlueScale(t) {
+    // t in [0,1] → light blue to dark blue
+    const tt = Math.max(0, Math.min(1, Number(t) || 0));
+    const r = Math.round(lerp(219, 29, tt));
+    const g = Math.round(lerp(234, 78, tt));
+    const b = Math.round(lerp(254, 216, tt));
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function gasBlueTextForBg(t) {
+    return t > 0.45 ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)';
+}
+
+function updateGasRangeButtonActive() {
+    const euMap = {
+        month: 'gasEuRangeMonthBtn',
+        '3m': 'gasEuRange3mBtn',
+        '6m': 'gasEuRange6mBtn',
+        '1y': 'gasEuRange1yBtn',
+        '2y': 'gasEuRange2yBtn',
+        '5y': 'gasEuRange5yBtn',
+    };
+    Object.entries(euMap).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', range === gasEuRange);
+    });
+    const cMap = {
+        month: 'gasRangeMonthBtn',
+        '3m': 'gasRange3mBtn',
+        '6m': 'gasRange6mBtn',
+        '1y': 'gasRange1yBtn',
+        '2y': 'gasRange2yBtn',
+        '5y': 'gasRange5yBtn',
+    };
+    Object.entries(cMap).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', range === gasCountryRange);
+    });
+}
+
+async function gasFetchAllPaged(builder, pageSize = 1000) {
+    // Supabase caps row returns per request; page via .range().
+    const out = [];
+    let from = 0;
+    while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await builder().range(from, to);
+        if (error) throw new Error(error.message);
+        const rows = Array.isArray(data) ? data : [];
+        out.push(...rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
+        if (from > 200_000) break;
+    }
+    return out;
+}
+
+async function loadGasMeterPage() {
+    const statusEl = document.getElementById('gasMeterStatus');
+    const tbody = document.getElementById('gasMeterTableBody');
+    const refreshBtn = document.getElementById('gasRefreshBtn');
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+    if (!tbody) return;
+
+    const renderLoading = () => {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>';
+    };
+
+    const bindEu = (btn, range) => {
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            gasEuRange = range;
+            updateGasRangeButtonActive();
+            loadGasEuAggregateChart(gasEuRange);
+        });
+    };
+    bindEu(document.getElementById('gasEuRangeMonthBtn'), 'month');
+    bindEu(document.getElementById('gasEuRange3mBtn'), '3m');
+    bindEu(document.getElementById('gasEuRange6mBtn'), '6m');
+    bindEu(document.getElementById('gasEuRange1yBtn'), '1y');
+    bindEu(document.getElementById('gasEuRange2yBtn'), '2y');
+    bindEu(document.getElementById('gasEuRange5yBtn'), '5y');
+
+    const bindCountry = (btn, range) => {
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            gasCountryRange = range;
+            updateGasRangeButtonActive();
+            if (gasSelectedCountry) loadGasCountryChart(gasSelectedCountry, gasCountryRange);
+        });
+    };
+    bindCountry(document.getElementById('gasRangeMonthBtn'), 'month');
+    bindCountry(document.getElementById('gasRange3mBtn'), '3m');
+    bindCountry(document.getElementById('gasRange6mBtn'), '6m');
+    bindCountry(document.getElementById('gasRange1yBtn'), '1y');
+    bindCountry(document.getElementById('gasRange2yBtn'), '2y');
+    bindCountry(document.getElementById('gasRange5yBtn'), '5y');
+
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = '1';
+        refreshBtn.addEventListener('click', () => loadGasMeterPage());
+    }
+
+    try {
+        setStatus('Fetching latest snapshot…');
+        renderLoading();
+
+        if (!supabase) throw new Error('Supabase client not initialized.');
+
+        // Find latest gas_day present in the table for v2 method
+        const { data: latestDayRows, error: latestDayErr } = await supabase
+            .from('gas_demand_daily')
+            .select('gas_day')
+            .eq('method_version', GAS_METHOD_VERSION)
+            .order('gas_day', { ascending: false })
+            .limit(1);
+        if (latestDayErr) throw new Error(latestDayErr.message);
+        const latestDay = latestDayRows?.[0]?.gas_day;
+        if (!latestDay) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary); padding: 24px;">No data yet.</td></tr>';
+            setStatus('No data found.');
+            return;
+        }
+
+        // Fetch rows for the last day across all countries (one row per country)
+        const { data: latestRows, error: latestErr } = await supabase
+            .from('gas_demand_daily')
+            .select('country_code, gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total, source_split, quality_flag')
+            .eq('method_version', GAS_METHOD_VERSION)
+            .eq('gas_day', latestDay)
+            .order('total_mwh', { ascending: false });
+        if (latestErr) throw new Error(latestErr.message);
+
+        const rows = Array.isArray(latestRows) ? latestRows : [];
+
+        // Stats
+        const euTotalMwh = rows.reduce((s, r) => s + (Number(r.total_mwh) || 0), 0);
+        const euPowerMwh = rows.reduce((s, r) => s + (Number(r.power_mwh) || 0), 0);
+        document.getElementById('gasLastUpdated').textContent = latestDay;
+        document.getElementById('gasCountries').textContent = String(rows.length);
+        document.getElementById('gasEuTotal').textContent = `${(euTotalMwh / 1000).toFixed(0)}`;
+        document.getElementById('gasPowerShare').textContent = euTotalMwh > 0 ? `${(100 * euPowerMwh / euTotalMwh).toFixed(1)}%` : '-';
+
+        // Table
+        tbody.innerHTML = rows.map(r => {
+            const c = r.country_code || '-';
+            return `
+                <tr class="gas-row" data-country="${escapeHtml(String(c))}">
+                    <td>${escapeHtml(String(c))}</td>
+                    <td>${escapeHtml(String(r.gas_day || '-'))}</td>
+                    <td>${escapeHtml(((Number(r.total_mwh) || 0) / 1000).toFixed(1))}</td>
+                    <td>${escapeHtml(((Number(r.power_mwh) || 0) / 1000).toFixed(1))}</td>
+                    <td>${escapeHtml(((Number(r.household_mwh) || 0) / 1000).toFixed(1))}</td>
+                    <td>${escapeHtml(((Number(r.industry_mwh) || 0) / 1000).toFixed(1))}</td>
+                    <td>${escapeHtml(String(r.source_total || '-'))}</td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.querySelectorAll('tr.gas-row').forEach(tr => {
+            tr.addEventListener('click', () => {
+                const c = tr.getAttribute('data-country');
+                if (!c) return;
+                gasSelectedCountry = c;
+                loadGasCountryChart(c, gasCountryRange);
+            });
+        });
+
+        // Map
+        renderGasMap(rows);
+
+        // Default selected country: DE (biggest) then FR, else first row
+        if (!gasSelectedCountry) {
+            const pick = rows.find(r => r.country_code === 'DE') || rows.find(r => r.country_code === 'FR') || rows[0];
+            if (pick) gasSelectedCountry = pick.country_code;
+        }
+
+        updateGasRangeButtonActive();
+
+        setStatus(`Loaded ${rows.length} countries.`);
+
+        await Promise.all([
+            loadGasEuAggregateChart(gasEuRange),
+            gasSelectedCountry ? loadGasCountryChart(gasSelectedCountry, gasCountryRange) : Promise.resolve(),
+        ]);
+    } catch (err) {
+        console.error('Gas meter load failed:', err);
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--error-color); padding: 24px;">Failed to load: ${escapeHtml(err.message || String(err))}</td></tr>`;
+        setStatus('Failed to load.');
+    }
+}
+
+async function loadGasEuAggregateChart(range) {
+    const statusEl = document.getElementById('gasEuStatus');
+    const canvas = document.getElementById('gasEuChart');
+    const titleEl = document.getElementById('gasEuChartTitle');
+    if (!canvas || !supabase) return;
+    const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
+
+    try {
+        setStatus(`Loading EU27 aggregate (${range})…`);
+        const fromDate = gasRangeStartISO(range);
+        const rows = await gasFetchAllPaged(
+            () => supabase
+                .from('gas_demand_daily')
+                .select('gas_day, total_mwh, power_mwh, household_mwh, industry_mwh')
+                .eq('method_version', GAS_METHOD_VERSION)
+                .gte('gas_day', fromDate)
+                .order('gas_day', { ascending: true })
+        );
+
+        // Aggregate by day
+        const by = new Map();
+        for (const r of rows) {
+            const d = String(r.gas_day).slice(0, 10);
+            const agg = by.get(d) || { total: 0, power: 0, household: 0, industry: 0 };
+            agg.total += Number(r.total_mwh) || 0;
+            agg.power += Number(r.power_mwh) || 0;
+            agg.household += Number(r.household_mwh) || 0;
+            agg.industry += Number(r.industry_mwh) || 0;
+            by.set(d, agg);
+        }
+        const days = Array.from(by.keys()).sort();
+        const power = days.map(d => (by.get(d).power || 0) / 1000);
+        const household = days.map(d => (by.get(d).household || 0) / 1000);
+        const industry = days.map(d => (by.get(d).industry || 0) / 1000);
+
+        if (titleEl) titleEl.textContent = `EU27 — Gas demand by sector (GWh/day) · ${days[0] || ''} → ${days.at(-1) || ''}`;
+
+        if (gasEuChart) { try { gasEuChart.destroy(); } catch (_) {} }
+        gasEuChart = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: days,
+                datasets: [
+                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(0)} GWh`,
+                            footer: (items) => `Total: ${items.reduce((s, i) => s + Number(i.raw || 0), 0).toFixed(0)} GWh`,
+                        },
+                    },
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 10 } },
+                    y: { stacked: true, title: { display: true, text: 'GWh / day' }, beginAtZero: true },
+                },
+            },
+        });
+
+        setStatus(`EU27: ${days.length} days`);
+    } catch (err) {
+        console.error('EU gas aggregate failed:', err);
+        setStatus(`Failed: ${err.message || err}`);
+    }
+}
+
+async function loadGasCountryChart(country, range) {
+    const statusEl = document.getElementById('gasCountryStatus');
+    const canvas = document.getElementById('gasCountryChart');
+    const titleEl = document.getElementById('gasCountryChartTitle');
+    if (!canvas || !supabase) return;
+    const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
+
+    try {
+        setStatus(`Loading ${country} (${range})…`);
+        const fromDate = gasRangeStartISO(range);
+        const rows = await gasFetchAllPaged(
+            () => supabase
+                .from('gas_demand_daily')
+                .select('gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total')
+                .eq('method_version', GAS_METHOD_VERSION)
+                .eq('country_code', country)
+                .gte('gas_day', fromDate)
+                .order('gas_day', { ascending: true })
+        );
+        const days = rows.map(r => String(r.gas_day).slice(0, 10));
+        const power = rows.map(r => (Number(r.power_mwh) || 0) / 1000);
+        const household = rows.map(r => (Number(r.household_mwh) || 0) / 1000);
+        const industry = rows.map(r => (Number(r.industry_mwh) || 0) / 1000);
+
+        if (titleEl) titleEl.textContent = `${country} — Gas demand by sector (GWh/day) · ${days[0] || ''} → ${days.at(-1) || ''}`;
+
+        if (gasCountryChart) { try { gasCountryChart.destroy(); } catch (_) {} }
+        gasCountryChart = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: days,
+                datasets: [
+                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1)} GWh`,
+                            footer: (items) => `Total: ${items.reduce((s, i) => s + Number(i.raw || 0), 0).toFixed(1)} GWh`,
+                        },
+                    },
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 10 } },
+                    y: { stacked: true, title: { display: true, text: 'GWh / day' }, beginAtZero: true },
+                },
+            },
+        });
+
+        setStatus(`${country}: ${days.length} days`);
+    } catch (err) {
+        console.error('Country gas chart failed:', err);
+        setStatus(`Failed: ${err.message || err}`);
+    }
+}
+
+function renderGasMap(latestRows) {
+    const container = document.getElementById('gasMapContainer');
+    if (!container) return;
+
+    const rows = (latestRows || []).filter(r => r.country_code && Number.isFinite(Number(r.total_mwh)));
+    if (!rows.length) {
+        container.innerHTML = '<div class="chart-loading">No gas data yet.</div>';
+        return;
+    }
+
+    const maxTotal = rows.reduce((m, r) => Math.max(m, Number(r.total_mwh) || 0), 0) || 1;
+    const byIso = new Map();
+    for (const r of rows) byIso.set(String(r.country_code).toUpperCase(), r);
+
+    renderGasGeoMap(container, rows, byIso, maxTotal).catch((e) => {
+        console.warn('Gas geo map failed, fallback to tiles:', e);
+        renderGasTileGrid(container, rows, maxTotal);
+    });
+}
+
+function renderGasTileGrid(container, rows, maxTotal) {
+    const legend = `
+        <div class="energy-map-legend">
+            <span>Low demand</span>
+            <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgb(219,234,254), rgb(29,78,216));"></div>
+            <span>High demand</span>
+        </div>
+    `;
+
+    const tiles = rows
+        .sort((a, b) => String(a.country_code).localeCompare(String(b.country_code)))
+        .map(r => {
+            const c = String(r.country_code);
+            const v = Number(r.total_mwh) || 0;
+            const t = v / maxTotal;
+            const bg = gasBlueScale(t);
+            const color = gasBlueTextForBg(t);
+            const isActive = gasSelectedCountry === c;
+            return `
+                <div class="energy-map-tile ${isActive ? 'active' : ''}" data-country="${escapeHtml(c)}" style="background:${bg}; color:${color}">
+                    <div class="energy-map-tile-code">${escapeHtml(c)}</div>
+                    <div class="energy-map-tile-value">${(v / 1000).toFixed(1)} GWh</div>
+                </div>
+            `;
+        })
+        .join('');
+
+    container.innerHTML = `${legend}<div class="energy-map-grid">${tiles}</div>`;
+
+    container.querySelectorAll('.energy-map-tile').forEach(el => {
+        el.addEventListener('click', () => {
+            const c = el.getAttribute('data-country');
+            if (!c) return;
+            gasSelectedCountry = c;
+            loadGasCountryChart(c, gasCountryRange);
+            container.querySelectorAll('.energy-map-tile').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+        });
+    });
+}
+
+async function renderGasGeoMap(container, rows, byIso, maxTotal) {
+    const countryGeo = await fetchEuropeCountriesGeoJsonOnce();
+
+    const width = 1400;
+    const height = 860;
+    const padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+
+    const selected = String(gasSelectedCountry || '').toUpperCase();
+    const selectedRow = byIso.get(selected);
+    const selectedTotal = selectedRow ? (Number(selectedRow.total_mwh) || 0) : null;
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Gas demand map (latest)</div>
+                    <div class="energy-map-subtitle">EU27 — total daily demand · click a country to chart</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(selected || '—')}</div>
+                    </div>
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Total</div>
+                        <div class="energy-map-chip-value">${selectedTotal != null ? (selectedTotal / 1000).toFixed(0) + ' GWh' : '—'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span>Low</span>
+                <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgb(219,234,254), rgb(29,78,216));"></div>
+                <span>High</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gas demand map"></svg>
+            </div>
+        </div>
+    `;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    const features = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    const eu27Set = new Set(GAS_EU27);
+
+    for (const f of features) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2) continue;
+        if (iso2 === 'RU' || iso2 === 'BY') continue;
+
+        const row = byIso.get(iso2);
+        const val = row ? Number(row.total_mwh) : null;
+        const t = val != null && maxTotal > 0 ? val / maxTotal : null;
+        const isEu27 = eu27Set.has(iso2);
+        const fill = t != null ? gasBlueScale(t) : (isEu27 ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.12)');
+
+        const geom = f.geometry;
+        if (!geom) continue;
+
+        const paths = [];
+        if (geom.type === 'Polygon') {
+            paths.push(polygonToPath(geom.coordinates[0], width, height, bounds, padding));
+        } else if (geom.type === 'MultiPolygon') {
+            for (const poly of geom.coordinates) {
+                if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+            }
+        } else {
+            continue;
+        }
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', paths.join(' '));
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-iso2', iso2);
+        path.style.cursor = isEu27 ? 'pointer' : 'default';
+        if (selected && iso2 === selected) path.classList.add('is-selected');
+
+        path.addEventListener('mouseenter', () => {
+            const r = byIso.get(iso2);
+            tooltip.style.display = 'block';
+            if (r) {
+                const tot = Number(r.total_mwh) || 0;
+                const pw = Number(r.power_mwh) || 0;
+                const hh = Number(r.household_mwh) || 0;
+                const ind = Number(r.industry_mwh) || 0;
+                tooltip.innerHTML = `
+                    <div style="font-weight:600;margin-bottom:4px;">${iso2}</div>
+                    <div>Total: ${(tot/1000).toFixed(1)} GWh</div>
+                    <div>Power: ${(pw/1000).toFixed(1)} GWh</div>
+                    <div>Household: ${(hh/1000).toFixed(1)} GWh</div>
+                    <div>Industry: ${(ind/1000).toFixed(1)} GWh</div>
+                `;
+            } else {
+                tooltip.textContent = `${iso2} — no data`;
+            }
+        });
+        path.addEventListener('mousemove', (e) => {
+            tooltip.style.left = `${e.clientX}px`;
+            tooltip.style.top = `${e.clientY}px`;
+        });
+        path.addEventListener('mouseleave', () => {
+            tooltip.style.display = 'none';
+        });
+        if (isEu27) {
+            path.addEventListener('click', () => {
+                gasSelectedCountry = iso2;
+                loadGasCountryChart(iso2, gasCountryRange);
+                renderGasGeoMap(container, rows, byIso, maxTotal).catch(() => {});
+            });
+        }
+
+        svg.appendChild(path);
+    }
 }
 
 function escapeHtml(str) {

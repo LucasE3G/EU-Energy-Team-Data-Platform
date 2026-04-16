@@ -1,0 +1,5 @@
+project_id = ""
+
+[functions.gas_ingest_eu_latest]
+verify_jwt = false
+

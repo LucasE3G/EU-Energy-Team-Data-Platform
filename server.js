@@ -181,6 +181,63 @@ async function handleEnergyApi(req, res, url) {
     return;
   }
 
+  // EU gas implied demand (daily) by sector: household, industry, power
+  if (url.pathname === '/api/energy/gas') {
+    const supabase = getSupabaseAdmin();
+
+    const country = (url.searchParams.get('country') || '').toUpperCase() || null;
+    const start = url.searchParams.get('start');
+    const end = url.searchParams.get('end');
+    const sector = (url.searchParams.get('sector') || 'total').toLowerCase();
+
+    const allowedSectors = new Set(['total', 'power', 'household', 'industry']);
+    if (!allowedSectors.has(sector)) {
+      writeJson(res, 400, { error: 'bad_request', message: 'Invalid sector. Use total|power|household|industry' });
+      return;
+    }
+
+    let query = supabase
+      .from('gas_demand_daily')
+      .select(
+        'country_code, gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total, source_power, source_split, method_version, quality_flag'
+      )
+      .order('gas_day', { ascending: true })
+      .limit(5000);
+
+    if (country) query = query.eq('country_code', country);
+    if (start) query = query.gte('gas_day', start);
+    if (end) query = query.lte('gas_day', end);
+
+    const { data, error } = await query;
+    if (error) {
+      writeJson(res, 500, { error: 'db_error', message: error.message });
+      return;
+    }
+
+    const rows = (data || []).map((r) => ({
+      country_code: r.country_code,
+      gas_day: r.gas_day,
+      mwh:
+        sector === 'total'
+          ? r.total_mwh
+          : sector === 'power'
+            ? r.power_mwh
+            : sector === 'household'
+              ? r.household_mwh
+              : r.industry_mwh,
+      meta: {
+        source_total: r.source_total,
+        source_power: r.source_power,
+        source_split: r.source_split,
+        method_version: r.method_version,
+        quality_flag: r.quality_flag,
+      },
+    }));
+
+    writeJson(res, 200, { rows });
+    return;
+  }
+
   if (url.pathname === '/api/energy/latest') {
     const supabase = getSupabaseAdmin();
 

@@ -28,6 +28,10 @@
                     <span class="nav-icon">⚡</span>
                     <span>EU energy meter</span>
                 </a>
+                <a href="#" class="nav-item" data-page="gas-meter">
+                    <span class="nav-icon">🔥</span>
+                    <span>EU gas meter</span>
+                </a>
             </div>
             <div class="nav-section">
                 <div class="nav-section-header">Countries</div>
@@ -375,6 +379,124 @@
                             </thead>
                             <tbody id="energyMeterTableBody">
                                 <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gas Meter Page -->
+            <div id="gasMeterPage" class="page">
+                <div class="page-header">
+                    <h1>EU gas meter</h1>
+                    <p class="page-subtitle">Near real-time daily natural gas demand (EU27) by sector — power, household, industry</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🕒</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="gasLastUpdated">-</div>
+                            <div class="stat-label">Last gas day</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🌍</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="gasCountries">-</div>
+                            <div class="stat-label">Countries</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔥</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="gasEuTotal">-</div>
+                            <div class="stat-label">EU27 total (GWh/d)</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🏭</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="gasPowerShare">-</div>
+                            <div class="stat-label">Power share</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">EU27 aggregate gas demand by sector</h2>
+                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <button class="btn-secondary" id="gasEuRangeMonthBtn">Month</button>
+                            <button class="btn-secondary" id="gasEuRange3mBtn">3m</button>
+                            <button class="btn-secondary" id="gasEuRange6mBtn">6m</button>
+                            <button class="btn-secondary" id="gasEuRange1yBtn">1y</button>
+                            <button class="btn-secondary" id="gasEuRange2yBtn">2y</button>
+                            <button class="btn-secondary" id="gasEuRange5yBtn">5y</button>
+                        </div>
+                    </div>
+                    <div id="gasEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                    <div class="chart-card">
+                        <h3 id="gasEuChartTitle">EU27 — Gas demand by sector (GWh/day)</h3>
+                        <div class="chart-container">
+                            <canvas id="gasEuChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">EU gas demand map (latest)</h2>
+                        <div class="section-actions">
+                            <button class="btn-secondary" id="gasRefreshBtn">Refresh</button>
+                        </div>
+                    </div>
+                    <div id="gasMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                    <div id="gasMapContainer" class="energy-map-card">
+                        <div class="chart-loading">Loading map...</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">Selected country gas demand by sector</h2>
+                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <button class="btn-secondary" id="gasRangeMonthBtn">Month</button>
+                            <button class="btn-secondary" id="gasRange3mBtn">3m</button>
+                            <button class="btn-secondary" id="gasRange6mBtn">6m</button>
+                            <button class="btn-secondary" id="gasRange1yBtn">1y</button>
+                            <button class="btn-secondary" id="gasRange2yBtn">2y</button>
+                            <button class="btn-secondary" id="gasRange5yBtn">5y</button>
+                        </div>
+                    </div>
+                    <div id="gasCountryStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                    <div class="chart-card">
+                        <h3 id="gasCountryChartTitle">Click a country to chart</h3>
+                        <div class="chart-container">
+                            <canvas id="gasCountryChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">Latest snapshot</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Country</th>
+                                    <th>Gas day</th>
+                                    <th>Total (GWh)</th>
+                                    <th>Power (GWh)</th>
+                                    <th>Household (GWh)</th>
+                                    <th>Industry (GWh)</th>
+                                    <th>Source</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gasMeterTableBody">
+                                <tr><td colspan="7" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
