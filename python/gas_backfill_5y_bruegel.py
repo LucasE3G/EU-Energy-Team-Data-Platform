@@ -1,10 +1,63 @@
+import calendar
 import os
+import statistics
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
+
+
+def _allocate_remainder_capped(
+    remainder: float,
+    fallback_day_keys: List[str],
+    implied_day_totals: List[float],
+    days_in_month: int,
+) -> Tuple[Dict[str, float], float]:
+    """Distribute remainder uniformly across fallback days, capped to avoid spikes.
+
+    Cap per day = max(2.5 * median(implied_day_totals), 1.2 * monthly_average).
+    If no implied days, cap = max(2.0 * monthly_average, remainder / F).
+    Any amount that cannot fit under the cap is returned as ``unallocated_mwh``.
+    """
+    F = len(fallback_day_keys)
+    if F == 0:
+        return {}, remainder
+    if remainder <= 0:
+        return {k: 0.0 for k in fallback_day_keys}, 0.0
+
+    monthly_total_est = remainder + sum(implied_day_totals)
+    monthly_avg = monthly_total_est / max(days_in_month, 1)
+    positive = [t for t in implied_day_totals if t > 0]
+    if positive:
+        med = statistics.median(positive)
+        cap = max(2.5 * med, 1.2 * monthly_avg)
+    else:
+        cap = max(2.0 * monthly_avg, remainder / F)
+
+    alloc: Dict[str, float] = {k: remainder / F for k in fallback_day_keys}
+    for _ in range(10):
+        overflow = 0.0
+        for k in fallback_day_keys:
+            if alloc[k] > cap:
+                overflow += alloc[k] - cap
+                alloc[k] = cap
+        if overflow <= 1e-6:
+            return alloc, 0.0
+        uncapped = [k for k in fallback_day_keys if alloc[k] < cap - 1e-9]
+        if not uncapped:
+            return alloc, overflow
+        share = overflow / len(uncapped)
+        for k in uncapped:
+            alloc[k] += share
+    # Trim any residual above cap and report as unallocated
+    final_unalloc = 0.0
+    for k in fallback_day_keys:
+        if alloc[k] > cap:
+            final_unalloc += alloc[k] - cap
+            alloc[k] = cap
+    return alloc, final_unalloc
 
 try:
     # When run as a module or when repo root is on PYTHONPATH.
@@ -412,6 +465,8 @@ def compute_country_backfill(
         implied_sum: Optional[float],
         remainder: Optional[float],
         day_is_fallback: bool,
+        month_is_complete: Optional[bool] = None,
+        month_unallocated_mwh: Optional[float] = None,
     ) -> dict:
         raw_power = float(r["raw_power_mwh"])
         power = min(raw_power, total)
@@ -428,6 +483,8 @@ def compute_country_backfill(
                 "month_target_mwh": month_target,
                 "month_implied_sum_mwh": implied_sum,
                 "month_remainder_mwh": remainder,
+                "month_unallocated_mwh": month_unallocated_mwh,
+                "month_is_complete": month_is_complete,
                 "month_scale": None,
                 "day_is_fallback": day_is_fallback,
             }
@@ -453,53 +510,65 @@ def compute_country_backfill(
         month_target_raw = rows[0].get("eurostat_ic_obs_month_mwh")
         month_target = float(month_target_raw) if month_target_raw is not None else None
 
+        y_i, m_i = int(ym[:4]), int(ym[5:7])
+        expected_days = calendar.monthrange(y_i, m_i)[1]
+        month_is_complete = len({r["gas_day"] for r in rows}) == expected_days
+
         implied_days = [r for r in rows if r["implied_ok"]]
         fallback_days = [r for r in rows if not r["implied_ok"]]
         implied_sum = sum(float(r["implied_total_mwh"]) for r in implied_days)
 
-        if month_target is None or not fallback_days:
+        # No Eurostat target, or no fallback days to fill, or month is incomplete:
+        # keep implied values untouched; fallback days stay at 0.
+        if month_target is None or not fallback_days or not month_is_complete:
+            if month_target is None:
+                budget_mode_noop = "no_eurostat_month_implied_only"
+            elif not month_is_complete:
+                budget_mode_noop = "month_incomplete_eurostat_budget_skipped"
+            else:
+                budget_mode_noop = "implied_untouched_no_fallback_allocation"
+
             for r in rows:
                 is_implied = r["implied_ok"]
                 total = float(r["implied_total_mwh"]) if is_implied else 0.0
-                selector = (
-                    "implied_observed"
-                    if is_implied
-                    else ("no_fallback_filler_no_eurostat" if month_target is None else "fallback_no_data")
-                )
-                source_total = (
-                    "entsog_gie_implied_daily"
-                    if is_implied
-                    else ("none_no_eurostat_month" if month_target is None else "none_no_fallback_days")
-                )
+                if is_implied:
+                    selector = "implied_observed"
+                    source_total = "entsog_gie_implied_daily"
+                elif month_target is None:
+                    selector = "no_fallback_filler_no_eurostat"
+                    source_total = "none_no_eurostat_month"
+                elif not month_is_complete:
+                    selector = "fallback_no_data_month_incomplete"
+                    source_total = "none_month_incomplete"
+                else:
+                    selector = "fallback_no_data"
+                    source_total = "none_no_fallback_days"
                 out.append(
                     build_row(
                         r,
                         total=total,
                         selector=selector,
                         source_total=source_total,
-                        budget_mode="implied_untouched_no_fallback_allocation"
-                        if month_target is not None
-                        else "no_eurostat_month_implied_only",
+                        budget_mode=budget_mode_noop,
                         month_target=month_target,
                         implied_sum=implied_sum if month_target is not None else None,
                         remainder=None,
-                        day_is_fallback=False,
+                        day_is_fallback=not is_implied,
+                        month_is_complete=month_is_complete,
+                        month_unallocated_mwh=None,
                     )
                 )
             continue
 
         remainder = max(0.0, month_target - implied_sum)
-        weights: List[float] = []
-        for r in fallback_days:
-            w = float(r["raw_power_mwh"])
-            if w <= 0:
-                w = 1.0
-            weights.append(w)
-        sumw = sum(weights) if weights else 1.0
-        alloc_by_day = {
-            fallback_days[i]["gas_day"]: remainder * (weights[i] / sumw)
-            for i in range(len(fallback_days))
-        }
+        fallback_keys = [r["gas_day"] for r in fallback_days]
+        implied_totals = [float(r["implied_total_mwh"]) for r in implied_days]
+        alloc_by_day, unallocated = _allocate_remainder_capped(
+            remainder=remainder,
+            fallback_day_keys=fallback_keys,
+            implied_day_totals=implied_totals,
+            days_in_month=expected_days,
+        )
 
         for r in rows:
             is_implied = r["implied_ok"]
@@ -510,11 +579,13 @@ def compute_country_backfill(
                         total=float(r["implied_total_mwh"]),
                         selector="implied_observed",
                         source_total="entsog_gie_implied_daily",
-                        budget_mode="implied_untouched_eurostat_fills_remainder",
+                        budget_mode="implied_untouched_eurostat_fills_remainder_capped",
                         month_target=month_target,
                         implied_sum=implied_sum,
                         remainder=remainder,
                         day_is_fallback=False,
+                        month_is_complete=True,
+                        month_unallocated_mwh=unallocated,
                     )
                 )
             else:
@@ -522,13 +593,15 @@ def compute_country_backfill(
                     build_row(
                         r,
                         total=float(alloc_by_day.get(r["gas_day"], 0.0)),
-                        selector="budget_eurostat_allocated_remainder",
+                        selector="budget_eurostat_allocated_remainder_capped",
                         source_total="eurostat_nrg_cb_gasm_ic_obs_monthly_budgeted",
-                        budget_mode="implied_untouched_eurostat_fills_remainder",
+                        budget_mode="implied_untouched_eurostat_fills_remainder_capped",
                         month_target=month_target,
                         implied_sum=implied_sum,
                         remainder=remainder,
                         day_is_fallback=True,
+                        month_is_complete=True,
+                        month_unallocated_mwh=unallocated,
                     )
                 )
 

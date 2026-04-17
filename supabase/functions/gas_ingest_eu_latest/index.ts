@@ -385,9 +385,17 @@ function makeRow(
   shareYearTarget: number,
   shareYearUsed: number | null,
   shareSource: string,
+  monthUnallocatedMwh: number | null = null,
 ) {
   const power = Math.max(0, Math.min(di.rawPower, total));
-  const qualityFlag = di.rawPower > total ? "power_capped_to_total" : "observed_total_entsoe_power";
+  let qualityFlag: string;
+  if (total <= 0 && !di.impliedOk) {
+    qualityFlag = "fallback_zero_month_incomplete_or_no_budget";
+  } else if (di.rawPower > total) {
+    qualityFlag = "power_capped_to_total";
+  } else {
+    qualityFlag = di.impliedOk ? "observed_total_entsoe_power" : "eurostat_fallback_allocated";
+  }
   const nonpower = Math.max(0, total - power);
   const hh = nonpower * hhShare;
   let ind = nonpower * indShare;
@@ -410,6 +418,7 @@ function makeRow(
       month_target_mwh: monthTargetMwh,
       month_implied_sum_mwh: monthImpliedSum,
       month_remainder_mwh: monthRemainder,
+      month_unallocated_mwh: monthUnallocatedMwh,
       month_scale: monthScale,
       month_is_complete: monthIsComplete,
       net_imports_mwh: di.netImp,
@@ -433,6 +442,59 @@ function makeRow(
   };
 }
 
+function allocateRemainderCapped(
+  remainder: number,
+  fallbackDays: DayInput[],
+  impliedDayTotals: number[],
+  daysInMonth: number,
+): { alloc: Map<string, number>; unallocated: number } {
+  const F = fallbackDays.length;
+  const alloc = new Map<string, number>();
+  if (F === 0) return { alloc, unallocated: remainder };
+  if (remainder <= 0) {
+    for (const d of fallbackDays) alloc.set(d.day, 0);
+    return { alloc, unallocated: 0 };
+  }
+  const monthlyTotal = remainder + impliedDayTotals.reduce((s, v) => s + v, 0);
+  const monthlyAvg = monthlyTotal / Math.max(daysInMonth, 1);
+  const positive = impliedDayTotals.filter((v) => v > 0).sort((a, b) => a - b);
+  let cap: number;
+  if (positive.length > 0) {
+    const mid = Math.floor(positive.length / 2);
+    const median = positive.length % 2 === 0
+      ? (positive[mid - 1] + positive[mid]) / 2
+      : positive[mid];
+    cap = Math.max(2.5 * median, 1.2 * monthlyAvg);
+  } else {
+    cap = Math.max(2.0 * monthlyAvg, remainder / F);
+  }
+  for (const d of fallbackDays) alloc.set(d.day, remainder / F);
+  for (let iter = 0; iter < 10; iter++) {
+    let overflow = 0;
+    for (const d of fallbackDays) {
+      const v = alloc.get(d.day) || 0;
+      if (v > cap) {
+        overflow += v - cap;
+        alloc.set(d.day, cap);
+      }
+    }
+    if (overflow <= 1e-6) return { alloc, unallocated: 0 };
+    const uncapped = fallbackDays.filter((d) => (alloc.get(d.day) || 0) < cap - 1e-9);
+    if (uncapped.length === 0) return { alloc, unallocated: overflow };
+    const share = overflow / uncapped.length;
+    for (const d of uncapped) alloc.set(d.day, (alloc.get(d.day) || 0) + share);
+  }
+  let finalUnalloc = 0;
+  for (const d of fallbackDays) {
+    const v = alloc.get(d.day) || 0;
+    if (v > cap) {
+      finalUnalloc += v - cap;
+      alloc.set(d.day, cap);
+    }
+  }
+  return { alloc, unallocated: finalUnalloc };
+}
+
 function budgetMonth(
   country: string,
   methodVersion: string,
@@ -449,9 +511,9 @@ function budgetMonth(
   shareSource: string,
 ) {
   // Rule: implied daily values are NEVER rewritten. For each month with a
-  // Eurostat monthly target, only fallback days are filled, and they share
-  // max(0, eurostat_month - implied_sum). If there is no Eurostat target or
-  // no fallback days, nothing in the month is adjusted.
+  // Eurostat monthly target, fallback days share max(0, eurostat_month - implied_sum)
+  // with a per-day cap to avoid spikes. Months that are not calendar-complete in
+  // our window never get Eurostat allocation (fallback days stay at 0).
   inputs.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 
   const y = Number(ym.slice(0, 4));
@@ -466,110 +528,78 @@ function budgetMonth(
 
   const rows: any[] = [];
 
-  if (monthTarget == null || fallbackDays.length === 0) {
+  const pushImplied = (di: DayInput, budgetMode: string, remainder: number | null, unallocated: number | null) => {
+    rows.push(
+      makeRow(
+        country, methodVersion, efficiency, domain, tidsCount, di,
+        di.impliedTotal, "implied_observed", "entsog_gie_implied_daily",
+        sourceSplit, budgetMode, monthTarget, impliedSum,
+        remainder, null, monthIsComplete, hhShare, indShare,
+        shareYearTarget, shareYearUsed, shareSource, unallocated,
+      ),
+    );
+  };
+
+  // Case 1: no Eurostat target, or no fallback days, or month is incomplete.
+  // Implied days stay observed; fallback days stay at 0 (no budget allocation).
+  if (monthTarget == null || fallbackDays.length === 0 || !monthIsComplete) {
+    let budgetMode: string;
+    if (monthTarget == null) budgetMode = "no_eurostat_month_implied_only";
+    else if (!monthIsComplete) budgetMode = "month_incomplete_eurostat_budget_skipped";
+    else budgetMode = "implied_untouched_no_fallback_allocation";
+
     for (const di of inputs) {
-      const isImplied = di.impliedOk;
-      const total = isImplied ? di.impliedTotal : 0;
-      const selector = isImplied
-        ? "implied_observed"
-        : monthTarget == null
-        ? "no_fallback_filler_no_eurostat"
-        : "fallback_no_data";
-      const sourceTotal = isImplied
-        ? "entsog_gie_implied_daily"
-        : monthTarget == null
-        ? "none_no_eurostat_month"
-        : "none_no_fallback_days";
-      const budgetMode =
-        monthTarget == null
-          ? "no_eurostat_month_implied_only"
-          : "implied_untouched_no_fallback_allocation";
+      if (di.impliedOk) {
+        pushImplied(di, budgetMode, null, null);
+        continue;
+      }
+      let selector: string;
+      let sourceTotal: string;
+      if (monthTarget == null) {
+        selector = "no_fallback_filler_no_eurostat";
+        sourceTotal = "none_no_eurostat_month";
+      } else if (!monthIsComplete) {
+        selector = "fallback_no_data_month_incomplete";
+        sourceTotal = "none_month_incomplete";
+      } else {
+        selector = "fallback_no_data";
+        sourceTotal = "none_no_fallback_days";
+      }
       rows.push(
         makeRow(
-          country,
-          methodVersion,
-          efficiency,
-          domain,
-          tidsCount,
-          di,
-          total,
-          selector,
-          sourceTotal,
-          sourceSplit,
-          budgetMode,
-          monthTarget,
-          monthTarget == null ? null : impliedSum,
-          null,
-          null,
-          monthIsComplete,
-          hhShare,
-          indShare,
-          shareYearTarget,
-          shareYearUsed,
-          shareSource,
+          country, methodVersion, efficiency, domain, tidsCount, di,
+          0, selector, sourceTotal, sourceSplit, budgetMode,
+          monthTarget, monthTarget == null ? null : impliedSum,
+          null, null, monthIsComplete, hhShare, indShare,
+          shareYearTarget, shareYearUsed, shareSource, null,
         ),
       );
     }
     return rows;
   }
 
+  // Case 2: complete month with Eurostat target and fallback days: capped allocation.
   const remainder = Math.max(0, monthTarget - impliedSum);
-  const weights = fallbackDays.map((d) => (d.rawPower > 0 ? d.rawPower : 1));
-  const sumw = weights.reduce((s, w) => s + w, 0) || 1;
-  const alloc = new Map<string, number>();
-  fallbackDays.forEach((d, i) => alloc.set(d.day, remainder * (weights[i] / sumw)));
+  const { alloc, unallocated } = allocateRemainderCapped(
+    remainder,
+    fallbackDays,
+    impliedDays.map((d) => d.impliedTotal),
+    expectedDays,
+  );
 
   for (const di of inputs) {
     if (di.impliedOk) {
-      rows.push(
-        makeRow(
-          country,
-          methodVersion,
-          efficiency,
-          domain,
-          tidsCount,
-          di,
-          di.impliedTotal,
-          "implied_observed",
-          "entsog_gie_implied_daily",
-          sourceSplit,
-          "implied_untouched_eurostat_fills_remainder",
-          monthTarget,
-          impliedSum,
-          remainder,
-          null,
-          monthIsComplete,
-          hhShare,
-          indShare,
-          shareYearTarget,
-          shareYearUsed,
-          shareSource,
-        ),
-      );
+      pushImplied(di, "implied_untouched_eurostat_fills_remainder_capped", remainder, unallocated);
     } else {
       rows.push(
         makeRow(
-          country,
-          methodVersion,
-          efficiency,
-          domain,
-          tidsCount,
-          di,
+          country, methodVersion, efficiency, domain, tidsCount, di,
           alloc.get(di.day) || 0,
-          "budget_eurostat_allocated_remainder",
+          "budget_eurostat_allocated_remainder_capped",
           "eurostat_nrg_cb_gasm_ic_obs_monthly_budgeted",
-          sourceSplit,
-          "implied_untouched_eurostat_fills_remainder",
-          monthTarget,
-          impliedSum,
-          remainder,
-          null,
-          monthIsComplete,
-          hhShare,
-          indShare,
-          shareYearTarget,
-          shareYearUsed,
-          shareSource,
+          sourceSplit, "implied_untouched_eurostat_fills_remainder_capped",
+          monthTarget, impliedSum, remainder, null, true,
+          hhShare, indShare, shareYearTarget, shareYearUsed, shareSource, unallocated,
         ),
       );
     }

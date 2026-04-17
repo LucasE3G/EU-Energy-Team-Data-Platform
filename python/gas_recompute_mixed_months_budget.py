@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import json
+import statistics
 import time
 from calendar import monthrange
 from collections import defaultdict
@@ -40,6 +41,56 @@ from typing import DefaultDict, Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
+
+
+def _allocate_remainder_capped(
+    remainder: float,
+    fallback_day_keys: List[str],
+    implied_day_totals: List[float],
+    days_in_month: int,
+) -> Tuple[Dict[str, float], float]:
+    """Distribute remainder uniformly across fallback days with a per-day cap.
+
+    Cap = max(2.5 * median(implied_day_totals>0), 1.2 * monthly_average);
+    fallback to max(2.0 * monthly_average, remainder / F) when no implied days.
+    Returns (alloc_by_day, unallocated_mwh) so spikes cannot exceed the cap.
+    """
+    F = len(fallback_day_keys)
+    if F == 0:
+        return {}, remainder
+    if remainder <= 0:
+        return {k: 0.0 for k in fallback_day_keys}, 0.0
+
+    monthly_total_est = remainder + sum(implied_day_totals)
+    monthly_avg = monthly_total_est / max(days_in_month, 1)
+    positive = [t for t in implied_day_totals if t > 0]
+    if positive:
+        med = statistics.median(positive)
+        cap = max(2.5 * med, 1.2 * monthly_avg)
+    else:
+        cap = max(2.0 * monthly_avg, remainder / F)
+
+    alloc: Dict[str, float] = {k: remainder / F for k in fallback_day_keys}
+    for _ in range(10):
+        overflow = 0.0
+        for k in fallback_day_keys:
+            if alloc[k] > cap:
+                overflow += alloc[k] - cap
+                alloc[k] = cap
+        if overflow <= 1e-6:
+            return alloc, 0.0
+        uncapped = [k for k in fallback_day_keys if alloc[k] < cap - 1e-9]
+        if not uncapped:
+            return alloc, overflow
+        share = overflow / len(uncapped)
+        for k in uncapped:
+            alloc[k] += share
+    final_unalloc = 0.0
+    for k in fallback_day_keys:
+        if alloc[k] > cap:
+            final_unalloc += alloc[k] - cap
+            alloc[k] = cap
+    return alloc, final_unalloc
 
 try:
     from python.gas_entsog_gie_implied import make_retrying_session  # type: ignore
@@ -181,9 +232,55 @@ def rebudget_month(
 
     implied_sum = sum(float((r.get("raw") or {}).get("implied_total_mwh") or 0.0) for r in implied_days)
     complete = month_is_complete(rows, ym)
+    y_i, m_i = int(ym[:4]), int(ym[5:7])
+    expected_days = monthrange(y_i, m_i)[1]
 
-    # Observed implied daily values are never rewritten. Only fallback days are
-    # adjusted, and only to fill the remaining headroom under the Eurostat target.
+    def _build_fallback_row(r: dict, total: float, selector: str, source_total: str,
+                            budget_mode: str, remainder_val: Optional[float],
+                            unallocated: Optional[float]) -> dict:
+        raw = dict(r.get("raw") or {})
+        raw_power = float(raw.get("raw_power_mwh") or 0.0)
+        power = min(raw_power, total)
+        if total <= 0:
+            quality_flag = "fallback_zero_month_incomplete_or_no_budget"
+        elif raw_power > total:
+            quality_flag = "power_capped_to_total"
+        else:
+            quality_flag = "eurostat_fallback_allocated"
+        nonpower = max(0.0, total - power)
+        hh_share = float(raw.get("hh_share_nonpower") or 0.5)
+        ind_share = float(raw.get("ind_share_nonpower") or 0.5)
+        hh = nonpower * hh_share
+        ind = nonpower * ind_share
+        ind += nonpower - (hh + ind)
+        raw.update(
+            {
+                "total_selector": selector,
+                "total_budget_mode": budget_mode,
+                "month_target_mwh": month_target,
+                "month_implied_sum_mwh": implied_sum,
+                "month_remainder_mwh": remainder_val,
+                "month_unallocated_mwh": unallocated,
+                "month_scale": None,
+                "month_is_complete": complete,
+                "day_is_fallback": True,
+            }
+        )
+        return {
+            "country_code": country,
+            "gas_day": r["gas_day"],
+            "method_version": method_version,
+            "total_mwh": total,
+            "power_mwh": power if total > 0 else 0.0,
+            "household_mwh": hh if total > 0 else 0.0,
+            "industry_mwh": ind if total > 0 else 0.0,
+            "source_total": source_total,
+            "source_power": "entsoe_a75_b04",
+            "source_split": r.get("source_split") or (r.get("raw") or {}).get("source_split") or "eurostat_annual_nrg_bal_c",
+            "quality_flag": quality_flag,
+            "raw": raw,
+        }
+
     if not fallback_days:
         return [], {
             "country_code": country,
@@ -195,71 +292,69 @@ def rebudget_month(
             "status": "no_fallback_days_left_untouched",
         }
 
+    # Month incomplete: never apply Eurostat monthly budget. Reset fallback days
+    # to 0 (and store provenance), to avoid dumping a full-month total on the
+    # few fallback days present so far.
+    if not complete:
+        updated = [
+            _build_fallback_row(
+                r,
+                total=0.0,
+                selector="fallback_no_data_month_incomplete",
+                source_total="none_month_incomplete",
+                budget_mode="month_incomplete_eurostat_budget_skipped",
+                remainder_val=None,
+                unallocated=None,
+            )
+            for r in fallback_days
+        ]
+        return updated, {
+            "country_code": country,
+            "month": ym,
+            "days": len(rows),
+            "complete_month": False,
+            "target_mwh": month_target,
+            "implied_sum_mwh": implied_sum,
+            "implied_days": len(implied_days),
+            "fallback_days": len(fallback_days),
+            "status": "month_incomplete_fallbacks_zeroed",
+        }
+
     remainder = max(0.0, month_target - implied_sum)
+    fallback_keys = [r["gas_day"] for r in fallback_days]
+    implied_totals = [float((r.get("raw") or {}).get("implied_total_mwh") or 0.0) for r in implied_days]
+    alloc_by_day, unallocated = _allocate_remainder_capped(
+        remainder=remainder,
+        fallback_day_keys=fallback_keys,
+        implied_day_totals=implied_totals,
+        days_in_month=expected_days,
+    )
 
-    weights: List[float] = []
-    for r in fallback_days:
-        rp = float((r.get("raw") or {}).get("raw_power_mwh") or 0.0)
-        weights.append(rp if rp > 0 else 1.0)
-    sumw = sum(weights) if weights else 1.0
-    alloc = {
-        fallback_days[i]["gas_day"]: remainder * (weights[i] / sumw)
-        for i in range(len(fallback_days))
-    }
-
-    updated: List[dict] = []
-    for r in fallback_days:
-        raw = dict(r.get("raw") or {})
-        total = float(alloc.get(r["gas_day"], 0.0))
-        raw_power = float(raw.get("raw_power_mwh") or 0.0)
-        power = min(raw_power, total)
-        quality_flag = "power_capped_to_total" if raw_power > total else "eurostat_fallback_allocated"
-        nonpower = max(0.0, total - power)
-        hh_share = float(raw.get("hh_share_nonpower") or 0.5)
-        ind_share = float(raw.get("ind_share_nonpower") or 0.5)
-        hh = nonpower * hh_share
-        ind = nonpower * ind_share
-        ind += nonpower - (hh + ind)
-        raw.update(
-            {
-                "total_selector": "budget_eurostat_allocated_remainder",
-                "total_budget_mode": "implied_untouched_eurostat_fills_remainder",
-                "month_target_mwh": month_target,
-                "month_implied_sum_mwh": implied_sum,
-                "month_remainder_mwh": remainder,
-                "month_scale": None,
-                "month_is_complete": complete,
-                "day_is_fallback": True,
-            }
+    updated = [
+        _build_fallback_row(
+            r,
+            total=float(alloc_by_day.get(r["gas_day"], 0.0)),
+            selector="budget_eurostat_allocated_remainder_capped",
+            source_total="eurostat_nrg_cb_gasm_ic_obs_monthly_budgeted",
+            budget_mode="implied_untouched_eurostat_fills_remainder_capped",
+            remainder_val=remainder,
+            unallocated=unallocated,
         )
-        updated.append(
-            {
-                "country_code": country,
-                "gas_day": r["gas_day"],
-                "method_version": method_version,
-                "total_mwh": total,
-                "power_mwh": power,
-                "household_mwh": hh,
-                "industry_mwh": ind,
-                "source_total": "eurostat_nrg_cb_gasm_ic_obs_monthly_budgeted",
-                "source_power": "entsoe_a75_b04",
-                "source_split": r.get("source_split") or (r.get("raw") or {}).get("source_split") or "eurostat_annual_nrg_bal_c",
-                "quality_flag": quality_flag,
-                "raw": raw,
-            }
-        )
+        for r in fallback_days
+    ]
 
     return updated, {
         "country_code": country,
         "month": ym,
         "days": len(rows),
-        "complete_month": complete,
+        "complete_month": True,
         "target_mwh": month_target,
         "implied_sum_mwh": implied_sum,
         "remainder_mwh": remainder,
+        "month_unallocated_mwh": unallocated,
         "implied_days": len(implied_days),
         "fallback_days": len(fallback_days),
-        "status": "fallback_allocated_remainder",
+        "status": "fallback_allocated_remainder_capped",
     }
 
 
