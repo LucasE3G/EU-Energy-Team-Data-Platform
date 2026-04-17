@@ -193,6 +193,16 @@ def month_is_complete(rows: List[dict], ym: str) -> bool:
     return len(seen_days) == expected
 
 
+CALIBRATE_COUNTRIES = {
+    c.strip().upper()
+    for c in (os.getenv("GAS_CALIBRATE_COUNTRIES", "DE") or "").split(",")
+    if c.strip()
+}
+CALIB_MIN_IMPLIED_DAYS = int(os.getenv("GAS_CALIBRATE_MIN_IMPLIED_DAYS", "7"))
+CALIB_LO = float(os.getenv("GAS_CALIBRATE_FACTOR_MIN", "0.2"))
+CALIB_HI = float(os.getenv("GAS_CALIBRATE_FACTOR_MAX", "5.0"))
+
+
 def rebudget_month(
     country: str,
     ym: str,
@@ -213,14 +223,6 @@ def rebudget_month(
             except Exception:
                 continue
 
-    if month_target is None:
-        return [], {
-            "country_code": country,
-            "month": ym,
-            "days": len(rows),
-            "status": "skipped_no_eurostat_target",
-        }
-
     implied_days: List[dict] = []
     fallback_days: List[dict] = []
     for r in rows:
@@ -235,24 +237,48 @@ def rebudget_month(
     y_i, m_i = int(ym[:4]), int(ym[5:7])
     expected_days = monthrange(y_i, m_i)[1]
 
-    def _build_fallback_row(r: dict, total: float, selector: str, source_total: str,
-                            budget_mode: str, remainder_val: Optional[float],
-                            unallocated: Optional[float]) -> dict:
+    def _shares(r: dict) -> Tuple[float, float]:
+        raw = r.get("raw") or {}
+        hh = float(raw.get("hh_share_nonpower") or 0.5)
+        ind = float(raw.get("ind_share_nonpower") or 0.5)
+        return hh, ind
+
+    def _source_split(r: dict) -> str:
+        return r.get("source_split") or (r.get("raw") or {}).get("source_split") or "eurostat_annual_nrg_bal_c"
+
+    def _build_row(
+        r: dict,
+        total: Optional[float],
+        selector: str,
+        source_total: str,
+        budget_mode: str,
+        remainder_val: Optional[float],
+        unallocated: Optional[float],
+        is_fallback: bool,
+        calibration_factor: Optional[float] = None,
+    ) -> dict:
         raw = dict(r.get("raw") or {})
         raw_power = float(raw.get("raw_power_mwh") or 0.0)
-        power = min(raw_power, total)
-        if total <= 0:
-            quality_flag = "fallback_zero_month_incomplete_or_no_budget"
-        elif raw_power > total:
-            quality_flag = "power_capped_to_total"
+        hh_share, ind_share = _shares(r)
+        if total is None:
+            power = None
+            hh = None
+            ind = None
+            quality_flag = "no_data_gap"
         else:
-            quality_flag = "eurostat_fallback_allocated"
-        nonpower = max(0.0, total - power)
-        hh_share = float(raw.get("hh_share_nonpower") or 0.5)
-        ind_share = float(raw.get("ind_share_nonpower") or 0.5)
-        hh = nonpower * hh_share
-        ind = nonpower * ind_share
-        ind += nonpower - (hh + ind)
+            power = min(raw_power, total)
+            if calibration_factor is not None:
+                quality_flag = "calibrated_to_eurostat_monthly"
+            elif raw_power > total:
+                quality_flag = "power_capped_to_total"
+            elif is_fallback:
+                quality_flag = "eurostat_fallback_allocated"
+            else:
+                quality_flag = "observed_total_entsoe_power"
+            nonpower = max(0.0, total - power)
+            hh = nonpower * hh_share
+            ind = nonpower * ind_share
+            ind += nonpower - (hh + ind)
         raw.update(
             {
                 "total_selector": selector,
@@ -261,9 +287,10 @@ def rebudget_month(
                 "month_implied_sum_mwh": implied_sum,
                 "month_remainder_mwh": remainder_val,
                 "month_unallocated_mwh": unallocated,
-                "month_scale": None,
+                "month_calibration_factor": calibration_factor,
+                "month_scale": calibration_factor,
                 "month_is_complete": complete,
-                "day_is_fallback": True,
+                "day_is_fallback": is_fallback,
             }
         )
         return {
@@ -271,40 +298,122 @@ def rebudget_month(
             "gas_day": r["gas_day"],
             "method_version": method_version,
             "total_mwh": total,
-            "power_mwh": power if total > 0 else 0.0,
-            "household_mwh": hh if total > 0 else 0.0,
-            "industry_mwh": ind if total > 0 else 0.0,
+            "power_mwh": power,
+            "household_mwh": hh,
+            "industry_mwh": ind,
             "source_total": source_total,
             "source_power": "entsoe_a75_b04",
-            "source_split": r.get("source_split") or (r.get("raw") or {}).get("source_split") or "eurostat_annual_nrg_bal_c",
+            "source_split": _source_split(r),
             "quality_flag": quality_flag,
             "raw": raw,
         }
 
-    if not fallback_days:
-        return [], {
+    # Branch A: per-month calibration (DE etc.) on complete months with a target.
+    if (
+        country.upper() in CALIBRATE_COUNTRIES
+        and complete
+        and month_target is not None
+        and implied_sum > 0
+        and len(implied_days) >= CALIB_MIN_IMPLIED_DAYS
+    ):
+        raw_factor = month_target / implied_sum
+        if CALIB_LO <= raw_factor <= CALIB_HI:
+            calib = raw_factor
+            updated: List[dict] = []
+            for r in implied_days:
+                implied_total = float((r.get("raw") or {}).get("implied_total_mwh") or 0.0)
+                updated.append(
+                    _build_row(
+                        r,
+                        total=implied_total * calib,
+                        selector="implied_calibrated_to_eurostat_monthly",
+                        source_total="entsog_gie_implied_daily_calibrated",
+                        budget_mode="per_month_calibration_to_eurostat",
+                        remainder_val=0.0,
+                        unallocated=0.0,
+                        is_fallback=False,
+                        calibration_factor=calib,
+                    )
+                )
+            for r in fallback_days:
+                updated.append(
+                    _build_row(
+                        r,
+                        total=None,
+                        selector="fallback_absorbed_by_calibration",
+                        source_total="none_absorbed_by_calibration",
+                        budget_mode="per_month_calibration_to_eurostat",
+                        remainder_val=0.0,
+                        unallocated=0.0,
+                        is_fallback=True,
+                        calibration_factor=calib,
+                    )
+                )
+            return updated, {
+                "country_code": country,
+                "month": ym,
+                "days": len(rows),
+                "complete_month": True,
+                "target_mwh": month_target,
+                "implied_sum_mwh": implied_sum,
+                "calibration_factor": calib,
+                "implied_days": len(implied_days),
+                "fallback_days": len(fallback_days),
+                "status": "calibrated_to_eurostat_monthly",
+            }
+
+    # Branch B: no Eurostat target at all.
+    if month_target is None:
+        updated = []
+        for r in implied_days:
+            implied_total = float((r.get("raw") or {}).get("implied_total_mwh") or 0.0)
+            updated.append(
+                _build_row(
+                    r,
+                    total=implied_total,
+                    selector="implied_observed",
+                    source_total="entsog_gie_implied_daily",
+                    budget_mode="no_eurostat_month_implied_only",
+                    remainder_val=None,
+                    unallocated=None,
+                    is_fallback=False,
+                )
+            )
+        for r in fallback_days:
+            updated.append(
+                _build_row(
+                    r,
+                    total=None,
+                    selector="no_fallback_filler_no_eurostat",
+                    source_total="none_no_eurostat_month",
+                    budget_mode="no_eurostat_month_implied_only",
+                    remainder_val=None,
+                    unallocated=None,
+                    is_fallback=True,
+                )
+            )
+        return updated, {
             "country_code": country,
             "month": ym,
             "days": len(rows),
             "complete_month": complete,
-            "target_mwh": month_target,
-            "implied_sum_mwh": implied_sum,
-            "status": "no_fallback_days_left_untouched",
+            "implied_days": len(implied_days),
+            "fallback_days": len(fallback_days),
+            "status": "no_eurostat_target_null_gaps",
         }
 
-    # Month incomplete: never apply Eurostat monthly budget. Reset fallback days
-    # to 0 (and store provenance), to avoid dumping a full-month total on the
-    # few fallback days present so far.
+    # Branch C: incomplete month: NULL out fallback days.
     if not complete:
         updated = [
-            _build_fallback_row(
+            _build_row(
                 r,
-                total=0.0,
+                total=None,
                 selector="fallback_no_data_month_incomplete",
                 source_total="none_month_incomplete",
                 budget_mode="month_incomplete_eurostat_budget_skipped",
                 remainder_val=None,
                 unallocated=None,
+                is_fallback=True,
             )
             for r in fallback_days
         ]
@@ -317,9 +426,22 @@ def rebudget_month(
             "implied_sum_mwh": implied_sum,
             "implied_days": len(implied_days),
             "fallback_days": len(fallback_days),
-            "status": "month_incomplete_fallbacks_zeroed",
+            "status": "month_incomplete_fallbacks_nulled",
         }
 
+    # Branch D: complete with target but no fallback days.
+    if not fallback_days:
+        return [], {
+            "country_code": country,
+            "month": ym,
+            "days": len(rows),
+            "complete_month": True,
+            "target_mwh": month_target,
+            "implied_sum_mwh": implied_sum,
+            "status": "no_fallback_days_left_untouched",
+        }
+
+    # Branch E: complete month with Eurostat target and fallback days: capped allocation.
     remainder = max(0.0, month_target - implied_sum)
     fallback_keys = [r["gas_day"] for r in fallback_days]
     implied_totals = [float((r.get("raw") or {}).get("implied_total_mwh") or 0.0) for r in implied_days]
@@ -329,9 +451,8 @@ def rebudget_month(
         implied_day_totals=implied_totals,
         days_in_month=expected_days,
     )
-
     updated = [
-        _build_fallback_row(
+        _build_row(
             r,
             total=float(alloc_by_day.get(r["gas_day"], 0.0)),
             selector="budget_eurostat_allocated_remainder_capped",
@@ -339,10 +460,10 @@ def rebudget_month(
             budget_mode="implied_untouched_eurostat_fills_remainder_capped",
             remainder_val=remainder,
             unallocated=unallocated,
+            is_fallback=True,
         )
         for r in fallback_days
     ]
-
     return updated, {
         "country_code": country,
         "month": ym,

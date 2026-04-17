@@ -457,7 +457,7 @@ def compute_country_backfill(
 
     def build_row(
         r: dict,
-        total: float,
+        total: Optional[float],
         selector: str,
         source_total: str,
         budget_mode: str,
@@ -467,14 +467,28 @@ def compute_country_backfill(
         day_is_fallback: bool,
         month_is_complete: Optional[bool] = None,
         month_unallocated_mwh: Optional[float] = None,
+        calibration_factor: Optional[float] = None,
     ) -> dict:
         raw_power = float(r["raw_power_mwh"])
-        power = min(raw_power, total)
-        quality_flag = "power_capped_to_total" if raw_power > total else ("eurostat_fallback_allocated" if day_is_fallback else "observed_total_entsoe_power")
-        nonpower = max(0.0, total - power)
-        hh = nonpower * float(r["hh_share_nonpower"])
-        ind = nonpower * float(r["ind_share_nonpower"])
-        ind += nonpower - (hh + ind)
+        if total is None:
+            power = None
+            hh = None
+            ind = None
+            quality_flag = "no_data_gap"
+        else:
+            power = min(raw_power, total)
+            if calibration_factor is not None:
+                quality_flag = "calibrated_to_eurostat_monthly"
+            elif raw_power > total:
+                quality_flag = "power_capped_to_total"
+            elif day_is_fallback:
+                quality_flag = "eurostat_fallback_allocated"
+            else:
+                quality_flag = "observed_total_entsoe_power"
+            nonpower = max(0.0, total - power)
+            hh = nonpower * float(r["hh_share_nonpower"])
+            ind = nonpower * float(r["ind_share_nonpower"])
+            ind += nonpower - (hh + ind)
         raw = base_raw(r, month_target)
         raw.update(
             {
@@ -485,7 +499,8 @@ def compute_country_backfill(
                 "month_remainder_mwh": remainder,
                 "month_unallocated_mwh": month_unallocated_mwh,
                 "month_is_complete": month_is_complete,
-                "month_scale": None,
+                "month_calibration_factor": calibration_factor,
+                "month_scale": calibration_factor,
                 "day_is_fallback": day_is_fallback,
             }
         )
@@ -504,6 +519,16 @@ def compute_country_backfill(
             "raw": raw,
         }
 
+    calibrate_set = {
+        c.strip().upper()
+        for c in (os.getenv("GAS_CALIBRATE_COUNTRIES", "DE") or "").split(",")
+        if c.strip()
+    }
+    calibrate_this = country.upper() in calibrate_set
+    calib_min_implied_days = int(os.getenv("GAS_CALIBRATE_MIN_IMPLIED_DAYS", "7"))
+    calib_lo = float(os.getenv("GAS_CALIBRATE_FACTOR_MIN", "0.2"))
+    calib_hi = float(os.getenv("GAS_CALIBRATE_FACTOR_MAX", "5.0"))
+
     out: List[dict] = []
     for ym, rows in by_month.items():
         rows.sort(key=lambda x: x["gas_day"])
@@ -518,8 +543,62 @@ def compute_country_backfill(
         fallback_days = [r for r in rows if not r["implied_ok"]]
         implied_sum = sum(float(r["implied_total_mwh"]) for r in implied_days)
 
-        # No Eurostat target, or no fallback days to fill, or month is incomplete:
-        # keep implied values untouched; fallback days stay at 0.
+        # Branch A: per-month calibration (scale implied to match Eurostat monthly).
+        # Only for countries in GAS_CALIBRATE_COUNTRIES, on complete months with
+        # an Eurostat target, with enough implied days to derive a stable factor.
+        calib_factor: Optional[float] = None
+        if (
+            calibrate_this
+            and month_is_complete
+            and month_target is not None
+            and implied_sum > 0
+            and len(implied_days) >= calib_min_implied_days
+        ):
+            raw_factor = month_target / implied_sum
+            if calib_lo <= raw_factor <= calib_hi:
+                calib_factor = raw_factor
+
+        if calib_factor is not None:
+            for r in rows:
+                is_implied = r["implied_ok"]
+                if is_implied:
+                    out.append(
+                        build_row(
+                            r,
+                            total=float(r["implied_total_mwh"]) * calib_factor,
+                            selector="implied_calibrated_to_eurostat_monthly",
+                            source_total="entsog_gie_implied_daily_calibrated",
+                            budget_mode="per_month_calibration_to_eurostat",
+                            month_target=month_target,
+                            implied_sum=implied_sum,
+                            remainder=0.0,
+                            day_is_fallback=False,
+                            month_is_complete=True,
+                            month_unallocated_mwh=0.0,
+                            calibration_factor=calib_factor,
+                        )
+                    )
+                else:
+                    out.append(
+                        build_row(
+                            r,
+                            total=None,
+                            selector="fallback_absorbed_by_calibration",
+                            source_total="none_absorbed_by_calibration",
+                            budget_mode="per_month_calibration_to_eurostat",
+                            month_target=month_target,
+                            implied_sum=implied_sum,
+                            remainder=0.0,
+                            day_is_fallback=True,
+                            month_is_complete=True,
+                            month_unallocated_mwh=0.0,
+                            calibration_factor=calib_factor,
+                        )
+                    )
+            continue
+
+        # Branch B: no Eurostat target, or no fallback days, or month is incomplete.
+        # Implied days keep their observed values; fallback days become NULL (gap).
         if month_target is None or not fallback_days or not month_is_complete:
             if month_target is None:
                 budget_mode_noop = "no_eurostat_month_implied_only"
@@ -530,11 +609,24 @@ def compute_country_backfill(
 
             for r in rows:
                 is_implied = r["implied_ok"]
-                total = float(r["implied_total_mwh"]) if is_implied else 0.0
                 if is_implied:
-                    selector = "implied_observed"
-                    source_total = "entsog_gie_implied_daily"
-                elif month_target is None:
+                    out.append(
+                        build_row(
+                            r,
+                            total=float(r["implied_total_mwh"]),
+                            selector="implied_observed",
+                            source_total="entsog_gie_implied_daily",
+                            budget_mode=budget_mode_noop,
+                            month_target=month_target,
+                            implied_sum=implied_sum if month_target is not None else None,
+                            remainder=None,
+                            day_is_fallback=False,
+                            month_is_complete=month_is_complete,
+                            month_unallocated_mwh=None,
+                        )
+                    )
+                    continue
+                if month_target is None:
                     selector = "no_fallback_filler_no_eurostat"
                     source_total = "none_no_eurostat_month"
                 elif not month_is_complete:
@@ -546,20 +638,21 @@ def compute_country_backfill(
                 out.append(
                     build_row(
                         r,
-                        total=total,
+                        total=None,
                         selector=selector,
                         source_total=source_total,
                         budget_mode=budget_mode_noop,
                         month_target=month_target,
                         implied_sum=implied_sum if month_target is not None else None,
                         remainder=None,
-                        day_is_fallback=not is_implied,
+                        day_is_fallback=True,
                         month_is_complete=month_is_complete,
                         month_unallocated_mwh=None,
                     )
                 )
             continue
 
+        # Branch C: complete month with Eurostat target and fallback days: capped allocation.
         remainder = max(0.0, month_target - implied_sum)
         fallback_keys = [r["gas_day"] for r in fallback_days]
         implied_totals = [float(r["implied_total_mwh"]) for r in implied_days]

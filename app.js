@@ -1529,26 +1529,26 @@ async function loadGasMeterPage() {
         if (latestErr) throw new Error(latestErr.message);
 
         const rows = Array.isArray(latestRows) ? latestRows : [];
+        const gwh = (v) => (v == null ? '—' : (Number(v) / 1000).toFixed(1));
 
-        // Stats
-        const euTotalMwh = rows.reduce((s, r) => s + (Number(r.total_mwh) || 0), 0);
-        const euPowerMwh = rows.reduce((s, r) => s + (Number(r.power_mwh) || 0), 0);
+        const countriesWithData = rows.filter(r => r.total_mwh != null);
+        const euTotalMwh = countriesWithData.reduce((s, r) => s + Number(r.total_mwh), 0);
+        const euPowerMwh = countriesWithData.reduce((s, r) => s + (r.power_mwh == null ? 0 : Number(r.power_mwh)), 0);
         document.getElementById('gasLastUpdated').textContent = latestDay;
-        document.getElementById('gasCountries').textContent = String(rows.length);
+        document.getElementById('gasCountries').textContent = String(countriesWithData.length);
         document.getElementById('gasEuTotal').textContent = `${(euTotalMwh / 1000).toFixed(0)}`;
         document.getElementById('gasPowerShare').textContent = euTotalMwh > 0 ? `${(100 * euPowerMwh / euTotalMwh).toFixed(1)}%` : '-';
 
-        // Table
         tbody.innerHTML = rows.map(r => {
             const c = r.country_code || '-';
             return `
                 <tr class="gas-row" data-country="${escapeHtml(String(c))}">
                     <td>${escapeHtml(String(c))}</td>
                     <td>${escapeHtml(String(r.gas_day || '-'))}</td>
-                    <td>${escapeHtml(((Number(r.total_mwh) || 0) / 1000).toFixed(1))}</td>
-                    <td>${escapeHtml(((Number(r.power_mwh) || 0) / 1000).toFixed(1))}</td>
-                    <td>${escapeHtml(((Number(r.household_mwh) || 0) / 1000).toFixed(1))}</td>
-                    <td>${escapeHtml(((Number(r.industry_mwh) || 0) / 1000).toFixed(1))}</td>
+                    <td>${escapeHtml(gwh(r.total_mwh))}</td>
+                    <td>${escapeHtml(gwh(r.power_mwh))}</td>
+                    <td>${escapeHtml(gwh(r.household_mwh))}</td>
+                    <td>${escapeHtml(gwh(r.industry_mwh))}</td>
                     <td>${escapeHtml(String(r.source_total || '-'))}</td>
                 </tr>
             `;
@@ -1606,21 +1606,19 @@ async function loadGasEuAggregateChart(range) {
                 .order('gas_day', { ascending: true })
         );
 
-        // Aggregate by day
         const by = new Map();
         for (const r of rows) {
             const d = String(r.gas_day).slice(0, 10);
-            const agg = by.get(d) || { total: 0, power: 0, household: 0, industry: 0 };
-            agg.total += Number(r.total_mwh) || 0;
-            agg.power += Number(r.power_mwh) || 0;
-            agg.household += Number(r.household_mwh) || 0;
-            agg.industry += Number(r.industry_mwh) || 0;
+            const agg = by.get(d) || { power: 0, household: 0, industry: 0, anyData: false };
+            if (r.power_mwh != null) { agg.power += Number(r.power_mwh); agg.anyData = true; }
+            if (r.household_mwh != null) { agg.household += Number(r.household_mwh); agg.anyData = true; }
+            if (r.industry_mwh != null) { agg.industry += Number(r.industry_mwh); agg.anyData = true; }
             by.set(d, agg);
         }
         const days = Array.from(by.keys()).sort();
-        const power = days.map(d => (by.get(d).power || 0) / 1000);
-        const household = days.map(d => (by.get(d).household || 0) / 1000);
-        const industry = days.map(d => (by.get(d).industry || 0) / 1000);
+        const power = days.map(d => by.get(d).anyData ? by.get(d).power / 1000 : null);
+        const household = days.map(d => by.get(d).anyData ? by.get(d).household / 1000 : null);
+        const industry = days.map(d => by.get(d).anyData ? by.get(d).industry / 1000 : null);
 
         if (titleEl) titleEl.textContent = `EU27 — Gas demand by sector (GWh/day) · ${days[0] || ''} → ${days.at(-1) || ''}`;
 
@@ -1630,9 +1628,9 @@ async function loadGasEuAggregateChart(range) {
             data: {
                 labels: days,
                 datasets: [
-                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
-                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
-                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
+                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
+                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
                 ],
             },
             options: {
@@ -1642,9 +1640,14 @@ async function loadGasEuAggregateChart(range) {
                 plugins: {
                     legend: { position: 'top' },
                     tooltip: {
+                        filter: (ctx) => ctx.raw != null,
                         callbacks: {
-                            label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(0)} GWh`,
-                            footer: (items) => `Total: ${items.reduce((s, i) => s + Number(i.raw || 0), 0).toFixed(0)} GWh`,
+                            label: (ctx) => ctx.raw == null ? null : `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(0)} GWh`,
+                            footer: (items) => {
+                                const vals = items.filter(i => i.raw != null).map(i => Number(i.raw));
+                                if (!vals.length) return 'No data for this day';
+                                return `Total: ${vals.reduce((s, v) => s + v, 0).toFixed(0)} GWh`;
+                            },
                         },
                     },
                 },
@@ -1681,10 +1684,11 @@ async function loadGasCountryChart(country, range) {
                 .gte('gas_day', fromDate)
                 .order('gas_day', { ascending: true })
         );
+        const toGwh = (v) => (v == null ? null : Number(v) / 1000);
         const days = rows.map(r => String(r.gas_day).slice(0, 10));
-        const power = rows.map(r => (Number(r.power_mwh) || 0) / 1000);
-        const household = rows.map(r => (Number(r.household_mwh) || 0) / 1000);
-        const industry = rows.map(r => (Number(r.industry_mwh) || 0) / 1000);
+        const power = rows.map(r => toGwh(r.power_mwh));
+        const household = rows.map(r => toGwh(r.household_mwh));
+        const industry = rows.map(r => toGwh(r.industry_mwh));
 
         if (titleEl) titleEl.textContent = `${country} — Gas demand by sector (GWh/day) · ${days[0] || ''} → ${days.at(-1) || ''}`;
 
@@ -1694,9 +1698,9 @@ async function loadGasCountryChart(country, range) {
             data: {
                 labels: days,
                 datasets: [
-                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
-                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
-                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec' },
+                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
+                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
+                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
                 ],
             },
             options: {
@@ -1706,9 +1710,14 @@ async function loadGasCountryChart(country, range) {
                 plugins: {
                     legend: { position: 'top' },
                     tooltip: {
+                        filter: (ctx) => ctx.raw != null,
                         callbacks: {
-                            label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1)} GWh`,
-                            footer: (items) => `Total: ${items.reduce((s, i) => s + Number(i.raw || 0), 0).toFixed(1)} GWh`,
+                            label: (ctx) => ctx.raw == null ? null : `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1)} GWh`,
+                            footer: (items) => {
+                                const vals = items.filter(i => i.raw != null).map(i => Number(i.raw));
+                                if (!vals.length) return 'No data for this day';
+                                return `Total: ${vals.reduce((s, v) => s + v, 0).toFixed(1)} GWh`;
+                            },
                         },
                     },
                 },

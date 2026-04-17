@@ -370,7 +370,7 @@ function makeRow(
   domain: string | undefined,
   tidsCount: number,
   di: DayInput,
-  total: number,
+  total: number | null,
   selector: string,
   sourceTotal: string,
   sourceSplit: string,
@@ -386,20 +386,31 @@ function makeRow(
   shareYearUsed: number | null,
   shareSource: string,
   monthUnallocatedMwh: number | null = null,
+  calibrationFactor: number | null = null,
 ) {
-  const power = Math.max(0, Math.min(di.rawPower, total));
+  let power: number | null;
+  let hh: number | null;
+  let ind: number | null;
   let qualityFlag: string;
-  if (total <= 0 && !di.impliedOk) {
-    qualityFlag = "fallback_zero_month_incomplete_or_no_budget";
-  } else if (di.rawPower > total) {
-    qualityFlag = "power_capped_to_total";
+  if (total == null) {
+    power = null;
+    hh = null;
+    ind = null;
+    qualityFlag = "no_data_gap";
   } else {
-    qualityFlag = di.impliedOk ? "observed_total_entsoe_power" : "eurostat_fallback_allocated";
+    power = Math.max(0, Math.min(di.rawPower, total));
+    if (calibrationFactor != null) {
+      qualityFlag = "calibrated_to_eurostat_monthly";
+    } else if (di.rawPower > total) {
+      qualityFlag = "power_capped_to_total";
+    } else {
+      qualityFlag = di.impliedOk ? "observed_total_entsoe_power" : "eurostat_fallback_allocated";
+    }
+    const nonpower = Math.max(0, total - power);
+    hh = nonpower * hhShare;
+    ind = nonpower * indShare;
+    ind += nonpower - (hh + ind);
   }
-  const nonpower = Math.max(0, total - power);
-  const hh = nonpower * hhShare;
-  let ind = nonpower * indShare;
-  ind += nonpower - (hh + ind);
   return {
     country_code: country,
     gas_day: di.day,
@@ -419,6 +430,7 @@ function makeRow(
       month_implied_sum_mwh: monthImpliedSum,
       month_remainder_mwh: monthRemainder,
       month_unallocated_mwh: monthUnallocatedMwh,
+      month_calibration_factor: calibrationFactor,
       month_scale: monthScale,
       month_is_complete: monthIsComplete,
       net_imports_mwh: di.netImp,
@@ -528,20 +540,80 @@ function budgetMonth(
 
   const rows: any[] = [];
 
-  const pushImplied = (di: DayInput, budgetMode: string, remainder: number | null, unallocated: number | null) => {
+  const calibrateSet = new Set(
+    (Deno.env.get("GAS_CALIBRATE_COUNTRIES") ?? "DE")
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => c.length > 0),
+  );
+  const calibMinImplied = Number(Deno.env.get("GAS_CALIBRATE_MIN_IMPLIED_DAYS") ?? "7");
+  const calibLo = Number(Deno.env.get("GAS_CALIBRATE_FACTOR_MIN") ?? "0.2");
+  const calibHi = Number(Deno.env.get("GAS_CALIBRATE_FACTOR_MAX") ?? "5.0");
+
+  const pushImplied = (
+    di: DayInput,
+    budgetMode: string,
+    remainder: number | null,
+    unallocated: number | null,
+    selector: string = "implied_observed",
+    sourceTotal: string = "entsog_gie_implied_daily",
+    total: number | null = di.impliedTotal,
+    calibrationFactor: number | null = null,
+  ) => {
     rows.push(
       makeRow(
         country, methodVersion, efficiency, domain, tidsCount, di,
-        di.impliedTotal, "implied_observed", "entsog_gie_implied_daily",
+        total, selector, sourceTotal,
         sourceSplit, budgetMode, monthTarget, impliedSum,
-        remainder, null, monthIsComplete, hhShare, indShare,
-        shareYearTarget, shareYearUsed, shareSource, unallocated,
+        remainder, calibrationFactor, monthIsComplete, hhShare, indShare,
+        shareYearTarget, shareYearUsed, shareSource, unallocated, calibrationFactor,
       ),
     );
   };
 
-  // Case 1: no Eurostat target, or no fallback days, or month is incomplete.
-  // Implied days stay observed; fallback days stay at 0 (no budget allocation).
+  // Case A: per-month calibration (DE etc.).
+  if (
+    calibrateSet.has(country.toUpperCase())
+    && monthIsComplete
+    && monthTarget != null
+    && impliedSum > 0
+    && impliedDays.length >= calibMinImplied
+  ) {
+    const rawFactor = monthTarget / impliedSum;
+    if (rawFactor >= calibLo && rawFactor <= calibHi) {
+      const calib = rawFactor;
+      for (const di of inputs) {
+        if (di.impliedOk) {
+          pushImplied(
+            di,
+            "per_month_calibration_to_eurostat",
+            0,
+            0,
+            "implied_calibrated_to_eurostat_monthly",
+            "entsog_gie_implied_daily_calibrated",
+            di.impliedTotal * calib,
+            calib,
+          );
+        } else {
+          rows.push(
+            makeRow(
+              country, methodVersion, efficiency, domain, tidsCount, di,
+              null,
+              "fallback_absorbed_by_calibration",
+              "none_absorbed_by_calibration",
+              sourceSplit, "per_month_calibration_to_eurostat",
+              monthTarget, impliedSum, 0, calib, true,
+              hhShare, indShare, shareYearTarget, shareYearUsed, shareSource, 0, calib,
+            ),
+          );
+        }
+      }
+      return rows;
+    }
+  }
+
+  // Case B: no Eurostat target, or no fallback days, or month is incomplete.
+  // Implied days stay observed; fallback days become NULL (chart gap).
   if (monthTarget == null || fallbackDays.length === 0 || !monthIsComplete) {
     let budgetMode: string;
     if (monthTarget == null) budgetMode = "no_eurostat_month_implied_only";
@@ -568,7 +640,7 @@ function budgetMonth(
       rows.push(
         makeRow(
           country, methodVersion, efficiency, domain, tidsCount, di,
-          0, selector, sourceTotal, sourceSplit, budgetMode,
+          null, selector, sourceTotal, sourceSplit, budgetMode,
           monthTarget, monthTarget == null ? null : impliedSum,
           null, null, monthIsComplete, hhShare, indShare,
           shareYearTarget, shareYearUsed, shareSource, null,
@@ -578,7 +650,7 @@ function budgetMonth(
     return rows;
   }
 
-  // Case 2: complete month with Eurostat target and fallback days: capped allocation.
+  // Case C: complete month with Eurostat target and fallback days: capped allocation.
   const remainder = Math.max(0, monthTarget - impliedSum);
   const { alloc, unallocated } = allocateRemainderCapped(
     remainder,
