@@ -1,0 +1,75 @@
+name: Gas edge ingest (ENTSOG for non-native EU27)
+
+# Triggers the Supabase edge function `gas_ingest_eu_latest` every day to
+# refresh ENTSOG/GIE/ENTSO-E-derived data for every EU27 country that is NOT
+# covered by a native TSO extractor (FR/AT/DE/DK/UK skipped there; IE lagged).
+#
+# Required repo secrets:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY  -> sent as the function Authorization header.
+#     Service role always satisfies JWT verification, so this works whether
+#     the function is deployed with or without --no-verify-jwt. (You could
+#     use the anon key here too if the function is no-verify-jwt, but the
+#     service role key is simpler since we already have it in secrets.)
+#
+# Schedule: 05:15 UTC - after EU gas-day close and before our ~05:30 Enagás run.
+# You can also trigger manually with a custom number of days.
+
+on:
+  schedule:
+    - cron: "15 5 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many trailing days to ingest (1-45, default 10)"
+        required: false
+        default: "10"
+        type: string
+      countries:
+        description: "Optional comma-separated country codes (default: all EU27 minus native)"
+        required: false
+        type: string
+
+concurrency:
+  group: gas-edge-ingest-daily
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Call Supabase edge function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_FUNCTIONS_AUTH: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DAYS: ${{ github.event.inputs.days || '10' }}
+          INPUT_COUNTRIES: ${{ github.event.inputs.countries }}
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL missing"; exit 1; }
+          [ -n "$SUPABASE_FUNCTIONS_AUTH" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
+          url="${SUPABASE_URL%/}/functions/v1/gas_ingest_eu_latest"
+          if [ -n "${INPUT_COUNTRIES:-}" ]; then
+            cc_json=$(jq -c --arg s "$INPUT_COUNTRIES" '$s | split(",") | map(. | ltrimstr(" ") | rtrimstr(" ") | ascii_upcase) | map(select(length > 0))' <<< '""')
+            body=$(jq -c --argjson d "${INPUT_DAYS:-10}" --argjson c "$cc_json" '{days:$d, countries:$c}' <<< '{}')
+          else
+            body=$(jq -c --argjson d "${INPUT_DAYS:-10}" '{days:$d}' <<< '{}')
+          fi
+          echo "POST $url"
+          echo "body=$body"
+          # --max-time covers the full per-request window; the function walks
+          # EU27 sequentially so a 10-day refresh can take several minutes.
+          http_code=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 600 \
+            -X POST "$url" \
+            -H "Authorization: Bearer $SUPABASE_FUNCTIONS_AUTH" \
+            -H "Content-Type: application/json" \
+            --data "$body")
+          echo "HTTP $http_code"
+          cat response.json || true
+          echo
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Edge function returned HTTP $http_code"
+            exit 1
+          fi

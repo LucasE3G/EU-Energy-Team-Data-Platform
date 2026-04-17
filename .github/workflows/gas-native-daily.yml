@@ -1,7 +1,8 @@
 name: Gas native daily backfill
 
-# Runs the four native TSO extractors (GRTGaz FR, AGGM AT, THE DE, Energinet DK)
-# every day and pushes data to Supabase. Free tier; no laptop required.
+# Runs the native TSO extractors (GRTGaz FR, AGGM AT, THE DE, Energinet DK,
+# CSO NGSD02 IE, National Gas UK) every day and pushes data to Supabase.
+# Free tier; no laptop required.
 #
 # Required GitHub repo secrets (Settings -> Secrets and variables -> Actions):
 #   SUPABASE_URL
@@ -39,6 +40,8 @@ jobs:
       GAS_NATIVE_AT_START_YEAR: ${{ github.event.inputs.start_year }}
       GAS_NATIVE_DE_START_YEAR: ${{ github.event.inputs.start_year }}
       GAS_NATIVE_DK_START_YEAR: ${{ github.event.inputs.start_year }}
+      GAS_NATIVE_IE_START_YEAR: ${{ github.event.inputs.start_year }}
+      GAS_NATIVE_UK_START_YEAR: ${{ github.event.inputs.start_year }}
 
     steps:
       - name: Checkout

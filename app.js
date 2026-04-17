@@ -1369,6 +1369,77 @@ let gasSelectedCountry = null;
 let gasEuChart = null;
 let gasCountryChart = null;
 
+// In-memory cache so range buttons (1y / 2y / 5y) flip instantly instead of re-hitting the API.
+// We always fetch a 5-year slice once and then filter it client-side per selected range.
+// TTL: 10 minutes. `refresh` button invalidates.
+const GAS_CACHE_TTL_MS = 10 * 60 * 1000;
+const GAS_CACHE_RANGE = '5y';
+let gasEuAllRows = null;        // { ts, rows }
+let gasEuAllInflight = null;    // Promise to dedupe parallel requests
+const gasCountryAllRows = new Map();   // country -> { ts, rows }
+const gasCountryAllInflight = new Map(); // country -> Promise
+
+function gasCacheInvalidate() {
+    gasEuAllRows = null;
+    gasEuAllInflight = null;
+    gasCountryAllRows.clear();
+    gasCountryAllInflight.clear();
+}
+
+function gasCacheFresh(entry) {
+    return entry && (Date.now() - entry.ts) < GAS_CACHE_TTL_MS;
+}
+
+async function gasFetchEuAll() {
+    if (gasCacheFresh(gasEuAllRows)) return gasEuAllRows.rows;
+    if (gasEuAllInflight) return gasEuAllInflight;
+    const fromDate = gasRangeStartISO(GAS_CACHE_RANGE);
+    gasEuAllInflight = (async () => {
+        try {
+            const rows = await gasFetchAllPaged(
+                () => supabase
+                    .from('gas_demand_daily')
+                    .select('gas_day, country_code, total_mwh, power_mwh, household_mwh, industry_mwh')
+                    .eq('method_version', GAS_METHOD_VERSION)
+                    .gte('gas_day', fromDate)
+                    .order('gas_day', { ascending: true })
+            );
+            gasEuAllRows = { ts: Date.now(), rows };
+            return rows;
+        } finally {
+            gasEuAllInflight = null;
+        }
+    })();
+    return gasEuAllInflight;
+}
+
+async function gasFetchCountryAll(country) {
+    const cached = gasCountryAllRows.get(country);
+    if (gasCacheFresh(cached)) return cached.rows;
+    const existing = gasCountryAllInflight.get(country);
+    if (existing) return existing;
+    const fromDate = gasRangeStartISO(GAS_CACHE_RANGE);
+    const p = (async () => {
+        try {
+            const rows = await gasFetchAllPaged(
+                () => supabase
+                    .from('gas_demand_daily')
+                    .select('gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total')
+                    .eq('method_version', GAS_METHOD_VERSION)
+                    .eq('country_code', country)
+                    .gte('gas_day', fromDate)
+                    .order('gas_day', { ascending: true })
+            );
+            gasCountryAllRows.set(country, { ts: Date.now(), rows });
+            return rows;
+        } finally {
+            gasCountryAllInflight.delete(country);
+        }
+    })();
+    gasCountryAllInflight.set(country, p);
+    return p;
+}
+
 function gasRangeStartISO(range) {
     const now = new Date();
     const d = new Date(now);
@@ -1495,7 +1566,16 @@ async function loadGasMeterPage() {
 
     if (refreshBtn && !refreshBtn.dataset.bound) {
         refreshBtn.dataset.bound = '1';
-        refreshBtn.addEventListener('click', () => loadGasMeterPage());
+        refreshBtn.addEventListener('click', () => {
+            gasCacheInvalidate();
+            loadGasMeterPage();
+        });
+    }
+
+    // Pre-warm the 5-year cache so range buttons (1y/2y/5y) switch instantly.
+    // Fires in parallel with the main snapshot fetch.
+    if (supabase && !gasCacheFresh(gasEuAllRows)) {
+        gasFetchEuAll().catch(err => console.warn('EU cache prewarm failed:', err));
     }
 
     try {
@@ -1504,29 +1584,61 @@ async function loadGasMeterPage() {
 
         if (!supabase) throw new Error('Supabase client not initialized.');
 
-        // Find latest gas_day present in the table for v2 method
-        const { data: latestDayRows, error: latestDayErr } = await supabase
+        // Each country publishes data at its own cadence (e.g. DE native extractor
+        // hits T+1 while ENTSOG-derived values for most of EU27 run on T+2..T+3).
+        // Picking a single "latest gas_day" globally would therefore collapse the
+        // snapshot to whichever country is freshest today.
+        // Instead: pull ~3 weeks back, keep the newest row per country for the
+        // snapshot table, and pick the best-coverage date for the map so it stays
+        // populated even when a few countries lag.
+        const lookbackFrom = (() => {
+            const d = new Date();
+            d.setUTCDate(d.getUTCDate() - 21);
+            return d.toISOString().slice(0, 10);
+        })();
+        const { data: recentRows, error: recentErr } = await supabase
             .from('gas_demand_daily')
-            .select('gas_day')
+            .select('country_code, gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total, source_split, quality_flag')
             .eq('method_version', GAS_METHOD_VERSION)
-            .order('gas_day', { ascending: false })
-            .limit(1);
-        if (latestDayErr) throw new Error(latestDayErr.message);
-        const latestDay = latestDayRows?.[0]?.gas_day;
-        if (!latestDay) {
+            .gte('gas_day', lookbackFrom)
+            .order('gas_day', { ascending: false });
+        if (recentErr) throw new Error(recentErr.message);
+
+        // Latest per country: prefer the most recent row *with* a total value.
+        // Countries for which a new day exists but without a total (null total,
+        // e.g. calibration couldn't resolve for a very recent month) would
+        // otherwise shadow an older row that does carry a total.
+        const latestPerCountry = new Map();
+        const latestFallback = new Map();
+        for (const row of (recentRows || [])) {
+            const cc = row.country_code;
+            if (!cc) continue;
+            const hasTotal = row.total_mwh != null;
+            if (hasTotal) {
+                const prev = latestPerCountry.get(cc);
+                if (!prev || String(row.gas_day) > String(prev.gas_day)) {
+                    latestPerCountry.set(cc, row);
+                }
+            } else {
+                const prev = latestFallback.get(cc);
+                if (!prev || String(row.gas_day) > String(prev.gas_day)) {
+                    latestFallback.set(cc, row);
+                }
+            }
+        }
+        for (const [cc, row] of latestFallback.entries()) {
+            if (!latestPerCountry.has(cc)) latestPerCountry.set(cc, row);
+        }
+        const latestRows = Array.from(latestPerCountry.values())
+            .sort((a, b) => Number(b.total_mwh ?? 0) - Number(a.total_mwh ?? 0));
+        const latestDay = latestRows.length
+            ? latestRows.map(r => String(r.gas_day)).sort().slice(-1)[0]
+            : null;
+        if (!latestRows.length) {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary); padding: 24px;">No data yet.</td></tr>';
             setStatus('No data found.');
             return;
         }
-
-        // Fetch rows for the last day across all countries (one row per country)
-        const { data: latestRows, error: latestErr } = await supabase
-            .from('gas_demand_daily')
-            .select('country_code, gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total, source_split, quality_flag')
-            .eq('method_version', GAS_METHOD_VERSION)
-            .eq('gas_day', latestDay)
-            .order('total_mwh', { ascending: false });
-        if (latestErr) throw new Error(latestErr.message);
 
         const rows = Array.isArray(latestRows) ? latestRows : [];
         const gwh = (v) => (v == null ? '—' : (Number(v) / 1000).toFixed(1));
@@ -1563,8 +1675,38 @@ async function loadGasMeterPage() {
             });
         });
 
-        // Map
-        renderGasMap(rows);
+        // Map: pick the most recent gas_day in the lookback window where at
+        // least 15 EU countries have a non-null total. If no day hits that
+        // threshold we fall back to the day with the highest coverage.
+        const byDay = new Map();
+        for (const row of (recentRows || [])) {
+            if (row.total_mwh == null) continue;
+            const day = String(row.gas_day);
+            if (!byDay.has(day)) byDay.set(day, []);
+            byDay.get(day).push(row);
+        }
+        const COVERAGE_THRESHOLD = 15;
+        const sortedDays = Array.from(byDay.keys()).sort(); // asc
+        let mapDay = null;
+        for (let i = sortedDays.length - 1; i >= 0; i--) {
+            if ((byDay.get(sortedDays[i]) || []).length >= COVERAGE_THRESHOLD) {
+                mapDay = sortedDays[i];
+                break;
+            }
+        }
+        if (!mapDay) {
+            let bestCount = -1;
+            for (const [day, list] of byDay.entries()) {
+                if (list.length > bestCount || (list.length === bestCount && day > mapDay)) {
+                    bestCount = list.length;
+                    mapDay = day;
+                }
+            }
+        }
+        const mapRows = mapDay ? (byDay.get(mapDay) || []) : rows;
+        const gasMapDayEl = document.getElementById('gasMapDay');
+        if (gasMapDayEl) gasMapDayEl.textContent = mapDay ? `as of ${mapDay} · ${mapRows.length} countries` : '';
+        renderGasMap(mapRows);
 
         // Default selected country: DE (biggest) then FR, else first row
         if (!gasSelectedCountry) {
@@ -1595,16 +1737,11 @@ async function loadGasEuAggregateChart(range) {
     const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
 
     try {
-        setStatus(`Loading EU27 aggregate (${range})…`);
+        const cachedReady = gasCacheFresh(gasEuAllRows);
+        setStatus(cachedReady ? `Rendering EU27 (${range})…` : `Loading EU27 aggregate (${range})…`);
         const fromDate = gasRangeStartISO(range);
-        const rows = await gasFetchAllPaged(
-            () => supabase
-                .from('gas_demand_daily')
-                .select('gas_day, total_mwh, power_mwh, household_mwh, industry_mwh')
-                .eq('method_version', GAS_METHOD_VERSION)
-                .gte('gas_day', fromDate)
-                .order('gas_day', { ascending: true })
-        );
+        const all = await gasFetchEuAll();
+        const rows = all.filter(r => String(r.gas_day).slice(0, 10) >= fromDate);
 
         const by = new Map();
         for (const r of rows) {
@@ -1673,17 +1810,11 @@ async function loadGasCountryChart(country, range) {
     const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
 
     try {
-        setStatus(`Loading ${country} (${range})…`);
+        const cachedReady = gasCacheFresh(gasCountryAllRows.get(country));
+        setStatus(cachedReady ? `Rendering ${country} (${range})…` : `Loading ${country} (${range})…`);
         const fromDate = gasRangeStartISO(range);
-        const rows = await gasFetchAllPaged(
-            () => supabase
-                .from('gas_demand_daily')
-                .select('gas_day, total_mwh, power_mwh, household_mwh, industry_mwh, source_total')
-                .eq('method_version', GAS_METHOD_VERSION)
-                .eq('country_code', country)
-                .gte('gas_day', fromDate)
-                .order('gas_day', { ascending: true })
-        );
+        const all = await gasFetchCountryAll(country);
+        const rows = all.filter(r => String(r.gas_day).slice(0, 10) >= fromDate);
         const toGwh = (v) => (v == null ? null : Number(v) / 1000);
         const days = rows.map(r => String(r.gas_day).slice(0, 10));
         const power = rows.map(r => toGwh(r.power_mwh));

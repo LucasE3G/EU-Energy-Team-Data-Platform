@@ -151,10 +151,13 @@ def main() -> None:
         raw_ip = _sum(RLM_KEYS)
         dist_mwh = raw_dist / 1000.0 if raw_dist is not None else None
         ip_mwh = raw_ip / 1000.0 if raw_ip is not None else None
-        if dist_mwh is None and ip_mwh is None:
+        # THE publishes SLP (distribution) faster than RLM (industry+power):
+        # SLP on T+1, RLM typically on T+2..T+3. If RLM is still missing we skip
+        # the day entirely rather than emit an "industry=0, power=0" row that
+        # would look like a real zero in the UI. The day reappears on the next
+        # run once THE publishes the RLM series.
+        if dist_mwh is None or ip_mwh is None:
             continue
-        dist_mwh = dist_mwh or 0.0
-        ip_mwh = ip_mwh or 0.0
         total_mwh = dist_mwh + ip_mwh
         if total_mwh <= 0:
             continue

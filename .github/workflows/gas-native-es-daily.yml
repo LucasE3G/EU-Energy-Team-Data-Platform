@@ -1,0 +1,89 @@
+name: Gas native ES daily (Enagás via Selenium)
+
+# Enagás does not expose a public JSON API; its daily figures are rendered in
+# a JavaScript widget. We therefore drive a headless Chromium with Selenium,
+# one gas-day per request with ~2s rate limiting.
+#
+# Schedule: daily, last 7 days (incremental). To run a long historical backfill,
+# use "Run workflow" with start_date / end_date inputs.
+#
+# Required repo secrets:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#
+# Sister workflow: gas-native-daily.yml (fast JSON/CSV extractors for FR/AT/DE/DK/IE/UK)
+
+on:
+  schedule:
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Backfill window start (YYYY-MM-DD). Leave empty for last 7 days."
+        required: false
+        type: string
+      end_date:
+        description: "Backfill window end (YYYY-MM-DD). Defaults to yesterday."
+        required: false
+        type: string
+      days:
+        description: "If start_date is empty, lookback N days (default 7)."
+        required: false
+        default: "7"
+        type: string
+
+concurrency:
+  group: gas-native-es-daily
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # Initial backfills can take several hours; default daily job finishes in minutes.
+    timeout-minutes: 330
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ENTSOE_API_TOKEN: ${{ secrets.ENTSOE_API_TOKEN }}
+      GAS_METHOD_VERSION: v2_bruegel_power_entsoe
+      GAS_POWER_EFFICIENCY: "0.5"
+      GAS_NATIVE_ES_START_DATE: ${{ github.event.inputs.start_date }}
+      GAS_NATIVE_ES_END_DATE: ${{ github.event.inputs.end_date }}
+      GAS_NATIVE_ES_DAYS: ${{ github.event.inputs.days || '7' }}
+      GAS_NATIVE_ES_SKIP_EXISTING: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Setup Chromium
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Verify secrets
+        run: |
+          [ -n "$SUPABASE_URL" ] || { echo "SUPABASE_URL missing"; exit 1; }
+          [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || { echo "SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
+
+      - name: Run ES native extractor
+        run: python python/gas_native_es_enagas.py
+
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-native-es-logs-${{ github.run_id }}
+          path: python/logs/
+          retention-days: 14
+          if-no-files-found: ignore

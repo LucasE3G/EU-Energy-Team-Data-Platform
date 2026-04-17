@@ -19,6 +19,7 @@ import requests
 from dotenv import load_dotenv
 
 from gas_recompute_mixed_months_budget import make_retrying_session, upsert_rows
+from gas_native_splits_helper import enrich_rows_with_split
 
 SRC_URL = "https://energie.wifo.ac.at/data/gas/consumption-aggm.csv"
 HEADERS = {
@@ -95,7 +96,8 @@ def main() -> None:
             "gas_day": d.isoformat(),
             "method_version": method_version,
             "total_mwh": mwh,
-            # AGGM publishes only totals; keep sector splits NULL so UI can fall back.
+            # AGGM publishes only totals; we enrich power via ENTSO-E and split the
+            # remainder across household/industry with Eurostat annual shares below.
             "power_mwh": None,
             "household_mwh": None,
             "industry_mwh": None,
@@ -112,9 +114,24 @@ def main() -> None:
             },
         })
 
+    # Enrich splits: ENTSO-E gas-fired power + Eurostat HH/industry shares.
+    efficiency = float(os.getenv("GAS_POWER_EFFICIENCY", "0.5"))
+    entsoe_token = os.getenv("ENTSOE_API_TOKEN")
+    print("Enriching AT rows with ENTSO-E power + Eurostat shares ...", flush=True)
+    rows = enrich_rows_with_split(
+        rows, country="AT", entsoe_token=entsoe_token,
+        efficiency=efficiency, session=s, log_prefix="  AT ",
+    )
+
     first, last = rows[0], rows[-1]
-    print(f"  first: {first['gas_day']} total={first['total_mwh']/1000:.1f} GWh")
-    print(f"  last : {last['gas_day']} total={last['total_mwh']/1000:.1f} GWh")
+    print(f"  first: {first['gas_day']} total={first['total_mwh']/1000:.1f} GWh "
+          f"(P={first.get('power_mwh') and first['power_mwh']/1000:.1f} "
+          f"HH={first.get('household_mwh') and first['household_mwh']/1000:.1f} "
+          f"I={first.get('industry_mwh') and first['industry_mwh']/1000:.1f})")
+    print(f"  last : {last['gas_day']} total={last['total_mwh']/1000:.1f} GWh "
+          f"(P={last.get('power_mwh') and last['power_mwh']/1000:.1f} "
+          f"HH={last.get('household_mwh') and last['household_mwh']/1000:.1f} "
+          f"I={last.get('industry_mwh') and last['industry_mwh']/1000:.1f})")
 
     if dry_run:
         print("Dry-run: not upserting.")

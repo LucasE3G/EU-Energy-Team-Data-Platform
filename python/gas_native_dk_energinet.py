@@ -21,6 +21,7 @@ import requests
 from dotenv import load_dotenv
 
 from gas_recompute_mixed_months_budget import make_retrying_session, upsert_rows
+from gas_native_splits_helper import enrich_rows_with_split
 
 DATASET_URL = "https://api.energidataservice.dk/dataset/Gasflow"
 
@@ -120,6 +121,16 @@ def main() -> None:
         })
 
     print(f"Built {len(rows)} DK native rows.")
+
+    # Enrich splits: ENTSO-E gas-fired power + Eurostat HH/industry shares.
+    efficiency = float(os.getenv("GAS_POWER_EFFICIENCY", "0.5"))
+    entsoe_token = os.getenv("ENTSOE_API_TOKEN")
+    print("Enriching DK rows with ENTSO-E power + Eurostat shares ...", flush=True)
+    rows = enrich_rows_with_split(
+        rows, country="DK", entsoe_token=entsoe_token,
+        efficiency=efficiency, session=s, log_prefix="  DK ",
+    )
+
     if rows:
         first, last = rows[0], rows[-1]
         print(f"  first: {first['gas_day']} total={first['total_mwh']/1000:.1f} GWh")
