@@ -176,10 +176,27 @@ def upsert_rows(s: requests.Session, supabase_url: str, service_role: str, rows:
 
 
 def classify_day(raw: dict) -> str:
-    """Return 'implied_ok' or 'fallback' using raw fields produced by v2 backfill."""
+    """Return 'implied_ok' or 'fallback' using raw fields produced by v2 backfill.
+
+    Applies a sanity bound: an implied daily value that is absurdly large
+    (e.g. corrupt ENTSOG flows) is rejected and treated as a fallback day.
+    """
     implied = float(raw.get("implied_total_mwh") or 0.0)
     raw_power = float(raw.get("raw_power_mwh") or 0.0)
-    if implied > 0 and (raw_power <= 0 or implied >= raw_power):
+    euro_day_mwh = raw.get("eurostat_ic_obs_day_mwh")
+    try:
+        euro_day_mwh = float(euro_day_mwh) if euro_day_mwh is not None else None
+    except Exception:
+        euro_day_mwh = None
+    if euro_day_mwh is not None and euro_day_mwh > 0:
+        sanity_cap = max(5.0 * euro_day_mwh, 5_000_000.0)
+    else:
+        sanity_cap = 15_000_000.0
+    if (
+        implied > 0
+        and (raw_power <= 0 or implied >= raw_power)
+        and implied <= sanity_cap
+    ):
         return "implied_ok"
     return "fallback"
 
@@ -193,14 +210,18 @@ def month_is_complete(rows: List[dict], ym: str) -> bool:
     return len(seen_days) == expected
 
 
-CALIBRATE_COUNTRIES = {
-    c.strip().upper()
-    for c in (os.getenv("GAS_CALIBRATE_COUNTRIES", "DE") or "").split(",")
-    if c.strip()
-}
+_CALIBRATE_RAW = (os.getenv("GAS_CALIBRATE_COUNTRIES") or "ALL").strip()
+if _CALIBRATE_RAW.upper() in ("ALL", "*"):
+    CALIBRATE_COUNTRIES = None  # None sentinel = all countries
+else:
+    CALIBRATE_COUNTRIES = {c.strip().upper() for c in _CALIBRATE_RAW.split(",") if c.strip()}
 CALIB_MIN_IMPLIED_DAYS = int(os.getenv("GAS_CALIBRATE_MIN_IMPLIED_DAYS", "7"))
 CALIB_LO = float(os.getenv("GAS_CALIBRATE_FACTOR_MIN", "0.2"))
 CALIB_HI = float(os.getenv("GAS_CALIBRATE_FACTOR_MAX", "5.0"))
+
+
+def _country_is_calibrated(country: str) -> bool:
+    return CALIBRATE_COUNTRIES is None or country.upper() in CALIBRATE_COUNTRIES
 
 
 def rebudget_month(
@@ -208,8 +229,25 @@ def rebudget_month(
     ym: str,
     rows: List[dict],
     method_version: str,
+    fallback_factor: Optional[float] = None,
 ) -> Tuple[List[dict], dict]:
-    """Return (updated_rows, report_entry). updated_rows is empty if no change needed."""
+    """Return (updated_rows, report_entry). updated_rows is empty if no change needed.
+
+    fallback_factor: if provided and the month has no Eurostat target (or is
+    incomplete), implied days are scaled by this factor (expected to be the
+    country's trailing-12-month median calibration factor).
+
+    If ANY row in the month is flagged as a native-source row (raw.source_origin ==
+    "native"), the month is skipped entirely: native TSO data is authoritative and
+    must never be rescaled to match Eurostat.
+    """
+    if any((r.get("raw") or {}).get("source_origin") == "native" for r in rows):
+        return [], {
+            "country_code": country,
+            "month": ym,
+            "days": len(rows),
+            "status": "native_source_skipped",
+        }
     rows = sorted(rows, key=lambda x: str(x["gas_day"]))
 
     month_target = None
@@ -308,9 +346,11 @@ def rebudget_month(
             "raw": raw,
         }
 
-    # Branch A: per-month calibration (DE etc.) on complete months with a target.
+    # Branch A: per-month calibration on complete months with a Eurostat target.
+    # Default applies to every country so daily levels match Eurostat monthly totals
+    # (Bruegel-style monthly correction).
     if (
-        country.upper() in CALIBRATE_COUNTRIES
+        _country_is_calibrated(country)
         and complete
         and month_target is not None
         and implied_sum > 0
@@ -364,19 +404,33 @@ def rebudget_month(
 
     # Branch B: no Eurostat target at all.
     if month_target is None:
+        use_factor = fallback_factor if (fallback_factor is not None and CALIB_LO <= fallback_factor <= CALIB_HI) else None
+        selector_implied = (
+            "implied_calibrated_to_trailing_12m_median" if use_factor is not None else "implied_observed"
+        )
+        source_total_implied = (
+            "entsog_gie_implied_daily_trailing_calibrated" if use_factor is not None
+            else "entsog_gie_implied_daily"
+        )
+        budget_mode_implied = (
+            "trailing_12m_median_calibration" if use_factor is not None
+            else "no_eurostat_month_implied_only"
+        )
         updated = []
         for r in implied_days:
             implied_total = float((r.get("raw") or {}).get("implied_total_mwh") or 0.0)
+            total_val = implied_total * use_factor if use_factor is not None else implied_total
             updated.append(
                 _build_row(
                     r,
-                    total=implied_total,
-                    selector="implied_observed",
-                    source_total="entsog_gie_implied_daily",
-                    budget_mode="no_eurostat_month_implied_only",
+                    total=total_val,
+                    selector=selector_implied,
+                    source_total=source_total_implied,
+                    budget_mode=budget_mode_implied,
                     remainder_val=None,
                     unallocated=None,
                     is_fallback=False,
+                    calibration_factor=use_factor,
                 )
             )
         for r in fallback_days:
@@ -386,10 +440,11 @@ def rebudget_month(
                     total=None,
                     selector="no_fallback_filler_no_eurostat",
                     source_total="none_no_eurostat_month",
-                    budget_mode="no_eurostat_month_implied_only",
+                    budget_mode=budget_mode_implied,
                     remainder_val=None,
                     unallocated=None,
                     is_fallback=True,
+                    calibration_factor=use_factor,
                 )
             )
         return updated, {
@@ -399,24 +454,51 @@ def rebudget_month(
             "complete_month": complete,
             "implied_days": len(implied_days),
             "fallback_days": len(fallback_days),
-            "status": "no_eurostat_target_null_gaps",
+            "calibration_factor": use_factor,
+            "status": (
+                "no_eurostat_trailing_calibrated" if use_factor is not None
+                else "no_eurostat_target_null_gaps"
+            ),
         }
 
-    # Branch C: incomplete month: NULL out fallback days.
+    # Branch C: incomplete month. Scale implied days by trailing factor if available,
+    # otherwise leave them as observed; fallback days are always NULL.
     if not complete:
-        updated = [
-            _build_row(
-                r,
-                total=None,
-                selector="fallback_no_data_month_incomplete",
-                source_total="none_month_incomplete",
-                budget_mode="month_incomplete_eurostat_budget_skipped",
-                remainder_val=None,
-                unallocated=None,
-                is_fallback=True,
+        use_factor = fallback_factor if (fallback_factor is not None and CALIB_LO <= fallback_factor <= CALIB_HI) else None
+        updated: List[dict] = []
+        if use_factor is not None:
+            for r in implied_days:
+                implied_total = float((r.get("raw") or {}).get("implied_total_mwh") or 0.0)
+                updated.append(
+                    _build_row(
+                        r,
+                        total=implied_total * use_factor,
+                        selector="implied_calibrated_to_trailing_12m_median",
+                        source_total="entsog_gie_implied_daily_trailing_calibrated",
+                        budget_mode="trailing_12m_median_calibration_incomplete_month",
+                        remainder_val=None,
+                        unallocated=None,
+                        is_fallback=False,
+                        calibration_factor=use_factor,
+                    )
+                )
+        for r in fallback_days:
+            updated.append(
+                _build_row(
+                    r,
+                    total=None,
+                    selector="fallback_no_data_month_incomplete",
+                    source_total="none_month_incomplete",
+                    budget_mode=(
+                        "trailing_12m_median_calibration_incomplete_month" if use_factor is not None
+                        else "month_incomplete_eurostat_budget_skipped"
+                    ),
+                    remainder_val=None,
+                    unallocated=None,
+                    is_fallback=True,
+                    calibration_factor=use_factor,
+                )
             )
-            for r in fallback_days
-        ]
         return updated, {
             "country_code": country,
             "month": ym,
@@ -426,7 +508,11 @@ def rebudget_month(
             "implied_sum_mwh": implied_sum,
             "implied_days": len(implied_days),
             "fallback_days": len(fallback_days),
-            "status": "month_incomplete_fallbacks_nulled",
+            "calibration_factor": use_factor,
+            "status": (
+                "month_incomplete_trailing_calibrated" if use_factor is not None
+                else "month_incomplete_fallbacks_nulled"
+            ),
         }
 
     # Branch D: complete with target but no fallback days.
@@ -530,17 +616,72 @@ def main() -> None:
 
     print(f"Scanned rows={len(all_rows)} country-months={len(by_cm)}")
 
-    report: List[dict] = []
+    # Two-pass rebudget:
+    # Pass 1 — standard rebudget. Months with Eurostat targets produce an exact
+    #          per-month calibration factor (Branch A).
+    # Pass 2 — months without a Eurostat target (recent months) reuse each
+    #          country's trailing-12-month median factor from Pass 1 so their
+    #          level stays consistent with history instead of staying at raw
+    #          ENTSOG/GIE (which systematically overshoots or undershoots).
+    pass1_report: Dict[Tuple[str, str], dict] = {}
     to_upsert: List[dict] = []
     processed = 0
-    for (c, ym), rows in by_cm.items():
+    keys_in_order = list(by_cm.keys())  # insertion order is country/ym asc from the DB
+    for (c, ym) in keys_in_order:
         if processed >= max_months:
             break
+        rows = by_cm[(c, ym)]
         updated, entry = rebudget_month(c, ym, rows, method_version)
-        report.append(entry)
+        pass1_report[(c, ym)] = entry
         if updated:
             to_upsert.extend(updated)
         processed += 1
+
+    # Pass 2: compute each country's trailing-12m median factor and reprocess
+    # any month whose status indicates it was left un-calibrated in Pass 1.
+    factors_by_country: DefaultDict[str, List[Tuple[str, float]]] = defaultdict(list)
+    for (c, ym), entry in pass1_report.items():
+        f = entry.get("calibration_factor")
+        if f is not None and entry.get("status") == "calibrated_to_eurostat_monthly":
+            factors_by_country[c].append((ym, float(f)))
+
+    def trailing_median(country: str, ym: str, window: int = 12) -> Optional[float]:
+        history = [f for (y, f) in factors_by_country.get(country, []) if y < ym]
+        if not history:
+            # No prior months → fall back to overall median from any month
+            all_f = [f for (_, f) in factors_by_country.get(country, [])]
+            if not all_f:
+                return None
+            return statistics.median(all_f)
+        return statistics.median(history[-window:])
+
+    rebudget_statuses = {"no_eurostat_target_null_gaps", "month_incomplete_fallbacks_nulled"}
+    pass2_count = 0
+    for (c, ym), entry in pass1_report.items():
+        if entry.get("status") not in rebudget_statuses:
+            continue
+        tf = trailing_median(c, ym)
+        if tf is None:
+            continue
+        if not (CALIB_LO <= tf <= CALIB_HI):
+            continue
+        rows = by_cm[(c, ym)]
+        updated, new_entry = rebudget_month(c, ym, rows, method_version, fallback_factor=tf)
+        pass1_report[(c, ym)] = new_entry
+        if updated:
+            to_upsert.extend(updated)
+        pass2_count += 1
+
+    print(f"Pass 1 months={len(pass1_report)}  Pass 2 trailing-calibrated months={pass2_count}")
+
+    # Deduplicate upserts: later row (Pass 2) wins over earlier row (Pass 1) for
+    # the same (country, gas_day, method_version) key.
+    deduped: Dict[Tuple[str, str, str], dict] = {}
+    for r in to_upsert:
+        deduped[(r["country_code"], r["gas_day"], r["method_version"])] = r
+    to_upsert = list(deduped.values())
+
+    report: List[dict] = list(pass1_report.values())
 
     if not dry_run and to_upsert:
         print(f"Upserting {len(to_upsert)} rows ...")

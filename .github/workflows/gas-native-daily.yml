@@ -1,0 +1,73 @@
+name: Gas native daily backfill
+
+# Runs the four native TSO extractors (GRTGaz FR, AGGM AT, THE DE, Energinet DK)
+# every day and pushes data to Supabase. Free tier; no laptop required.
+#
+# Required GitHub repo secrets (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   ENTSOE_API_TOKEN        (needed for DE power split via ENTSO-E A75)
+#
+# Trigger: 05:00 UTC daily (after the EU gas day closes at 05:00 UTC and TSOs
+# typically post the previous gas-day figures). You can also run manually.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Optional: override start year for all extractors (default: current_year - 5)"
+        required: false
+        type: string
+
+concurrency:
+  group: gas-native-daily
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ENTSOE_API_TOKEN: ${{ secrets.ENTSOE_API_TOKEN }}
+      GAS_METHOD_VERSION: v2_bruegel_power_entsoe
+      GAS_POWER_EFFICIENCY: "0.5"
+      GAS_NATIVE_FR_START_YEAR: ${{ github.event.inputs.start_year }}
+      GAS_NATIVE_AT_START_YEAR: ${{ github.event.inputs.start_year }}
+      GAS_NATIVE_DE_START_YEAR: ${{ github.event.inputs.start_year }}
+      GAS_NATIVE_DK_START_YEAR: ${{ github.event.inputs.start_year }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Verify secrets present
+        run: |
+          [ -n "$SUPABASE_URL" ] || { echo "SUPABASE_URL missing"; exit 1; }
+          [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || { echo "SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
+          [ -n "$ENTSOE_API_TOKEN" ] || echo "WARNING: ENTSOE_API_TOKEN missing; DE power split will be NULL"
+
+      - name: Run native backfill orchestrator
+        run: python python/gas_native_daily.py
+
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-native-logs-${{ github.run_id }}
+          path: python/logs/
+          retention-days: 14
+          if-no-files-found: ignore

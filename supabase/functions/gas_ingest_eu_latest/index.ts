@@ -359,8 +359,23 @@ type DayInput = {
   euroDayMwh: number | null;
 };
 
-function classifyImpliedOk(impliedTotal: number, rawPower: number) {
-  return impliedTotal > 0 && (rawPower <= 0 || impliedTotal >= rawPower);
+function classifyImpliedOk(
+  impliedTotal: number,
+  rawPower: number,
+  euroDayMwh: number | null,
+) {
+  // Sanity bound: reject implausibly large daily values (corrupt ENTSOG feeds).
+  // Cap at max(5x Eurostat daily average, 5 TWh/day) when we have a monthly target,
+  // otherwise a hard absolute cap of 15 TWh/day.
+  const sanityCap =
+    euroDayMwh != null && euroDayMwh > 0
+      ? Math.max(5 * euroDayMwh, 5_000_000)
+      : 15_000_000;
+  return (
+    impliedTotal > 0 &&
+    (rawPower <= 0 || impliedTotal >= rawPower) &&
+    impliedTotal <= sanityCap
+  );
 }
 
 function makeRow(
@@ -540,12 +555,15 @@ function budgetMonth(
 
   const rows: any[] = [];
 
+  const calibRaw = (Deno.env.get("GAS_CALIBRATE_COUNTRIES") ?? "ALL").trim();
+  const calibrateAll = calibRaw.toUpperCase() === "ALL" || calibRaw === "*";
   const calibrateSet = new Set(
-    (Deno.env.get("GAS_CALIBRATE_COUNTRIES") ?? "DE")
+    calibRaw
       .split(",")
       .map((c) => c.trim().toUpperCase())
       .filter((c) => c.length > 0),
   );
+  const calibrateThis = calibrateAll || calibrateSet.has(country.toUpperCase());
   const calibMinImplied = Number(Deno.env.get("GAS_CALIBRATE_MIN_IMPLIED_DAYS") ?? "7");
   const calibLo = Number(Deno.env.get("GAS_CALIBRATE_FACTOR_MIN") ?? "0.2");
   const calibHi = Number(Deno.env.get("GAS_CALIBRATE_FACTOR_MAX") ?? "5.0");
@@ -571,9 +589,9 @@ function budgetMonth(
     );
   };
 
-  // Case A: per-month calibration (DE etc.).
+  // Case A: per-month calibration to Eurostat (applied to all countries by default).
   if (
-    calibrateSet.has(country.toUpperCase())
+    calibrateThis
     && monthIsComplete
     && monthTarget != null
     && impliedSum > 0
@@ -699,7 +717,15 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const days = Math.min(Math.max(Number(body?.days ?? 10), 1), 45);
-    const countries = (Array.isArray(body?.countries) && body.countries.length ? body.countries : EU27).map(String);
+    let countries = (Array.isArray(body?.countries) && body.countries.length ? body.countries : EU27).map(String);
+
+    // Countries backfilled by native TSO sources (e.g. GRTGaz/FR). The edge function
+    // must NOT overwrite those rows with its coarser ENTSOG-derived values.
+    const nativeRaw = (Deno.env.get("GAS_NATIVE_COUNTRIES") ?? "FR,AT,DE,DK").trim();
+    const nativeSet = new Set(
+      nativeRaw.split(",").map((c) => c.trim().toUpperCase()).filter((c) => c.length > 0),
+    );
+    countries = countries.filter((c) => !nativeSet.has(String(c).toUpperCase()));
 
     const methodVersion = Deno.env.get("GAS_METHOD_VERSION") || "v2_bruegel_power_entsoe";
     const efficiency = Number(Deno.env.get("GAS_POWER_EFFICIENCY") ?? "0.5");
@@ -767,7 +793,7 @@ serve(async (req) => {
           const euroTj = euroIcObsByMonth[ym] ?? null;
           const euroMonthMwh = euroTj != null && Number.isFinite(euroTj) ? tjToMwh(euroTj) : null;
           const euroDayMwh = euroMonthMwh != null ? euroMonthMwh / daysInMonth(day) : null;
-          const impliedOk = classifyImpliedOk(impliedTotal, rawPower);
+          const impliedOk = classifyImpliedOk(impliedTotal, rawPower, euroDayMwh);
           const di: DayInput = {
             day,
             netImp,

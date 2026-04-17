@@ -380,7 +380,18 @@ def compute_country_backfill(
         euro_month_mwh = tj_to_mwh(euro_tj) if euro_tj is not None else None
         euro_day_mwh = (euro_month_mwh / days_in_month(d)) if euro_month_mwh is not None else None
 
-        implied_ok = bool(implied_total > 0 and (raw_power <= 0 or implied_total >= raw_power))
+        # Sanity bound: reject implausibly large daily values (corrupt ENTSOG feeds).
+        # Cap at max(5x Eurostat daily average, 5 TWh/day) when we have a monthly target,
+        # otherwise a hard absolute cap of 15 TWh/day (no EU country burns >~6 TWh/day even in peak winter).
+        if euro_day_mwh is not None and euro_day_mwh > 0:
+            sanity_cap_mwh = max(5.0 * euro_day_mwh, 5_000_000.0)
+        else:
+            sanity_cap_mwh = 15_000_000.0
+        implied_ok = bool(
+            implied_total > 0
+            and (raw_power <= 0 or implied_total >= raw_power)
+            and implied_total <= sanity_cap_mwh
+        )
 
         y = d.year
         cached = shares_cache.get(y)
@@ -519,12 +530,12 @@ def compute_country_backfill(
             "raw": raw,
         }
 
-    calibrate_set = {
-        c.strip().upper()
-        for c in (os.getenv("GAS_CALIBRATE_COUNTRIES", "DE") or "").split(",")
-        if c.strip()
-    }
-    calibrate_this = country.upper() in calibrate_set
+    _calib_raw = (os.getenv("GAS_CALIBRATE_COUNTRIES") or "ALL").strip()
+    if _calib_raw.upper() in ("ALL", "*"):
+        calibrate_this = True  # default: calibrate every country
+    else:
+        calibrate_set = {c.strip().upper() for c in _calib_raw.split(",") if c.strip()}
+        calibrate_this = country.upper() in calibrate_set
     calib_min_implied_days = int(os.getenv("GAS_CALIBRATE_MIN_IMPLIED_DAYS", "7"))
     calib_lo = float(os.getenv("GAS_CALIBRATE_FACTOR_MIN", "0.2"))
     calib_hi = float(os.getenv("GAS_CALIBRATE_FACTOR_MAX", "5.0"))
