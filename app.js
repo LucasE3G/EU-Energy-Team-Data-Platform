@@ -1919,7 +1919,19 @@ function renderGasMap(latestRows) {
 
     const maxTotal = rows.reduce((m, r) => Math.max(m, Number(r.total_mwh) || 0), 0) || 1;
     const byIso = new Map();
-    for (const r of rows) byIso.set(String(r.country_code).toUpperCase(), r);
+    for (const r of rows) {
+        const cc = String(r.country_code || '').toUpperCase();
+        if (!cc) continue;
+        byIso.set(cc, r);
+        // Our DB stores the UK as "UK" but the GeoJSON uses the canonical
+        // ISO-3166-1 alpha-2 code "GB", and the Greece feature sometimes
+        // uses "EL" (EU code) instead of "GR". Alias both directions so
+        // lookups by either key succeed.
+        if (cc === 'UK') byIso.set('GB', r);
+        else if (cc === 'GB') byIso.set('UK', r);
+        else if (cc === 'GR') byIso.set('EL', r);
+        else if (cc === 'EL') byIso.set('GR', r);
+    }
 
     renderGasGeoMap(container, rows, byIso, maxTotal).catch((e) => {
         console.warn('Gas geo map failed, fallback to tiles:', e);
@@ -2030,16 +2042,31 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
     const features = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
     const eu27Set = new Set(GAS_EU27);
 
+    // Some GeoJSON features use the formal ISO-3166 alpha-2 code (e.g. "GB",
+    // "EL") while our DB / rest of the app use the everyday code ("UK",
+    // "GR"). Normalise the feature code to the DB convention so lookups,
+    // selection, and colouring all work on a single canonical key.
+    const featureCodeToDbCode = (code) => {
+        switch (code) {
+            case 'GB': return 'UK';
+            case 'EL': return 'GR';
+            default: return code;
+        }
+    };
+
     for (const f of features) {
-        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
-        if (!iso2) continue;
-        if (iso2 === 'RU' || iso2 === 'BY') continue;
+        const rawIso = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!rawIso) continue;
+        if (rawIso === 'RU' || rawIso === 'BY') continue;
+        const iso2 = featureCodeToDbCode(rawIso);
 
         const row = byIso.get(iso2);
         const val = row ? Number(row.total_mwh) : null;
         const t = val != null && maxTotal > 0 ? val / maxTotal : null;
-        const isEu27 = eu27Set.has(iso2);
-        const fill = t != null ? gasBlueScale(t) : (isEu27 ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.12)');
+        // UK is not in GAS_EU27 but is a valid, covered country in our data,
+        // so we should treat it as clickable/highlightable on the map.
+        const isCovered = eu27Set.has(iso2) || iso2 === 'UK';
+        const fill = t != null ? gasBlueScale(t) : (isCovered ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.12)');
 
         const geom = f.geometry;
         if (!geom) continue;
@@ -2059,7 +2086,7 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
         path.setAttribute('d', paths.join(' '));
         path.setAttribute('fill', fill);
         path.setAttribute('data-iso2', iso2);
-        path.style.cursor = isEu27 ? 'pointer' : 'default';
+        path.style.cursor = isCovered ? 'pointer' : 'default';
         if (selected && iso2 === selected) path.classList.add('is-selected');
 
         path.addEventListener('mouseenter', () => {
@@ -2096,7 +2123,7 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
         path.addEventListener('mouseleave', () => {
             tooltip.style.display = 'none';
         });
-        if (isEu27) {
+        if (isCovered) {
             path.addEventListener('click', () => {
                 gasSelectedCountry = iso2;
                 loadGasCountryChart(iso2, gasCountryRange);
