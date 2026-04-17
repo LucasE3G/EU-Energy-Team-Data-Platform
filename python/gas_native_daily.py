@@ -53,25 +53,32 @@ def main() -> int:
         log(f"--- {cc}: running {script}")
         t0 = time.time()
         script_path = HERE / script
+        # Stream child output line-by-line so GitHub Actions (and any log tail)
+        # sees progress in real time, not only when the subprocess exits.
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
         try:
-            r = subprocess.run(
-                [sys.executable, str(script_path)],
+            with subprocess.Popen(
+                [sys.executable, "-u", str(script_path)],
                 cwd=str(HERE.parent),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=60 * 45,
-                check=False,
-            )
+                bufsize=1,
+                env=env,
+            ) as proc:
+                assert proc.stdout is not None
+                deadline = time.time() + 60 * 45
+                for line in proc.stdout:
+                    log(f"    {cc} | {line.rstrip()}")
+                    if time.time() > deadline:
+                        proc.kill()
+                        raise subprocess.TimeoutExpired(script, 60 * 45)
+                rc = proc.wait()
             dt = time.time() - t0
-            if r.stdout:
-                for line in r.stdout.splitlines():
-                    log(f"    {cc} | {line}")
-            if r.stderr:
-                for line in r.stderr.splitlines():
-                    log(f"    {cc} ! {line}")
-            if r.returncode != 0:
+            if rc != 0:
                 failed.append(cc)
-                log(f"--- {cc}: FAILED (exit={r.returncode}) in {dt:.1f}s")
+                log(f"--- {cc}: FAILED (exit={rc}) in {dt:.1f}s")
             else:
                 log(f"--- {cc}: ok in {dt:.1f}s")
         except subprocess.TimeoutExpired:
