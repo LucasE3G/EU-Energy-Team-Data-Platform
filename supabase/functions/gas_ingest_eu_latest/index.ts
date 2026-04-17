@@ -719,13 +719,14 @@ serve(async (req) => {
     const days = Math.min(Math.max(Number(body?.days ?? 10), 1), 45);
     let countries = (Array.isArray(body?.countries) && body.countries.length ? body.countries : EU27).map(String);
 
-    // Countries backfilled by native TSO sources (e.g. GRTGaz/FR, THE/DE, NationalGas/UK).
-    // The edge function must NOT overwrite those rows with its coarser ENTSOG-derived
-    // values. IE is intentionally excluded here: the CSO NGSD02 cube lags by several
-    // months so we still let the edge function refresh recent IE days from ENTSOG; the
-    // native Python backfill fills the historical portion where ENTSOG/edge never
-    // reach (older than the ingest window).
-    const nativeRaw = (Deno.env.get("GAS_NATIVE_COUNTRIES") ?? "FR,AT,DE,DK,UK").trim();
+    // Countries backfilled by native TSO sources (e.g. GRTGaz/FR, THE/DE,
+    // NationalGas/UK, REN/PT). The edge function must NOT overwrite those rows
+    // with its coarser ENTSOG-derived values. IE is intentionally excluded
+    // here: the CSO NGSD02 cube lags by several months so we still let the
+    // edge function refresh recent IE days from ENTSOG; the native Python
+    // backfill fills the historical portion where ENTSOG/edge never reach
+    // (older than the ingest window).
+    const nativeRaw = (Deno.env.get("GAS_NATIVE_COUNTRIES") ?? "FR,AT,DE,DK,UK,PT").trim();
     const nativeSet = new Set(
       nativeRaw.split(",").map((c) => c.trim().toUpperCase()).filter((c) => c.length > 0),
     );

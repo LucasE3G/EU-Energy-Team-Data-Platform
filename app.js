@@ -1586,14 +1586,15 @@ async function loadGasMeterPage() {
 
         // Each country publishes data at its own cadence (e.g. DE native extractor
         // hits T+1 while ENTSOG-derived values for most of EU27 run on T+2..T+3).
-        // Picking a single "latest gas_day" globally would therefore collapse the
-        // snapshot to whichever country is freshest today.
-        // Instead: pull ~3 weeks back, keep the newest row per country for the
-        // snapshot table, and pick the best-coverage date for the map so it stays
-        // populated even when a few countries lag.
+        // Picking a single "latest gas_day" globally would collapse the snapshot
+        // to whichever country is freshest today.
+        // We therefore fetch ~32 days of data and use it two ways:
+        //  - Snapshot table: newest row per country (each at its own best day).
+        //  - Map: trailing 30-day sum per country, so one-day publication lag
+        //    does not change the colour and cross-country values are comparable.
         const lookbackFrom = (() => {
             const d = new Date();
-            d.setUTCDate(d.getUTCDate() - 21);
+            d.setUTCDate(d.getUTCDate() - 32);
             return d.toISOString().slice(0, 10);
         })();
         const { data: recentRows, error: recentErr } = await supabase
@@ -1675,38 +1676,78 @@ async function loadGasMeterPage() {
             });
         });
 
-        // Map: pick the most recent gas_day in the lookback window where at
-        // least 15 EU countries have a non-null total. If no day hits that
-        // threshold we fall back to the day with the highest coverage.
-        const byDay = new Map();
-        for (const row of (recentRows || [])) {
-            if (row.total_mwh == null) continue;
-            const day = String(row.gas_day);
-            if (!byDay.has(day)) byDay.set(day, []);
-            byDay.get(day).push(row);
-        }
-        const COVERAGE_THRESHOLD = 15;
-        const sortedDays = Array.from(byDay.keys()).sort(); // asc
-        let mapDay = null;
-        for (let i = sortedDays.length - 1; i >= 0; i--) {
-            if ((byDay.get(sortedDays[i]) || []).length >= COVERAGE_THRESHOLD) {
-                mapDay = sortedDays[i];
-                break;
+        // Map: trailing 30-day sum per country. This smooths daily publication
+        // lag (a country missing the latest one or two days no longer shrinks
+        // its colour) and the map values are directly comparable across
+        // countries because every country is integrating over the same window.
+        const MAP_WINDOW_DAYS = 30;
+        const mapWindowEnd = (() => {
+            // End = max gas_day present in the fetched data so we're always
+            // anchored on "what we actually have" instead of a future date.
+            let maxDay = null;
+            for (const r of (recentRows || [])) {
+                if (r.total_mwh == null) continue;
+                const d = String(r.gas_day).slice(0, 10);
+                if (!maxDay || d > maxDay) maxDay = d;
+            }
+            return maxDay;
+        })();
+        const mapWindowStart = (() => {
+            if (!mapWindowEnd) return null;
+            const d = new Date(`${mapWindowEnd}T00:00:00Z`);
+            d.setUTCDate(d.getUTCDate() - (MAP_WINDOW_DAYS - 1));
+            return d.toISOString().slice(0, 10);
+        })();
+        const mapAgg = new Map();
+        if (mapWindowStart && mapWindowEnd) {
+            for (const r of (recentRows || [])) {
+                if (r.total_mwh == null) continue;
+                const day = String(r.gas_day).slice(0, 10);
+                if (day < mapWindowStart || day > mapWindowEnd) continue;
+                const cc = r.country_code;
+                if (!cc) continue;
+                const agg = mapAgg.get(cc) || {
+                    country_code: cc,
+                    total_mwh: 0,
+                    power_mwh: 0,
+                    household_mwh: 0,
+                    industry_mwh: 0,
+                    days: 0,
+                    first_day: day,
+                    last_day: day,
+                    power_days: 0,
+                    hh_days: 0,
+                    ind_days: 0,
+                };
+                agg.total_mwh += Number(r.total_mwh) || 0;
+                if (r.power_mwh != null) { agg.power_mwh += Number(r.power_mwh); agg.power_days++; }
+                if (r.household_mwh != null) { agg.household_mwh += Number(r.household_mwh); agg.hh_days++; }
+                if (r.industry_mwh != null) { agg.industry_mwh += Number(r.industry_mwh); agg.ind_days++; }
+                agg.days++;
+                if (day < agg.first_day) agg.first_day = day;
+                if (day > agg.last_day) agg.last_day = day;
+                mapAgg.set(cc, agg);
             }
         }
-        if (!mapDay) {
-            let bestCount = -1;
-            for (const [day, list] of byDay.entries()) {
-                if (list.length > bestCount || (list.length === bestCount && day > mapDay)) {
-                    bestCount = list.length;
-                    mapDay = day;
-                }
-            }
-        }
-        const mapRows = mapDay ? (byDay.get(mapDay) || []) : rows;
+        const mapRows = Array.from(mapAgg.values()).map(a => ({
+            country_code: a.country_code,
+            gas_day: a.last_day,
+            total_mwh: a.total_mwh,
+            power_mwh: a.power_days ? a.power_mwh : null,
+            household_mwh: a.hh_days ? a.household_mwh : null,
+            industry_mwh: a.ind_days ? a.industry_mwh : null,
+            source_total: `trailing_${a.days}d_sum`,
+            _days_in_window: a.days,
+            _first_day: a.first_day,
+            _last_day: a.last_day,
+        })).sort((x, y) => Number(y.total_mwh) - Number(x.total_mwh));
         const gasMapDayEl = document.getElementById('gasMapDay');
-        if (gasMapDayEl) gasMapDayEl.textContent = mapDay ? `as of ${mapDay} · ${mapRows.length} countries` : '';
-        renderGasMap(mapRows);
+        if (gasMapDayEl) {
+            gasMapDayEl.textContent = mapWindowStart && mapWindowEnd
+                ? `Trailing 30-day sum · ${mapWindowStart} → ${mapWindowEnd} · ${mapRows.length} countries`
+                : '';
+        }
+        renderGasMap(mapRows.length ? mapRows : rows);
 
         // Default selected country: DE (biggest) then FR, else first row
         if (!gasSelectedCountry) {
@@ -1938,13 +1979,20 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
     const selected = String(gasSelectedCountry || '').toUpperCase();
     const selectedRow = byIso.get(selected);
     const selectedTotal = selectedRow ? (Number(selectedRow.total_mwh) || 0) : null;
+    // Rows from the trailing-window aggregator carry a `_days_in_window` field.
+    const isTrailing = rows.some(r => Number.isFinite(Number(r._days_in_window)));
+    const chipLabel = isTrailing ? '30d total' : 'Total';
+    const mapTitle = isTrailing ? 'Gas demand map · trailing 30 days' : 'Gas demand map (latest)';
+    const mapSubtitle = isTrailing
+        ? 'EU27 — total demand summed over the last 30 gas days · click a country to chart'
+        : 'EU27 — total daily demand · click a country to chart';
 
     container.innerHTML = `
         <div class="energy-map-shell">
             <div class="energy-map-top">
                 <div class="energy-map-top-left">
-                    <div class="energy-map-title">Gas demand map (latest)</div>
-                    <div class="energy-map-subtitle">EU27 — total daily demand · click a country to chart</div>
+                    <div class="energy-map-title">${mapTitle}</div>
+                    <div class="energy-map-subtitle">${mapSubtitle}</div>
                 </div>
                 <div class="energy-map-top-right">
                     <div class="energy-map-chip">
@@ -1952,7 +2000,7 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
                         <div class="energy-map-chip-value">${escapeHtml(selected || '—')}</div>
                     </div>
                     <div class="energy-map-chip">
-                        <div class="energy-map-chip-label">Total</div>
+                        <div class="energy-map-chip-label">${chipLabel}</div>
                         <div class="energy-map-chip-value">${selectedTotal != null ? (selectedTotal / 1000).toFixed(0) + ' GWh' : '—'}</div>
                     </div>
                 </div>
@@ -2019,15 +2067,23 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
             tooltip.style.display = 'block';
             if (r) {
                 const tot = Number(r.total_mwh) || 0;
-                const pw = Number(r.power_mwh) || 0;
-                const hh = Number(r.household_mwh) || 0;
-                const ind = Number(r.industry_mwh) || 0;
+                const pw = r.power_mwh == null ? null : Number(r.power_mwh);
+                const hh = r.household_mwh == null ? null : Number(r.household_mwh);
+                const ind = r.industry_mwh == null ? null : Number(r.industry_mwh);
+                const days = Number(r._days_in_window) || 0;
+                const first = r._first_day || '';
+                const last = r._last_day || r.gas_day || '';
+                const header = isTrailing
+                    ? `<div style="font-weight:600;margin-bottom:4px;">${iso2} · trailing ${days}d (${first} → ${last})</div>`
+                    : `<div style="font-weight:600;margin-bottom:4px;">${iso2}</div>`;
+                const totalLabel = isTrailing ? `Total (30d sum)` : `Total`;
+                const fmt = (v) => v == null ? '—' : `${(v/1000).toFixed(1)} GWh`;
                 tooltip.innerHTML = `
-                    <div style="font-weight:600;margin-bottom:4px;">${iso2}</div>
-                    <div>Total: ${(tot/1000).toFixed(1)} GWh</div>
-                    <div>Power: ${(pw/1000).toFixed(1)} GWh</div>
-                    <div>Household: ${(hh/1000).toFixed(1)} GWh</div>
-                    <div>Industry: ${(ind/1000).toFixed(1)} GWh</div>
+                    ${header}
+                    <div>${totalLabel}: ${fmt(tot)}</div>
+                    <div>Power: ${fmt(pw)}</div>
+                    <div>Household: ${fmt(hh)}</div>
+                    <div>Industry: ${fmt(ind)}</div>
                 `;
             } else {
                 tooltip.textContent = `${iso2} — no data`;

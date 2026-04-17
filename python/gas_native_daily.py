@@ -34,6 +34,7 @@ SCRIPTS = [
     ("DK", "gas_native_dk_energinet.py"),
     ("IE", "gas_native_ie_cso.py"),
     ("UK", "gas_native_uk_nationalgas.py"),
+    ("PT", "gas_native_pt_ren.py"),
     ("DE", "gas_native_de_the.py"),  # slowest (ENTSO-E), runs last
 ]
 
