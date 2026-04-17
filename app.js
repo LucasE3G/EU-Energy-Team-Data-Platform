@@ -99,11 +99,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
         
-        // Load initial data
-        await Promise.all([
-            loadDashboard(),
-            loadCountryNavigation()
-        ]);
+        // Country navigation must be loaded regardless of which page we'll
+        // actually show (the sidebar is shared across pages).
+        await loadCountryNavigation();
+
+        // Restore the last page the user was on (persisted across reloads).
+        // Falls back to the dashboard if nothing is stored or if the stored
+        // page is invalid.
+        const saved = readLastPageState();
+        if (saved && saved.page && saved.page !== 'dashboard') {
+            if (saved.page === 'country' && saved.countryId && saved.countryName) {
+                // Use navigateToCountry so breadcrumb + sidebar highlight + state
+                // are all restored consistently.
+                navigateToCountry(saved.countryId, saved.countryName);
+            } else if (saved.page === 'country' && saved.countryId) {
+                // Older saved state without a countryName — route through
+                // navigateToPage; breadcrumb will update once loadCountryPage
+                // resolves the country record.
+                navigateToPage('country', saved.countryId);
+            } else {
+                navigateToPage(saved.page);
+            }
+        } else {
+            await loadDashboard();
+        }
     } catch (error) {
         console.error('Error initializing app:', error);
         console.error('Error details:', error.message, error.stack);
@@ -238,6 +257,47 @@ function setupNavigation() {
     }
 }
 
+// Remember the last page across reloads. We deliberately use localStorage so
+// the preference survives browser restarts (most users expect "reload = stay
+// where I was"). Wrapped in try/catch because some browsers with strict
+// tracking prevention or private modes throw on any storage access.
+const LAST_PAGE_STORAGE_KEY = 'app.lastPage';
+function saveLastPageState(page, countryId = null, countryName = null) {
+    try {
+        // Preserve a previously-saved countryName when the caller didn't pass
+        // one (e.g. navigateToPage is called directly without a name, but
+        // navigateToCountry sets the name first).
+        let preservedName = null;
+        if (page === 'country' && !countryName) {
+            try {
+                const prev = JSON.parse(localStorage.getItem(LAST_PAGE_STORAGE_KEY) || 'null');
+                if (prev && prev.page === 'country' && prev.countryId === countryId && prev.countryName) {
+                    preservedName = prev.countryName;
+                }
+            } catch (_) {}
+        }
+        const payload = {
+            page,
+            countryId: countryId || null,
+            countryName: countryName || preservedName || null,
+            ts: Date.now(),
+        };
+        localStorage.setItem(LAST_PAGE_STORAGE_KEY, JSON.stringify(payload));
+    } catch (_) { /* storage blocked; ignore */ }
+}
+function readLastPageState() {
+    try {
+        const raw = localStorage.getItem(LAST_PAGE_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed.page !== 'string') return null;
+        const allowed = new Set(['dashboard', 'energy-meter', 'gas-meter', 'country']);
+        if (!allowed.has(parsed.page)) return null;
+        if (parsed.page === 'country' && !parsed.countryId) return null;
+        return parsed;
+    } catch (_) { return null; }
+}
+
 // Navigate to page
 function navigateToPage(page, countryId = null) {
     if (page !== 'energy-meter') {
@@ -270,7 +330,18 @@ function navigateToPage(page, countryId = null) {
         document.getElementById('countryPage').classList.add('active');
         document.getElementById('pageTitle').textContent = 'National renovation building plans';
         loadCountryPage(countryId);
+    } else {
+        // Unknown/invalid page -> fall back to dashboard so the app never
+        // ends up blank.
+        document.getElementById('dashboardPage').classList.add('active');
+        document.querySelector('[data-page="dashboard"]').classList.add('active');
+        document.getElementById('pageTitle').textContent = 'National renovation building plans';
+        loadDashboard();
+        saveLastPageState('dashboard');
+        return;
     }
+
+    saveLastPageState(page, countryId);
 }
 
 async function loadEnergyMeterPage() {
@@ -3705,6 +3776,10 @@ function navigateToCountry(countryId, countryName) {
     
     // Load country data
     loadCountryPage(countryId);
+
+    // Persist with the country name so a later reload can restore breadcrumb
+    // and sidebar highlight without a round-trip to the DB.
+    saveLastPageState('country', countryId, countryName);
 }
 
 // Load country page
