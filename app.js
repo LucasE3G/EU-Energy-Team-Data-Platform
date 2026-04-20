@@ -1891,7 +1891,17 @@ async function loadGasEuAggregateChart(range) {
                     tooltip: {
                         filter: (ctx) => ctx.raw != null,
                         callbacks: {
-                            label: (ctx) => ctx.raw == null ? null : `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(0)} GWh`,
+                            label: (ctx) => {
+                                if (ctx.raw == null) return null;
+                                const idx = ctx.dataIndex;
+                                const total = (ctx.chart?.data?.datasets || []).reduce(
+                                    (s, ds) => s + (Number(ds.data?.[idx]) || 0), 0);
+                                const val = Number(ctx.raw);
+                                const pct = total > 0 ? (val / total * 100) : null;
+                                return pct != null
+                                    ? `${ctx.dataset.label}: ${val.toFixed(0)} GWh (${pct.toFixed(1)}%)`
+                                    : `${ctx.dataset.label}: ${val.toFixed(0)} GWh`;
+                            },
                             footer: (items) => {
                                 const vals = items.filter(i => i.raw != null).map(i => Number(i.raw));
                                 if (!vals.length) return 'No data for this day';
@@ -1955,7 +1965,17 @@ async function loadGasCountryChart(country, range) {
                     tooltip: {
                         filter: (ctx) => ctx.raw != null,
                         callbacks: {
-                            label: (ctx) => ctx.raw == null ? null : `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1)} GWh`,
+                            label: (ctx) => {
+                                if (ctx.raw == null) return null;
+                                const idx = ctx.dataIndex;
+                                const total = (ctx.chart?.data?.datasets || []).reduce(
+                                    (s, ds) => s + (Number(ds.data?.[idx]) || 0), 0);
+                                const val = Number(ctx.raw);
+                                const pct = total > 0 ? (val / total * 100) : null;
+                                return pct != null
+                                    ? `${ctx.dataset.label}: ${val.toFixed(1)} GWh (${pct.toFixed(1)}%)`
+                                    : `${ctx.dataset.label}: ${val.toFixed(1)} GWh`;
+                            },
                             footer: (items) => {
                                 const vals = items.filter(i => i.raw != null).map(i => Number(i.raw));
                                 if (!vals.length) return 'No data for this day';
@@ -2175,13 +2195,25 @@ async function renderGasGeoMap(container, rows, byIso, maxTotal) {
                     ? `<div style="font-weight:600;margin-bottom:4px;">${iso2} · trailing ${days}d (${first} → ${last})</div>`
                     : `<div style="font-weight:600;margin-bottom:4px;">${iso2}</div>`;
                 const totalLabel = isTrailing ? `Total (30d sum)` : `Total`;
-                const fmt = (v) => v == null ? '—' : `${(v/1000).toFixed(1)} GWh`;
+                // Sector share: prefer the reported total, but fall back to the
+                // sum of known sectors so partial-coverage rows still render
+                // meaningful percentages.
+                const shareBase = tot > 0
+                    ? tot
+                    : [pw, hh, ind].filter(v => v != null).reduce((s, v) => s + v, 0);
+                const fmtV = (v) => v == null ? '—' : `${(v/1000).toFixed(1)} GWh`;
+                const fmtVP = (v) => {
+                    if (v == null) return '—';
+                    const gwh = (v / 1000).toFixed(1);
+                    if (!(shareBase > 0)) return `${gwh} GWh`;
+                    return `${gwh} GWh (${(v / shareBase * 100).toFixed(1)}%)`;
+                };
                 tooltip.innerHTML = `
                     ${header}
-                    <div>${totalLabel}: ${fmt(tot)}</div>
-                    <div>Power: ${fmt(pw)}</div>
-                    <div>Household: ${fmt(hh)}</div>
-                    <div>Industry: ${fmt(ind)}</div>
+                    <div>${totalLabel}: ${fmtV(tot)}</div>
+                    <div>Power: ${fmtVP(pw)}</div>
+                    <div>Household: ${fmtVP(hh)}</div>
+                    <div>Industry: ${fmtVP(ind)}</div>
                 `;
             } else {
                 tooltip.textContent = `${iso2} — no data`;
