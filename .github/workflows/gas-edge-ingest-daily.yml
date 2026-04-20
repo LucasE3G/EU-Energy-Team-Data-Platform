@@ -2,8 +2,11 @@ name: Gas edge ingest (ENTSOG for non-native EU27)
 
 # Triggers the Supabase edge function `gas_ingest_eu_latest` every day to
 # refresh ENTSOG/GIE/ENTSO-E-derived data for every EU27 country that is NOT
-# covered by a native TSO extractor (FR/AT/DE/DK/UK/PT skipped there; IE
-# lagged and still served by ENTSOG for recent days).
+# covered by a native extractor. As of 2026-04 the edge function handles only
+# CY, CZ, FI, GR, LT, MT, SK, SE (+ IE cooperatively until its CSO backfill
+# catches up). All other EU27 countries are served by native Python scrapers
+# (FR/AT/DE/DK/UK/PT/ES) or by the Bruegel-parity ENTSOG off-take points
+# extractor (BE/BG/EE/HR/HU/IT/LU/LV/NL/PL/RO/SI).
 #
 # Required repo secrets:
 #   SUPABASE_URL

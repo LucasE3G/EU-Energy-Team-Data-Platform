@@ -35,6 +35,10 @@ SCRIPTS = [
     ("IE", "gas_native_ie_cso.py"),
     ("UK", "gas_native_uk_nationalgas.py"),
     ("PT", "gas_native_pt_ren.py"),
+    # Bruegel-parity ENTSOG off-take points for 13 countries
+    # (BE, BG, EE, HR, HU, IT, LU, LV, NL, PL, RO, SI - covers the stale
+    # countries identified on 2026-04-20). Runs after fast TSOs, before DE.
+    ("ENTSOG-POINTS", "gas_native_entsog_points.py"),
     ("DE", "gas_native_de_the.py"),  # slowest (ENTSO-E), runs last
 ]
 

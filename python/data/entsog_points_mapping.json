@@ -1,0 +1,70 @@
+{
+  "_description": "ENTSOG off-take point mapping (Bruegel parity). For each country, queries ENTSOG /operationalData with pointDirection=<idt> and indicator=Physical Flow, sums the physical flows by 'type' per day. Mirrors src/data/inputs/entsog_points_mapping.xlsx from https://github.com/benmcwilliams/gas-demand.",
+  "_valid_types": ["household", "industry", "power", "industry-power", "total"],
+  "countries": {
+    "BE": [
+      {"type": "household",      "idt": "be-tso-0001dis-00192exit", "name": "Distribution (L-zone)"},
+      {"type": "household",      "idt": "be-tso-0001dis-00191exit", "name": "Distribution (H-zone)"},
+      {"type": "industry",       "idt": "be-tso-0001fnc-00034exit", "name": "Industrials (L-zone)"},
+      {"type": "industry",       "idt": "be-tso-0001fnc-00033exit", "name": "Industrials (H-zone)"},
+      {"type": "power",          "idt": "be-tso-0001fnc-00035exit", "name": "Power (H-gas)"}
+    ],
+    "BG": [
+      {"type": "total",          "idt": "bg-tso-0001fnc-00207exit", "name": "Aggregated exits"},
+      {"type": "total",          "idt": "bg-tso-0001fnc-00017exit", "name": "GTNTT Aggregated exits"},
+      {"type": "total",          "idt": "bg-tso-0001fnc-00016exit", "name": "NGNT Aggregated exits"}
+    ],
+    "EE": [
+      {"type": "total",          "idt": "ee-tso-0001fnc-00037exit", "name": "Final consumers"}
+    ],
+    "HR": [
+      {"type": "total",          "idt": "hr-tso-0001fnc-00018exit", "name": "Final Consumers & Distribution"}
+    ],
+    "HU": [
+      {"type": "industry-power", "idt": "hu-tso-0001fnc-00200exit", "name": "Final consumers"},
+      {"type": "household",      "idt": "hu-tso-0001dis-00196exit", "name": "Aggregated distribution"}
+    ],
+    "IT": [
+      {"type": "household",      "idt": "it-tso-0001dis-00005exit", "name": "Distribution"},
+      {"type": "power",          "idt": "it-tso-0001fnc-00006exit", "name": "Thermal plants"},
+      {"type": "industry",       "idt": "it-tso-0001fnc-00005exit", "name": "Industrials"}
+    ],
+    "LU": [
+      {"type": "household",      "idt": "lu-tso-0001dis-00194exit", "name": "Public distribution"},
+      {"type": "industry-power", "idt": "lu-tso-0001fnc-00041exit", "name": "Industrial clients"}
+    ],
+    "LV": [
+      {"type": "total",          "idt": "lv-tso-0001fnc-00205exit", "name": "Domestic consumption"}
+    ],
+    "NL": [
+      {"type": "household",      "idt": "nl-tso-0001dis-00187exit", "name": "Local distribution companies"},
+      {"type": "industry",       "idt": "nl-tso-0001fnc-00014exit", "name": "Private distribution companies"},
+      {"type": "household",      "idt": "nl-tso-0001dis-00201exit", "name": "Local distribution companies (L-gas)"},
+      {"type": "household",      "idt": "nl-tso-0001dis-00202exit", "name": "Local distribution companies (H-gas)"},
+      {"type": "industry",       "idt": "nl-tso-0001fnc-00013exit", "name": "Industrial companies"},
+      {"type": "industry",       "idt": "nl-tso-0001fnc-00208exit", "name": "Industrial consumers (H-gas)"},
+      {"type": "industry",       "idt": "nl-tso-0001fnc-00209exit", "name": "Industrial consumers (L-gas)"},
+      {"type": "power",          "idt": "nl-tso-0001fnc-00210exit", "name": "Power (H-gas)"},
+      {"type": "power",          "idt": "nl-tso-0001fnc-00211exit", "name": "Power (L-gas)"}
+    ],
+    "PL": [
+      {"type": "total",          "idt": "pl-tso-0002fnc-00040exit", "name": "Final consumers (L-gas)"},
+      {"type": "total",          "idt": "pl-tso-0002fnc-00002exit", "name": "Final consumers (H-gas)"},
+      {"type": "total",          "idt": "pl-tso-0002dis-00193exit", "name": "Aggregated distribution (L-gas)"},
+      {"type": "total",          "idt": "pl-tso-0002dis-00013exit", "name": "Aggregated distribution (H-gas)"},
+      {"type": "total",          "idt": "cz-sso-0002dis-00195exit,pl-tso-0002dis-00195entry", "name": "From Czech storage"}
+    ],
+    "RO": [
+      {"type": "industry-power", "idt": "ro-tso-0001fnc-00010exit", "name": "Final consumers"},
+      {"type": "household",      "idt": "ro-tso-0001dis-00058exit", "name": "Distribution"}
+    ],
+    "SI": [
+      {"type": "total",          "idt": "si-tso-0001dis-00059exit", "name": "Distribution"}
+    ]
+  },
+  "_reconstruction_rules": {
+    "industry_from_industry_power_minus_power": ["HU", "LU", "RO"],
+    "total_is_sum_of_sectors": ["BE", "HU", "IT", "LU", "NL", "RO"],
+    "note": "For countries with only 'total' points (BG, EE, HR, LV, PL, SI) we enrich the split via gas_native_splits_helper (ENTSO-E power + Eurostat HH/Ind shares)."
+  }
+}
