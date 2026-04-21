@@ -84,7 +84,11 @@ function pickAll(text: string, regex: RegExp) {
 
 function parseGenerationPerTypeLatest(xml: string) {
   const timeSeriesBlocks = pickAll(xml, /<TimeSeries[\s\S]*?<\/TimeSeries>/g);
-  const byType: Record<string, number> = {};
+  // ENTSO-E can emit multiple TimeSeries with the same psrType (e.g. different
+  // businessType / production units). Summing their "latest" quantities can
+  // double-count the same physical generation and inflate totals (spikes).
+  // We take the max per psrType across blocks (conservative vs double-count).
+  const latestQtyByType: Record<string, number> = {};
   let bestTs: string | null = null;
 
   for (const m of timeSeriesBlocks) {
@@ -110,7 +114,9 @@ function parseGenerationPerTypeLatest(xml: string) {
     }
     if (latestPos < 0 || latestQty == null) continue;
 
-    byType[psrType] = (byType[psrType] || 0) + latestQty;
+    const prev = latestQtyByType[psrType];
+    latestQtyByType[psrType] =
+      prev == null ? latestQty : Math.max(prev, latestQty);
 
     if (Number.isFinite(startMs)) {
       const stepMinutes = resolution === "PT15M" ? 15 : resolution === "PT30M" ? 30 : 60;
@@ -118,6 +124,8 @@ function parseGenerationPerTypeLatest(xml: string) {
       if (!bestTs || Date.parse(ts) > Date.parse(bestTs)) bestTs = ts;
     }
   }
+
+  const byType: Record<string, number> = latestQtyByType;
 
   const renewablePsr = new Set(["B01", "B09", "B11", "B12", "B13", "B15", "B16", "B17", "B18", "B19"]);
   const total = Object.values(byType).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);

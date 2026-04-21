@@ -26,18 +26,12 @@
                 </a>
                 <a href="#" class="nav-item" data-page="energy-meter">
                     <span class="nav-icon">⚡</span>
-                    <span>EU energy meter</span>
+                    <span>EU electricity meter</span>
                 </a>
                 <a href="#" class="nav-item" data-page="gas-meter">
                     <span class="nav-icon">🔥</span>
                     <span>EU gas meter</span>
                 </a>
-            </div>
-            <div class="nav-section">
-                <div class="nav-section-header">Countries</div>
-                <div id="countryNavList" class="country-nav-list">
-                    <div class="nav-loading">Loading countries...</div>
-                </div>
             </div>
         </nav>
     </aside>
@@ -267,120 +261,240 @@
                 </div>
             </div>
 
-            <!-- Energy Meter Page -->
+            <!-- Electricity Meter Page -->
             <div id="energyMeterPage" class="page">
                 <div class="page-header">
-                    <h1>EU energy meter</h1>
-                    <p class="page-subtitle">Near real-time electricity renewable share (EU + EEA + UK) with historical filters</p>
+                    <h1>EU electricity meter</h1>
+                    <p class="page-subtitle">Near real-time renewable share (EU + EEA + UK) and total electricity generation (EU + EEA) — ENTSO‑E, with historical filters</p>
                 </div>
 
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon">🕒</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="energyLastUpdated">-</div>
-                            <div class="stat-label">Last updated</div>
+                <!-- Electricity meter tabs -->
+                <div class="em-tabs">
+                    <button class="em-tab-btn active" data-em-tab="renewable">Renewable energy</button>
+                    <button class="em-tab-btn" data-em-tab="electricity">Electricity</button>
+                </div>
+
+                <!-- Renewable energy tab -->
+                <div id="renewableEmTab" class="em-tab-pane active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🕒</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="energyLastUpdated">-</div>
+                                <div class="stat-label">Last updated</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌍</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="energyZones">-</div>
+                                <div class="stat-label">Zones</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌿</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="energyAvgRenewable">-</div>
+                                <div class="stat-label">Avg renewables</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🏭</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="energyAvgCO2">-</div>
+                                <div class="stat-label">Avg CO₂ intensity</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">🌍</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="energyZones">-</div>
-                            <div class="stat-label">Zones</div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU + EEA + UK aggregate renewable share (ENTSO‑E)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                                <button class="btn-secondary" id="energyEuRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="energyEuRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="energyEuRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="energyEuRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="energyEuRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="energyEuRange5yBtn">5y</button>
+                                <button class="btn-secondary" id="energyEuAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                            </div>
+                        </div>
+                        <div id="energyEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="energyEuChartTitle">EU — Renewable share (%)</h3>
+                            <div class="chart-container">
+                                <canvas id="energyEuChart"></canvas>
+                            </div>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">🌿</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="energyAvgRenewable">-</div>
-                            <div class="stat-label">Avg renewables</div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU renewable share map (latest)</h2>
+                            <div class="section-actions">
+                                <button class="btn-secondary" id="energyRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div id="energyMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div id="energyMapContainer" class="energy-map-card">
+                            <div class="chart-loading">Loading map...</div>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">🏭</div>
-                        <div class="stat-content">
-                            <div class="stat-value" id="energyAvgCO2">-</div>
-                            <div class="stat-label">Avg CO₂ intensity</div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Selected zone renewable share</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                                <button class="btn-secondary" id="energyRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="energyRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="energyRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="energyRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="energyRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="energyRange5yBtn">5y</button>
+                                <button class="btn-secondary" id="energyAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                            </div>
+                        </div>
+                        <div id="energyFranceStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="energyFranceChartTitle">Click a zone to chart</h3>
+                            <div class="chart-container">
+                                <canvas id="energyFranceChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Latest snapshot</h2>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Zone</th>
+                                        <th>Timestamp</th>
+                                        <th>Renewables %</th>
+                                        <th>CO₂ g/kWh</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="energyMeterTableBody">
+                                    <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
 
-                <div class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">EU + EEA + UK aggregate renewable share (ENTSO‑E)</h2>
-                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
-                            <button class="btn-secondary" id="energyEuRangeDayBtn">Day</button>
-                            <button class="btn-secondary" id="energyEuRangeWeekBtn">Week</button>
-                            <button class="btn-secondary" id="energyEuRangeMonthBtn">Month</button>
-                            <button class="btn-secondary" id="energyEuRange6mBtn">6m</button>
-                            <button class="btn-secondary" id="energyEuRange1yBtn">1y</button>
-                            <button class="btn-secondary" id="energyEuRange5yBtn">5y</button>
-                            <button class="btn-secondary" id="energyEuAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                <!-- Electricity tab (total generation) -->
+                <div id="electricityEmTab" class="em-tab-pane">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🕒</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="elecLastUpdated">-</div>
+                                <div class="stat-label">Last updated</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌍</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="elecZones">-</div>
+                                <div class="stat-label">Zones</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">⚡</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="elecEuTotal">-</div>
+                                <div class="stat-label">EU total generation</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📈</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="elecAvgZone">-</div>
+                                <div class="stat-label">Avg zone generation</div>
+                            </div>
                         </div>
                     </div>
-                    <div id="energyEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
-                    <div class="chart-card">
-                        <h3 id="energyEuChartTitle">EU — Renewable share (%)</h3>
-                        <div class="chart-container">
-                            <canvas id="energyEuChart"></canvas>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">EU renewable share map (latest)</h2>
-                        <div class="section-actions">
-                            <button class="btn-secondary" id="energyRefreshBtn">Refresh</button>
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU + EEA total electricity generation (ENTSO‑E)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                                <button class="btn-secondary" id="elecEuRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="elecEuRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="elecEuRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="elecEuRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="elecEuRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="elecEuRange5yBtn">5y</button>
+                            </div>
+                        </div>
+                        <div id="elecEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="elecEuChartTitle">EU — Total electricity generation (MW)</h3>
+                            <div class="chart-container">
+                                <canvas id="elecEuChart"></canvas>
+                            </div>
                         </div>
                     </div>
-                    <div id="energyMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
-                    <div id="energyMapContainer" class="energy-map-card">
-                        <div class="chart-loading">Loading map...</div>
-                    </div>
-                </div>
 
-                <div class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">Selected zone renewable share</h2>
-                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
-                            <button class="btn-secondary" id="energyRangeDayBtn">Day</button>
-                            <button class="btn-secondary" id="energyRangeWeekBtn">Week</button>
-                            <button class="btn-secondary" id="energyRangeMonthBtn">Month</button>
-                            <button class="btn-secondary" id="energyRange6mBtn">6m</button>
-                            <button class="btn-secondary" id="energyRange1yBtn">1y</button>
-                            <button class="btn-secondary" id="energyRange5yBtn">5y</button>
-                            <button class="btn-secondary" id="energyAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU electricity generation map (latest)</h2>
+                            <div class="section-actions">
+                                <button class="btn-secondary" id="elecRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div id="elecMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div id="elecMapContainer" class="energy-map-card">
+                            <div class="chart-loading">Loading map...</div>
                         </div>
                     </div>
-                    <div id="energyFranceStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
-                    <div class="chart-card">
-                        <h3 id="energyFranceChartTitle">Click a zone to chart</h3>
-                        <div class="chart-container">
-                            <canvas id="energyFranceChart"></canvas>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">Latest snapshot</h2>
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Selected zone total electricity generation</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                                <button class="btn-secondary" id="elecZoneRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="elecZoneRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="elecZoneRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="elecZoneRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="elecZoneRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="elecZoneRange5yBtn">5y</button>
+                            </div>
+                        </div>
+                        <div id="elecZoneStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="elecZoneChartTitle">Click a zone to chart</h3>
+                            <div class="chart-container">
+                                <canvas id="elecZoneChart"></canvas>
+                            </div>
+                        </div>
                     </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Zone</th>
-                                    <th>Timestamp</th>
-                                    <th>Renewables %</th>
-                                    <th>CO₂ g/kWh</th>
-                                    <th>Source</th>
-                                </tr>
-                            </thead>
-                            <tbody id="energyMeterTableBody">
-                                <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
-                            </tbody>
-                        </table>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Latest snapshot</h2>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Zone</th>
+                                        <th>Timestamp</th>
+                                        <th>Total (MW)</th>
+                                        <th>Renewable (MW)</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="elecMeterTableBody">
+                                    <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

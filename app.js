@@ -262,6 +262,27 @@ function setupNavigation() {
 // where I was"). Wrapped in try/catch because some browsers with strict
 // tracking prevention or private modes throw on any storage access.
 const LAST_PAGE_STORAGE_KEY = 'app.lastPage';
+const ELEC_METER_RANGES_KEY = 'app.elecMeterRanges';
+
+function readElecMeterRanges() {
+    try {
+        const raw = localStorage.getItem(ELEC_METER_RANGES_KEY);
+        if (!raw) return;
+        const j = JSON.parse(raw);
+        const ok = new Set(['day', 'week', 'month', '6m', '1y', '5y']);
+        if (j.elecEuRange && ok.has(j.elecEuRange)) elecEuRange = j.elecEuRange;
+        if (j.elecZoneRange && ok.has(j.elecZoneRange)) elecZoneRange = j.elecZoneRange;
+    } catch (_) { /* ignore */ }
+}
+
+function saveElecMeterRanges() {
+    try {
+        localStorage.setItem(ELEC_METER_RANGES_KEY, JSON.stringify({
+            elecEuRange,
+            elecZoneRange,
+        }));
+    } catch (_) { /* ignore */ }
+}
 function saveLastPageState(page, countryId = null, countryName = null) {
     try {
         // Preserve a previously-saved countryName when the caller didn't pass
@@ -319,7 +340,7 @@ function navigateToPage(page, countryId = null) {
     } else if (page === 'energy-meter') {
         document.getElementById('energyMeterPage')?.classList.add('active');
         document.querySelector('[data-page="energy-meter"]')?.classList.add('active');
-        document.getElementById('pageTitle').textContent = 'EU energy meter';
+        document.getElementById('pageTitle').textContent = 'EU electricity meter';
         loadEnergyMeterPage();
     } else if (page === 'gas-meter') {
         document.getElementById('gasMeterPage')?.classList.add('active');
@@ -345,6 +366,11 @@ function navigateToPage(page, countryId = null) {
 }
 
 async function loadEnergyMeterPage() {
+    // Bind the Renewable/Electricity tab switch once. The electricity-tab data
+    // is loaded lazily on first click.
+    setupElectricityMeterTabs();
+    readElecMeterRanges();
+
     const statusEl = document.getElementById('energyMeterStatus');
     const tbody = document.getElementById('energyMeterTableBody');
     const refreshBtn = document.getElementById('energyRefreshBtn');
@@ -475,7 +501,7 @@ async function loadEnergyMeterPage() {
 
             setStatus(`Loaded ${latestRows.length} zones.`);
         } catch (err) {
-            console.error('Energy Meter load failed:', err);
+            console.error('Electricity Meter load failed:', err);
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--error-color); padding: 24px;">Failed to load: ${escapeHtml(err.message || String(err))}</td></tr>`;
             setStatus('Failed to load.');
         }
@@ -615,9 +641,20 @@ function zoneToCountryIso2(zoneId) {
     return z;
 }
 
+// Europe GeoJSON often uses ISO2 "UK"; ENTSO-E bidding zones use "GB". Map lookups must align.
+function iso2GeoToDataKey(iso2) {
+    const c = String(iso2 || '').toUpperCase();
+    return c === 'UK' ? 'GB' : c;
+}
+
+function iso2GeoMatchesSelection(featureIso2, selectedIso2) {
+    return iso2GeoToDataKey(featureIso2) === iso2GeoToDataKey(selectedIso2);
+}
+
 function pickZoneForCountry(rows, iso2) {
     const c = String(iso2 || '').toUpperCase();
-    const candidates = rows.filter(r => zoneToCountryIso2(r.zone_id || r.country_code) === c);
+    const match = c === 'UK' ? 'GB' : c;
+    const candidates = rows.filter(r => zoneToCountryIso2(r.zone_id || r.country_code) === match);
     if (!candidates.length) return null;
     // Prefer "main" zones if present
     const preferred = {
@@ -950,7 +987,8 @@ async function renderEnergyGeoMap(container, rows) {
         if (iso2 === 'RU' || iso2 === 'BY') continue;
         if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
 
-        const val = byCountry[iso2]?.pct;
+        const dataKey = iso2GeoToDataKey(iso2);
+        const val = byCountry[dataKey]?.pct;
         const fill = Number.isFinite(val) ? mixColorRedToGreen(val) : 'rgba(148,163,184,0.18)';
 
         const geom = f.geometry;
@@ -976,12 +1014,12 @@ async function renderEnergyGeoMap(container, rows) {
         path.setAttribute('fill', fill);
         path.setAttribute('data-iso2', iso2);
         path.style.cursor = 'pointer';
-        if (selectedIso2 && iso2 === selectedIso2) {
+        if (selectedIso2 && iso2GeoMatchesSelection(iso2, selectedIso2)) {
             path.classList.add('is-selected');
         }
 
         path.addEventListener('mouseenter', () => {
-            const pct = byCountry[iso2]?.pct;
+            const pct = byCountry[dataKey]?.pct;
             tooltip.style.display = 'block';
             tooltip.textContent = `${iso2} — ${Number.isFinite(pct) ? pct.toFixed(1) + '%' : '—'}`;
         });
@@ -1419,6 +1457,918 @@ function setupEnergyEuAutoRefresh() {
         if (!pageActive) return;
         loadEnergyEuAggregateChart(energyEuRange);
     }, 60_000);
+}
+
+// =========================
+// Electricity tab (total generation, MW)
+// Reads the same energy_mix_snapshots table as the Renewable tab but pulls
+// raw->>'totalMw' (per zone) and raw->>'euTotalMw' (EU aggregate row).
+// =========================
+
+let elecEuChart = null;
+let elecEuRange = '1y';
+let elecEuChartLoadInFlight = null;
+
+let elecZoneChart = null;
+let elecZoneRange = 'day';
+let elecZoneChartLoadInFlight = null;
+
+let elecTabInited = false;
+let elecLatestRows = [];            // latest rows per zone with totalMw extracted
+let elecSelectedZone = null;        // separate from renewable selection so the tabs don't fight
+let elecSelectedSource = null;
+
+function fmtMwShort(mw) {
+    const n = Number(mw);
+    if (!Number.isFinite(n)) return '-';
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(2)} TW`;
+    if (abs >= 1_000) return `${(n / 1_000).toFixed(1)} GW`;
+    return `${Math.round(n)} MW`;
+}
+
+function setupElectricityMeterTabs() {
+    const tabButtons = document.querySelectorAll('#energyMeterPage .em-tab-btn');
+    if (!tabButtons.length) return;
+    tabButtons.forEach(btn => {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-em-tab');
+            switchElectricityMeterTab(target);
+        });
+    });
+}
+
+function switchElectricityMeterTab(target) {
+    const buttons = document.querySelectorAll('#energyMeterPage .em-tab-btn');
+    buttons.forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-em-tab') === target);
+    });
+    const panes = document.querySelectorAll('#energyMeterPage .em-tab-pane');
+    panes.forEach(p => p.classList.remove('active'));
+    if (target === 'electricity') {
+        document.getElementById('electricityEmTab')?.classList.add('active');
+        if (!elecTabInited) {
+            elecTabInited = true;
+            initElectricityTabControls();
+        }
+        loadElectricityTabData();
+    } else {
+        document.getElementById('renewableEmTab')?.classList.add('active');
+    }
+}
+
+function initElectricityTabControls() {
+    const bindEu = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            elecEuRange = range;
+            saveElecMeterRanges();
+            updateElecEuRangeButtonActive();
+            loadElecEuTotalChart(range);
+        });
+    };
+    bindEu('elecEuRangeDayBtn', 'day');
+    bindEu('elecEuRangeWeekBtn', 'week');
+    bindEu('elecEuRangeMonthBtn', 'month');
+    bindEu('elecEuRange6mBtn', '6m');
+    bindEu('elecEuRange1yBtn', '1y');
+    bindEu('elecEuRange5yBtn', '5y');
+
+    const bindZone = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            elecZoneRange = range;
+            saveElecMeterRanges();
+            updateElecZoneRangeButtonActive();
+            if (elecSelectedZone) loadElecZoneTotalChart(elecSelectedZone, range, elecSelectedSource);
+        });
+    };
+    bindZone('elecZoneRangeDayBtn', 'day');
+    bindZone('elecZoneRangeWeekBtn', 'week');
+    bindZone('elecZoneRangeMonthBtn', 'month');
+    bindZone('elecZoneRange6mBtn', '6m');
+    bindZone('elecZoneRange1yBtn', '1y');
+    bindZone('elecZoneRange5yBtn', '5y');
+
+    const refreshBtn = document.getElementById('elecRefreshBtn');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = '1';
+        refreshBtn.addEventListener('click', () => loadElectricityTabData(true));
+    }
+}
+
+function updateElecEuRangeButtonActive() {
+    const map = {
+        day: 'elecEuRangeDayBtn',
+        week: 'elecEuRangeWeekBtn',
+        month: 'elecEuRangeMonthBtn',
+        '6m': 'elecEuRange6mBtn',
+        '1y': 'elecEuRange1yBtn',
+        '5y': 'elecEuRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (elecEuRange === range) el.classList.add('active');
+        else el.classList.remove('active');
+    });
+}
+
+function updateElecZoneRangeButtonActive() {
+    const map = {
+        day: 'elecZoneRangeDayBtn',
+        week: 'elecZoneRangeWeekBtn',
+        month: 'elecZoneRangeMonthBtn',
+        '6m': 'elecZoneRange6mBtn',
+        '1y': 'elecZoneRange1yBtn',
+        '5y': 'elecZoneRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (elecZoneRange === range) el.classList.add('active');
+        else el.classList.remove('active');
+    });
+}
+
+async function loadElectricityTabData(forceRefresh = false) {
+    const statusEl = document.getElementById('elecMeterStatus');
+    const tbody = document.getElementById('elecMeterTableBody');
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+    if (!tbody) return;
+
+    try {
+        if (!supabase) throw new Error('Supabase client not initialized.');
+
+        setStatus('Fetching latest generation…');
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>';
+
+        // Pull the last 3 hours of snapshots and extract totalMw / renewableMw via JSONB projection.
+        const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+            .from('energy_mix_snapshots')
+            .select('id, zone_id, country_code, ts, source, totalMw:raw->>totalMw, totalMwAlt:raw->>total_mw, renewableMw:raw->>renewableMw, renewableMwAlt:raw->>renewable_mw, euTotalMw:raw->>euTotalMw, euTotalMwAlt:raw->>euTotal_mw')
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: false })
+            .limit(2000);
+        if (error) throw new Error(error.message);
+
+        const rowsRaw = Array.isArray(data) ? data : [];
+        // Normalize raw JSON field naming (some historical loads use snake_case).
+        const rows = rowsRaw.map(r => ({
+            ...r,
+            totalMw: r.totalMw ?? r.totalMwAlt ?? null,
+            renewableMw: r.renewableMw ?? r.renewableMwAlt ?? null,
+            euTotalMw: r.euTotalMw ?? r.euTotalMwAlt ?? null,
+        }));
+        // Separate EU aggregate row from per-zone rows.
+        const zoneRows = rows.filter(r => (r.zone_id || r.country_code) !== 'EU');
+        const euRows = rows.filter(r => (r.zone_id || r.country_code) === 'EU');
+        const latestByZone = dedupeLatestByZone(zoneRows);
+        latestByZone.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+
+        elecLatestRows = latestByZone;
+
+        if (!latestByZone.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">No data yet. Run ENTSO‑E ingestion.</td></tr>';
+            setStatus('No snapshots found.');
+            document.getElementById('elecLastUpdated').textContent = '-';
+            document.getElementById('elecZones').textContent = '0';
+            document.getElementById('elecEuTotal').textContent = '-';
+            document.getElementById('elecAvgZone').textContent = '-';
+            return;
+        }
+
+        // Stats
+        const newest = latestByZone.reduce((acc, r) => {
+            const t = new Date(r.ts).getTime();
+            return Number.isFinite(t) ? Math.max(acc, t) : acc;
+        }, 0);
+        const totals = latestByZone
+            .map(r => Number(r.totalMw))
+            .filter(v => Number.isFinite(v));
+        const avgZoneMw = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : null;
+        const latestEu = euRows.length
+            ? Number(euRows.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())[0].euTotalMw)
+            : null;
+
+        document.getElementById('elecLastUpdated').textContent = newest ? new Date(newest).toLocaleString() : '-';
+        document.getElementById('elecZones').textContent = String(latestByZone.length);
+        document.getElementById('elecEuTotal').textContent = fmtMwShort(latestEu);
+        document.getElementById('elecAvgZone').textContent = fmtMwShort(avgZoneMw);
+
+        // Table
+        tbody.innerHTML = latestByZone.map(r => {
+            const zone = r.zone_id || r.country_code || '-';
+            const ts = r.ts;
+            const total = Number(r.totalMw);
+            const ren = Number(r.renewableMw);
+            const src = r.source || '-';
+            const tsStr = ts ? new Date(ts).toLocaleString() : '-';
+            return `
+                <tr class="elec-row" data-zone="${escapeHtml(String(zone))}" data-source="${escapeHtml(String(src))}">
+                    <td>${escapeHtml(String(zone))}</td>
+                    <td>${escapeHtml(tsStr)}</td>
+                    <td>${escapeHtml(Number.isFinite(total) ? Math.round(total).toLocaleString() : '-')}</td>
+                    <td>${escapeHtml(Number.isFinite(ren) ? Math.round(ren).toLocaleString() : '-')}</td>
+                    <td>${escapeHtml(String(src))}</td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.querySelectorAll('tr.elec-row').forEach(tr => {
+            tr.addEventListener('click', () => {
+                const z = tr.getAttribute('data-zone');
+                const s = tr.getAttribute('data-source');
+                if (z) {
+                    elecSelectedZone = z;
+                    elecSelectedSource = s || null;
+                    loadElecZoneTotalChart(z, elecZoneRange, elecSelectedSource);
+                }
+            });
+        });
+
+        // Default selection: mirror renewable tab's selected zone if set, else FR.
+        if (!elecSelectedZone) {
+            const fr = latestByZone.find(r => (r.zone_id || r.country_code) === 'FR');
+            const pick = (energySelectedZone && latestByZone.find(r => (r.zone_id || r.country_code) === energySelectedZone))
+                || fr
+                || latestByZone[0];
+            if (pick) {
+                elecSelectedZone = pick.zone_id || pick.country_code;
+                elecSelectedSource = pick.source || 'entsoe';
+            }
+        }
+
+        // Map
+        renderElectricityMap(latestByZone);
+
+        // Charts
+        updateElecEuRangeButtonActive();
+        updateElecZoneRangeButtonActive();
+        await loadElecEuTotalChart(elecEuRange);
+        if (elecSelectedZone) await loadElecZoneTotalChart(elecSelectedZone, elecZoneRange, elecSelectedSource);
+
+        setStatus(`Loaded ${latestByZone.length} zones.`);
+    } catch (err) {
+        console.error('Electricity tab load failed:', err);
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--error-color); padding: 24px;">Failed to load: ${escapeHtml(err.message || String(err))}</td></tr>`;
+        if (statusEl) statusEl.textContent = 'Failed to load.';
+    }
+}
+
+function renderElectricityMap(latestRows) {
+    const container = document.getElementById('elecMapContainer');
+    if (!container) return;
+    const rows = (latestRows || []).filter(r => (r.zone_id || r.country_code) && Number.isFinite(Number(r.totalMw)));
+    if (!rows.length) {
+        container.innerHTML = '<div class="chart-loading">No ENTSO‑E generation data yet.</div>';
+        return;
+    }
+    renderElectricityGeoMap(container, rows).catch((e) => {
+        console.warn('Electricity geo map render failed, falling back to tile grid:', e);
+        renderElectricityTileGrid(container, rows);
+    });
+}
+
+function aggregateZoneMw(rows) {
+    // Build map of zone -> totalMw (latest value per zone) and country -> average/sum MW.
+    const byZone = {};
+    for (const r of rows) {
+        const z = String(r.zone_id || r.country_code || '').toUpperCase();
+        const mw = Number(r.totalMw);
+        if (!z || !Number.isFinite(mw)) continue;
+        byZone[z] = mw;
+    }
+    const byCountry = {};
+    for (const r of rows) {
+        const iso2 = zoneToCountryIso2(r.zone_id || r.country_code);
+        const mw = Number(r.totalMw);
+        if (!Number.isFinite(mw)) continue;
+        const prev = byCountry[iso2] || { sum: 0, n: 0, latestTs: null };
+        prev.sum += mw;
+        prev.n += 1;
+        const t = r.ts ? new Date(r.ts).getTime() : NaN;
+        if (Number.isFinite(t) && (!prev.latestTs || t > prev.latestTs)) prev.latestTs = t;
+        byCountry[iso2] = prev;
+    }
+    const byCountryOut = {};
+    Object.entries(byCountry).forEach(([iso2, v]) => {
+        // For countries with multiple bidding zones (DK/SE/NO) we sum so the country
+        // total reflects actual generation, not an average of zones.
+        byCountryOut[iso2] = { mw: v.sum, latestTs: v.latestTs ? new Date(v.latestTs).toISOString() : null };
+    });
+    return { byZone, byCountry: byCountryOut };
+}
+
+function renderElectricityTileGrid(container, rows) {
+    const values = rows.map(r => Number(r.totalMw)).filter(Number.isFinite);
+    const max = values.length ? Math.max(...values) : 1;
+    const legend = `
+        <div class="energy-map-legend">
+            <span>Low generation</span>
+            <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgba(219,234,254,1), rgba(29,78,216,1));"></div>
+            <span>High generation</span>
+        </div>
+    `;
+    const tiles = rows
+        .sort((a, b) => String(a.zone_id || a.country_code).localeCompare(String(b.zone_id || b.country_code)))
+        .map(r => {
+            const zone = String(r.zone_id || r.country_code);
+            const mw = Number(r.totalMw);
+            const t = Number.isFinite(mw) && max > 0 ? Math.max(0, Math.min(1, mw / max)) : 0;
+            const bg = Number.isFinite(mw) ? gasBlueScale(t) : 'rgba(148,163,184,0.25)';
+            const color = Number.isFinite(mw) ? gasBlueTextForBg(t) : 'rgba(15,23,42,0.8)';
+            const isActive = elecSelectedZone === zone;
+            const val = Number.isFinite(mw) ? fmtMwShort(mw) : '—';
+            return `
+                <div class="energy-map-tile ${isActive ? 'active' : ''}" data-zone="${escapeHtml(zone)}" style="background:${bg}; color:${color}">
+                    <div class="energy-map-tile-code">${escapeHtml(zone)}</div>
+                    <div class="energy-map-tile-value">${escapeHtml(val)}</div>
+                </div>
+            `;
+        })
+        .join('');
+    container.innerHTML = `${legend}<div class="energy-map-grid">${tiles}</div>`;
+    container.querySelectorAll('.energy-map-tile').forEach(el => {
+        el.addEventListener('click', () => {
+            const z = el.getAttribute('data-zone');
+            if (!z) return;
+            elecSelectedZone = z;
+            elecSelectedSource = 'entsoe';
+            loadElecZoneTotalChart(z, elecZoneRange, 'entsoe');
+            container.querySelectorAll('.energy-map-tile').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+        });
+    });
+}
+
+async function renderElectricityGeoMap(container, rows) {
+    const [countryGeo, zoneGeo] = await Promise.all([
+        fetchEuropeCountriesGeoJsonOnce(),
+        fetchEntsoeZonesGeoJsonOnce(),
+    ]);
+
+    const { byZone, byCountry } = aggregateZoneMw(rows);
+
+    // Scale: use max of country-level sums + standalone zones for the base layer;
+    // use max of zone values for the DK/SE/NO overlay.
+    const countryMax = Math.max(0, ...Object.values(byCountry).map(v => Number(v.mw)).filter(Number.isFinite));
+    const zoneMax = Math.max(0, ...Object.values(byZone).map(v => Number(v)).filter(Number.isFinite));
+
+    const width = 1400;
+    const height = 860;
+    const padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+
+    const selectedZone = String(elecSelectedZone || '').toUpperCase();
+    const selectedIso2 = zoneToCountryIso2(selectedZone);
+    const selectedLabel = selectedZone ? selectedZone : '—';
+    const selectedMw =
+        selectedZone && Object.prototype.hasOwnProperty.call(byZone, selectedZone)
+            ? byZone[selectedZone]
+            : (selectedIso2 && byCountry[selectedIso2]?.mw);
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Total generation map</div>
+                    <div class="energy-map-subtitle">Countries + bidding zones for DK/SE/NO (click to chart)</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(selectedLabel)}</div>
+                    </div>
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Generation</div>
+                        <div class="energy-map-chip-value">${Number.isFinite(selectedMw) ? escapeHtml(fmtMwShort(selectedMw)) : '—'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span>Low</span>
+                <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgba(219,234,254,1), rgba(29,78,216,1));"></div>
+                <span>High</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Total electricity generation map"></svg>
+            </div>
+        </div>
+    `;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    // Base countries (exclude DK/SE/NO; those get zone overlays)
+    const countryFeatures = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    for (const f of countryFeatures) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2) continue;
+        if (iso2 === 'RU' || iso2 === 'BY') continue;
+        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+
+        const dataKey = iso2GeoToDataKey(iso2);
+        const mw = byCountry[dataKey]?.mw;
+        const t = Number.isFinite(mw) && countryMax > 0 ? Math.max(0, Math.min(1, mw / countryMax)) : null;
+        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+
+        const geom = f.geometry;
+        if (!geom) continue;
+        const type = geom.type;
+        const coords = geom.coordinates;
+
+        const paths = [];
+        if (type === 'Polygon') {
+            paths.push(polygonToPath(coords[0], width, height, bounds, padding));
+        } else if (type === 'MultiPolygon') {
+            for (const poly of coords) {
+                if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+            }
+        } else {
+            continue;
+        }
+
+        const d = paths.join(' ');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-iso2', iso2);
+        path.style.cursor = 'pointer';
+        if (selectedIso2 && iso2GeoMatchesSelection(iso2, selectedIso2)) path.classList.add('is-selected');
+
+        path.addEventListener('mouseenter', () => {
+            const v = byCountry[dataKey]?.mw;
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${iso2} — ${Number.isFinite(v) ? fmtMwShort(v) : '—'}`;
+        });
+        path.addEventListener('mousemove', (e) => {
+            tooltip.style.left = `${e.clientX}px`;
+            tooltip.style.top = `${e.clientY}px`;
+        });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => {
+            const picked = pickZoneForCountry(rows, iso2);
+            if (!picked) return;
+            elecSelectedZone = String(picked.zone_id || picked.country_code);
+            elecSelectedSource = 'entsoe';
+            loadElecZoneTotalChart(elecSelectedZone, elecZoneRange, 'entsoe');
+            renderElectricityGeoMap(container, rows).catch(() => {});
+        });
+
+        svg.appendChild(path);
+    }
+
+    // Overlay DK/SE/NO bidding zones
+    const europeBbox = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+    const zoneFeaturesAll = Array.isArray(zoneGeo?.features) ? zoneGeo.features : [];
+    const overlayZones = new Set(['DK1', 'DK2', 'SE1', 'SE2', 'SE3', 'SE4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5']);
+    for (const f of zoneFeaturesAll) {
+        const zoneId = normalizeZoneNameToId(f?.properties?.zoneName);
+        if (!zoneId || !overlayZones.has(zoneId)) continue;
+        const geom = filterGeometryToBbox(f?.geometry, europeBbox);
+        if (!geom) continue;
+
+        const mw = byZone[zoneId];
+        const t = Number.isFinite(mw) && zoneMax > 0 ? Math.max(0, Math.min(1, mw / zoneMax)) : null;
+        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+
+        const type = geom.type;
+        const coords = geom.coordinates;
+        const paths = [];
+        if (type === 'Polygon') {
+            paths.push(polygonToPath(coords[0], width, height, bounds, padding));
+        } else if (type === 'MultiPolygon') {
+            for (const poly of coords) {
+                if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+            }
+        } else {
+            continue;
+        }
+
+        const d = paths.join(' ');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-zone', zoneId);
+        path.style.cursor = 'pointer';
+        path.classList.add('bz-overlay');
+        if (selectedZone && zoneId === selectedZone) path.classList.add('is-selected');
+
+        path.addEventListener('mouseenter', () => {
+            const v = byZone[zoneId];
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${zoneId} — ${Number.isFinite(v) ? fmtMwShort(v) : '—'}`;
+        });
+        path.addEventListener('mousemove', (e) => {
+            tooltip.style.left = `${e.clientX}px`;
+            tooltip.style.top = `${e.clientY}px`;
+        });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => {
+            elecSelectedZone = zoneId;
+            elecSelectedSource = 'entsoe';
+            loadElecZoneTotalChart(elecSelectedZone, elecZoneRange, 'entsoe');
+            renderElectricityGeoMap(container, rows).catch(() => {});
+        });
+
+        svg.appendChild(path);
+    }
+}
+
+/**
+ * EU total generation time series. Mirrors the Renewable tab: prefers materialized
+ * views (same cadence as energy_eu_*_mv) so 6m/1y/5y cover the full window.
+ * Raw snapshots are ~15 min; a naive .limit(5000) only spans ~52 days.
+ */
+async function elecFetchEuTotalSeries(range) {
+    const since = euRangeToSinceIso(range);
+    const useWeekly = range === '5y';
+    const useDaily = range === '6m' || range === '1y';
+    const use15m = range === 'day' || range === 'week' || range === 'month';
+    const maxPoints =
+        useWeekly ? 400 :
+        useDaily ? 900 :
+        range === 'month' ? 3200 : 2000;
+
+    const table = useWeekly
+        ? 'energy_eu_total_weekly_mv'
+        : useDaily
+        ? 'energy_eu_total_daily_mv'
+        : 'energy_eu_total_15m_mv';
+
+    const { data, error } = await supabase
+        .from(table)
+        .select('ts, total_mw')
+        .gte('ts', since)
+        .order('ts', { ascending: false })
+        .limit(maxPoints);
+
+    // MVs only contain history that exists in energy_mix_snapshots. A "5y" chart
+    // can still show only a few weeks if the MV was built from a short snapshot
+    // history — treat sparse MVs as a miss and use raw rows (same limitation).
+    const mvSparse =
+        (range === '5y' && Array.isArray(data) && data.length > 0 && data.length < 40) ||
+        ((range === '1y' || range === '6m') && Array.isArray(data) && data.length > 0 && data.length < 45);
+
+    if (!error && Array.isArray(data) && data.length && !mvSparse) {
+        const rows = data.slice().reverse();
+        const points = rows
+            .filter(r => r.ts && Number.isFinite(Number(r.total_mw)))
+            .map(r => ({ ts: r.ts, y: Number(r.total_mw) }));
+        return {
+            points,
+            labelDaily: useWeekly || useDaily,
+            source: 'mv',
+        };
+    }
+
+    // Fallback: paginate raw EU rows (install + refresh electricity_meter_total.sql MVs for speed).
+    const rows = await gasFetchAllPaged(() =>
+        supabase
+            .from('energy_mix_snapshots')
+            .select('ts, euTotalMw:raw->>euTotalMw')
+            .eq('source', 'entsoe')
+            .eq('zone_id', 'EU')
+            .gte('ts', since)
+            .order('ts', { ascending: true })
+    );
+    const dedup = new Map();
+    for (const r of rows) {
+        if (!r.ts || !Number.isFinite(Number(r.euTotalMw))) continue;
+        dedup.set(String(r.ts), { ts: r.ts, y: Number(r.euTotalMw) });
+    }
+    const raw = Array.from(dedup.values()).sort(
+        (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime()
+    );
+    const bucket = useWeekly ? 'week' : useDaily ? 'day' : null;
+    const points = bucketPoints(raw, bucket);
+    return {
+        points,
+        labelDaily: !!(useWeekly || useDaily),
+        source: 'snapshots',
+    };
+}
+
+async function elecFetchZoneTotalSeries(zone, range, source) {
+    const since = rangeToSinceIso(range);
+    const useWeekly = range === '5y';
+    const useDaily = range === '6m' || range === '1y';
+    const maxPoints =
+        useWeekly ? 400 :
+        useDaily ? 900 :
+        range === 'month' ? 3200 : 2000;
+
+    if (useWeekly || useDaily) {
+        const tbl = useWeekly ? 'energy_zone_total_weekly' : 'energy_zone_total_daily';
+        let q = supabase
+            .from(tbl)
+            .select('ts, total_mw')
+            .eq('zone_id', zone)
+            .gte('ts', since)
+            .order('ts', { ascending: false })
+            .limit(maxPoints);
+        if (source) q = q.eq('source', source);
+        const { data, error } = await q;
+        if (!error && Array.isArray(data) && data.length) {
+            const rows = data.slice().reverse();
+            const points = rows
+                .filter(r => r.ts && Number.isFinite(Number(r.total_mw)))
+                .map(r => ({ ts: r.ts, y: Number(r.total_mw) }));
+            return { points, labelDaily: true, source: 'view' };
+        }
+    }
+
+    const rows = await gasFetchAllPaged(() => {
+        let q = supabase
+            .from('energy_mix_snapshots')
+            .select('ts, totalMw:raw->>totalMw, totalMwAlt:raw->>total_mw')
+            .eq('zone_id', zone)
+            .gte('ts', since)
+            .order('ts', { ascending: true });
+        if (source) q = q.eq('source', source);
+        return q;
+    });
+    const raw = rows
+        .map(r => ({ ts: r.ts, y: Number(r.totalMw ?? r.totalMwAlt) }))
+        .filter(r => r.ts && Number.isFinite(Number(r.y)));
+    const bucket = useWeekly ? 'week' : useDaily ? 'day' : null;
+    const points = bucketPoints(raw, bucket);
+    return {
+        points,
+        labelDaily: !!(useWeekly || useDaily),
+        source: 'snapshots',
+    };
+}
+
+async function loadElecEuTotalChart(range) {
+    if (elecEuChartLoadInFlight) return await elecEuChartLoadInFlight;
+
+    elecEuChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('elecEuStatus');
+        const titleEl = document.getElementById('elecEuChartTitle');
+        const canvas = document.getElementById('elecEuChart');
+        if (!canvas) return;
+
+        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+
+            setStatus(`Loading EU generation (${range})…`);
+            if (titleEl) titleEl.textContent = 'EU — Total electricity generation (MW)';
+
+            const { points: rawPoints, labelDaily, source: src } = await elecFetchEuTotalSeries(range);
+            const points = elecDropExtremeSpike(rawPoints);
+
+            const labels = points.map(p => {
+                const d = new Date(p.ts);
+                if (Number.isNaN(d.getTime())) return String(p.ts);
+                if (labelDaily) return d.toLocaleDateString();
+                return d.toLocaleString();
+            });
+            const series = points.map(p => p.y);
+
+            if (!points.length) {
+                setStatus('No EU generation data yet in selected range.');
+            } else {
+                const last = points[points.length - 1];
+                const lastD = new Date(last.ts);
+                let msg = `Last: ${fmtMwShort(last.y)} @ ${Number.isNaN(lastD.getTime()) ? last.ts : lastD.toLocaleString()}`;
+                if (src === 'snapshots') {
+                    msg += ' · Using raw EU rows (run electricity_meter_total.sql + refresh MVs for faster charts).';
+                }
+                setStatus(msg);
+            }
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            if (elecEuChart) { try { elecEuChart.destroy(); } catch (_) {} elecEuChart = null; }
+
+            const pointRadius = series.length <= 2 ? 3 : 0;
+            elecEuChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'EU total generation (MW)',
+                        data: series,
+                        borderColor: '#1d4ed8',
+                        backgroundColor: 'rgba(29, 78, 216, 0.14)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius,
+                        borderWidth: 2,
+                    }],
+                    labels,
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    parsing: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: { label: (ctx) => fmtMwShort(Number(ctx.parsed.y)) },
+                        },
+                    },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: (v) => fmtMwShort(Number(v)) },
+                            grid: { color: 'rgba(148, 163, 184, 0.25)' },
+                        },
+                    },
+                },
+            });
+        } catch (err) {
+            console.error('Electricity EU chart load failed:', err);
+            if (statusEl) statusEl.textContent = `Failed: ${err.message || String(err)}`;
+        }
+    })();
+
+    try { return await elecEuChartLoadInFlight; }
+    finally { elecEuChartLoadInFlight = null; }
+}
+
+async function loadElecZoneTotalChart(zone, range, source = null) {
+    if (elecZoneChartLoadInFlight) return await elecZoneChartLoadInFlight;
+
+    elecZoneChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('elecZoneStatus');
+        const titleEl = document.getElementById('elecZoneChartTitle');
+        const canvas = document.getElementById('elecZoneChart');
+        if (!canvas) return;
+
+        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+            setStatus(`Loading ${zone} generation (${range})…`);
+            if (titleEl) titleEl.textContent = `${zone} — Total generation (MW)${source ? ` [${source}]` : ''}`;
+
+            const { points: rawPoints, labelDaily, source: zsrc } = await elecFetchZoneTotalSeries(zone, range, source);
+            const points = elecDropExtremeSpike(rawPoints);
+
+            const labels = points.map(p => {
+                const d = new Date(p.ts);
+                if (Number.isNaN(d.getTime())) return String(p.ts);
+                if (labelDaily) return d.toLocaleDateString();
+                return d.toLocaleString();
+            });
+            const series = points.map(p => p.y);
+
+            if (!points.length) {
+                setStatus(`No generation data for ${zone} in selected range.`);
+            } else {
+                const last = points[points.length - 1];
+                const lastD = new Date(last.ts);
+                let msg = `Last: ${fmtMwShort(last.y)} @ ${Number.isNaN(lastD.getTime()) ? last.ts : lastD.toLocaleString()}`;
+                if (zsrc === 'snapshots' && (range === '6m' || range === '1y' || range === '5y')) {
+                    msg += ' · Using raw snapshots (ensure energy_zone_total_* views exist for full-range speed).';
+                }
+                setStatus(msg);
+            }
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            if (elecZoneChart) { try { elecZoneChart.destroy(); } catch (_) {} elecZoneChart = null; }
+
+            const pointRadius = series.length <= 2 ? 3 : 0;
+            elecZoneChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Total generation (MW)',
+                        data: series,
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius,
+                        borderWidth: 2,
+                    }],
+                    labels,
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    parsing: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: { label: (ctx) => fmtMwShort(Number(ctx.parsed.y)) },
+                        },
+                    },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: (v) => fmtMwShort(Number(v)) },
+                            grid: { color: 'rgba(148, 163, 184, 0.25)' },
+                        },
+                    },
+                },
+            });
+        } catch (err) {
+            console.error('Electricity zone chart load failed:', err);
+            if (statusEl) statusEl.textContent = `Failed: ${err.message || String(err)}`;
+        }
+    })();
+
+    try { return await elecZoneChartLoadInFlight; }
+    finally { elecZoneChartLoadInFlight = null; }
+}
+
+// Bucket raw {ts, y} points into day/week averages. When bucket is null, returns input unchanged.
+function bucketPoints(points, bucket) {
+    if (!bucket || !points.length) return points;
+    const keyer = (ts) => {
+        const d = new Date(ts);
+        if (Number.isNaN(d.getTime())) return String(ts);
+        if (bucket === 'day') {
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+        }
+        if (bucket === 'week') {
+            // ISO week: snap to Monday 00:00 UTC
+            const day = (d.getUTCDay() + 6) % 7; // Mon=0..Sun=6
+            const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day));
+            return monday.toISOString();
+        }
+        return String(ts);
+    };
+    const agg = new Map();
+    for (const p of points) {
+        const k = keyer(p.ts);
+        const prev = agg.get(k) || { sum: 0, n: 0 };
+        prev.sum += Number(p.y);
+        prev.n += 1;
+        agg.set(k, prev);
+    }
+    const out = Array.from(agg.entries())
+        .map(([ts, v]) => ({ ts, y: v.n ? v.sum / v.n : 0 }))
+        .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+    return out;
+}
+
+// Drop a single-point, extreme outlier (e.g. the recurring "15th spike") so charts remain readable.
+// This is display-only and does not modify stored data.
+function elecDropExtremeSpike(points) {
+    const pts = Array.isArray(points) ? points.slice() : [];
+    if (pts.length < 8) return pts;
+    const ys = pts.map(p => Number(p.y)).filter(Number.isFinite).sort((a, b) => a - b);
+    if (ys.length < 8) return pts;
+    const median = ys[Math.floor(ys.length / 2)];
+    if (!Number.isFinite(median) || median <= 0) return pts;
+
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+        const y = Number(pts[i].y);
+        if (!Number.isFinite(y)) continue;
+        const prev = i > 0 ? Number(pts[i - 1].y) : NaN;
+        const next = i + 1 < pts.length ? Number(pts[i + 1].y) : NaN;
+        const neighborMax = Math.max(
+            Number.isFinite(prev) ? prev : -Infinity,
+            Number.isFinite(next) ? next : -Infinity
+        );
+        const neighborOk = Number.isFinite(neighborMax) && neighborMax > 0;
+        const isSpike = y > median * 2.5 && (!neighborOk || y > neighborMax * 1.8);
+        if (isSpike) continue;
+        out.push(pts[i]);
+    }
+    return out.length ? out : pts;
 }
 
 // =========================
@@ -3762,18 +4712,21 @@ async function loadCountriesGrid() {
 }
 
 // Load country navigation
+// The sidebar "Countries" section was removed (countries are accessible via the
+// dashboard's Countries Overview grid). This function is kept as a no-op in case
+// the container is re-introduced later.
 async function loadCountryNavigation() {
+    const container = document.getElementById('countryNavList');
+    if (!container) return;
     try {
         const { data: countries, error } = await supabase
             .from('countries')
             .select('*')
             .order('name');
-        
+
         if (error) throw error;
-        
-        const container = document.getElementById('countryNavList');
+
         container.innerHTML = '';
-        
         countries.forEach(country => {
             const item = document.createElement('div');
             item.className = 'country-nav-item';

@@ -983,13 +983,51 @@ body {
     background: linear-gradient(180deg, rgba(38, 41, 88, 0.04), rgba(38, 41, 88, 0.00));
 }
 
-/* Make the Energy Meter feel more "dashboard grade" */
+/* Make the Electricity Meter feel more "dashboard grade" */
 #energyMeterPage .chart-container {
     height: 420px;
 }
 
 #energyMeterPage .energy-map-card {
     padding: 20px;
+}
+
+/* Electricity meter tabs (scoped to avoid colliding with country-page .tab-btn) */
+#energyMeterPage .em-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 2px solid var(--border-color);
+    margin: 0 0 24px 0;
+}
+
+#energyMeterPage .em-tab-btn {
+    padding: 12px 24px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+
+#energyMeterPage .em-tab-btn:hover {
+    color: var(--primary-color);
+}
+
+#energyMeterPage .em-tab-btn.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+}
+
+#energyMeterPage .em-tab-pane {
+    display: none;
+}
+
+#energyMeterPage .em-tab-pane.active {
+    display: block;
 }
 
 /* Energy map */
