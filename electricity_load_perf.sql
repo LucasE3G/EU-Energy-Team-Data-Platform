@@ -60,3 +60,12 @@ group by 1;
 create index if not exists electricity_eu_load_weekly_mv_ts_desc
   on public.electricity_eu_load_weekly_mv (ts desc);
 
+-- Allow anon reads (PostgREST) for public dashboard charts.
+-- Tables have RLS policies; views/MVs need explicit grants.
+grant select on public.electricity_load_snapshots to anon;
+grant select on public.electricity_load_daily to anon;
+grant select on public.electricity_load_weekly to anon;
+grant select on public.electricity_eu_load_15m_mv to anon;
+grant select on public.electricity_eu_load_daily_mv to anon;
+grant select on public.electricity_eu_load_weekly_mv to anon;
+

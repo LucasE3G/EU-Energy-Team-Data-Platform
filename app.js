@@ -1753,7 +1753,9 @@ async function loadDemandTabData(forceRefresh = false) {
         setStatus('Fetching latest demand snapshot…');
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>';
 
-        const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        // Load data updates can lag by a day or two depending on ingestion/backfill cadence.
+        // Use a wider window and then dedupe to "latest per zone".
+        const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
         const { data, error } = await supabase
             .from('electricity_load_snapshots')
             .select('id, zone_id, country_code, ts, load_mw, source')
@@ -1770,7 +1772,7 @@ async function loadDemandTabData(forceRefresh = false) {
 
         if (!latestByZone.length) {
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 24px;">No demand data yet. Run ENTSO‑E load ingestion.</td></tr>';
-            setStatus('No snapshots found.');
+            setStatus('No demand snapshots found in the last 14 days.');
             document.getElementById('loadLastUpdated').textContent = '-';
             document.getElementById('loadZones').textContent = '0';
             document.getElementById('loadEuTotal').textContent = '-';
@@ -1851,13 +1853,251 @@ function renderLoadMap(latestRows) {
         container.innerHTML = '<div class="chart-loading">No ENTSO‑E load data yet.</div>';
         return;
     }
-    // Reuse the electricity geo renderer by mapping to the fields it expects.
-    // (It uses r.totalMw and zone_id/country_code + ts.)
-    const mapped = rows.map(r => ({ ...r, totalMw: Number(r.load_mw) }));
-    renderElectricityGeoMap(container, mapped).catch((e) => {
+    renderLoadGeoMap(container, rows).catch((e) => {
         console.warn('Load geo map render failed, falling back to tile grid:', e);
-        renderElectricityTileGrid(container, mapped);
+        renderLoadTileGrid(container, rows);
     });
+}
+
+function renderLoadTileGrid(container, rows) {
+    const values = rows.map(r => Number(r.load_mw)).filter(Number.isFinite);
+    const max = values.length ? Math.max(...values) : 1;
+    const legend = `
+        <div class="energy-map-legend">
+            <span>Low demand</span>
+            <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgba(219,234,254,1), rgba(2,132,199,1));"></div>
+            <span>High demand</span>
+        </div>
+    `;
+    const tiles = rows
+        .sort((a, b) => String(a.zone_id || a.country_code).localeCompare(String(b.zone_id || b.country_code)))
+        .map(r => {
+            const zone = String(r.zone_id || r.country_code);
+            const mw = Number(r.load_mw);
+            const t = Number.isFinite(mw) && max > 0 ? Math.max(0, Math.min(1, mw / max)) : 0;
+            const bg = Number.isFinite(mw) ? gasBlueScale(t) : 'rgba(148,163,184,0.25)';
+            const color = Number.isFinite(mw) ? gasBlueTextForBg(t) : 'rgba(15,23,42,0.8)';
+            const isActive = String(loadSelectedZone || '').toUpperCase() === zone.toUpperCase();
+            const val = Number.isFinite(mw) ? fmtMwShort(mw) : '—';
+            return `
+                <div class="energy-map-tile ${isActive ? 'active' : ''}" data-zone="${escapeHtml(zone)}" style="background:${bg}; color:${color}">
+                    <div class="energy-map-tile-code">${escapeHtml(zone)}</div>
+                    <div class="energy-map-tile-value">${escapeHtml(val)}</div>
+                </div>
+            `;
+        })
+        .join('');
+    container.innerHTML = `${legend}<div class="energy-map-grid">${tiles}</div>`;
+    container.querySelectorAll('.energy-map-tile').forEach(el => {
+        el.addEventListener('click', () => {
+            const z = el.getAttribute('data-zone');
+            if (!z) return;
+            loadSelectedZone = z;
+            loadSelectedSource = 'entsoe';
+            updateLoadZoneRangeButtonActive();
+            loadLoadZoneChart(z, loadZoneRange, 'entsoe');
+            container.querySelectorAll('.energy-map-tile').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+        });
+    });
+}
+
+function aggregateLoadMw(rows) {
+    const byZone = {};
+    for (const r of rows) {
+        const z = String(r.zone_id || r.country_code || '').toUpperCase();
+        const mw = Number(r.load_mw);
+        if (!z || !Number.isFinite(mw)) continue;
+        byZone[z] = mw;
+    }
+    const byCountry = {};
+    for (const r of rows) {
+        const iso2 = zoneToCountryIso2(r.zone_id || r.country_code);
+        const mw = Number(r.load_mw);
+        if (!Number.isFinite(mw)) continue;
+        const prev = byCountry[iso2] || { sum: 0, latestTs: null };
+        prev.sum += mw;
+        const t = r.ts ? new Date(r.ts).getTime() : NaN;
+        if (Number.isFinite(t) && (!prev.latestTs || t > prev.latestTs)) prev.latestTs = t;
+        byCountry[iso2] = prev;
+    }
+    const byCountryOut = {};
+    Object.entries(byCountry).forEach(([iso2, v]) => {
+        byCountryOut[iso2] = { mw: v.sum, latestTs: v.latestTs ? new Date(v.latestTs).toISOString() : null };
+    });
+    return { byZone, byCountry: byCountryOut };
+}
+
+async function renderLoadGeoMap(container, rows) {
+    const [countryGeo, zoneGeo] = await Promise.all([
+        fetchEuropeCountriesGeoJsonOnce(),
+        fetchEntsoeZonesGeoJsonOnce(),
+    ]);
+
+    const { byZone, byCountry } = aggregateLoadMw(rows);
+    const countryMax = Math.max(0, ...Object.values(byCountry).map(v => Number(v.mw)).filter(Number.isFinite));
+    const zoneMax = Math.max(0, ...Object.values(byZone).map(v => Number(v)).filter(Number.isFinite));
+
+    const width = 1400;
+    const height = 860;
+    const padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+
+    const selectedZone = String(loadSelectedZone || '').toUpperCase();
+    const selectedIso2 = zoneToCountryIso2(selectedZone);
+    const selectedLabel = selectedZone ? selectedZone : '—';
+    const selectedMw =
+        selectedZone && Object.prototype.hasOwnProperty.call(byZone, selectedZone)
+            ? byZone[selectedZone]
+            : (selectedIso2 && byCountry[iso2GeoToDataKey(selectedIso2)]?.mw);
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Electricity demand map</div>
+                    <div class="energy-map-subtitle">Countries + bidding zones for DK/SE/NO (click to chart)</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(selectedLabel)}</div>
+                    </div>
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Demand</div>
+                        <div class="energy-map-chip-value">${Number.isFinite(selectedMw) ? escapeHtml(fmtMwShort(selectedMw)) : '—'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span>Low</span>
+                <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgba(219,234,254,1), rgba(2,132,199,1));"></div>
+                <span>High</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Electricity demand map"></svg>
+            </div>
+        </div>
+    `;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    const countryFeatures = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    for (const f of countryFeatures) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2) continue;
+        if (iso2 === 'RU' || iso2 === 'BY') continue;
+        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+
+        const dataKey = iso2GeoToDataKey(iso2);
+        const mw = byCountry[dataKey]?.mw;
+        const t = Number.isFinite(mw) && countryMax > 0 ? Math.max(0, Math.min(1, mw / countryMax)) : null;
+        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+
+        const geom = f.geometry;
+        if (!geom) continue;
+        const type = geom.type;
+        const coords = geom.coordinates;
+
+        const paths = [];
+        if (type === 'Polygon') {
+            paths.push(polygonToPath(coords[0], width, height, bounds, padding));
+        } else if (type === 'MultiPolygon') {
+            for (const poly of coords) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+
+        const d = paths.join(' ');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-iso2', iso2);
+        path.style.cursor = 'pointer';
+        if (selectedIso2 && iso2GeoMatchesSelection(iso2, selectedIso2)) path.classList.add('is-selected');
+
+        path.addEventListener('mouseenter', () => {
+            const v = byCountry[dataKey]?.mw;
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${iso2} — ${Number.isFinite(v) ? fmtMwShort(v) : '—'}`;
+        });
+        path.addEventListener('mousemove', (e) => {
+            tooltip.style.left = `${e.clientX}px`;
+            tooltip.style.top = `${e.clientY}px`;
+        });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => {
+            const picked = pickZoneForCountry(rows, iso2);
+            if (!picked) return;
+            loadSelectedZone = String(picked.zone_id || picked.country_code);
+            loadSelectedSource = 'entsoe';
+            updateLoadZoneRangeButtonActive();
+            loadLoadZoneChart(loadSelectedZone, loadZoneRange, 'entsoe');
+            renderLoadGeoMap(container, rows).catch(() => {});
+        });
+
+        svg.appendChild(path);
+    }
+
+    // Overlay DK/SE/NO bidding zones (same geometry as generation map)
+    const europeBbox = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+    const zoneFeaturesAll = Array.isArray(zoneGeo?.features) ? zoneGeo.features : [];
+    const overlayZones = new Set(['DK1', 'DK2', 'SE1', 'SE2', 'SE3', 'SE4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5']);
+    for (const f of zoneFeaturesAll) {
+        const zoneId = normalizeZoneNameToId(f?.properties?.zoneName);
+        if (!zoneId || !overlayZones.has(zoneId)) continue;
+        const geom = filterGeometryToBbox(f?.geometry, europeBbox);
+        if (!geom) continue;
+
+        const mw = byZone[zoneId];
+        const t = Number.isFinite(mw) && zoneMax > 0 ? Math.max(0, Math.min(1, mw / zoneMax)) : null;
+        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+
+        const type = geom.type;
+        const coords = geom.coordinates;
+        const paths = [];
+        if (type === 'Polygon') {
+            paths.push(polygonToPath(coords[0], width, height, bounds, padding));
+        } else if (type === 'MultiPolygon') {
+            for (const poly of coords) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+
+        const d = paths.join(' ');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-zone', zoneId);
+        path.style.cursor = 'pointer';
+        path.classList.add('bz-overlay');
+        if (selectedZone && zoneId === selectedZone) path.classList.add('is-selected');
+
+        path.addEventListener('mouseenter', () => {
+            const v = byZone[zoneId];
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${zoneId} — ${Number.isFinite(v) ? fmtMwShort(v) : '—'}`;
+        });
+        path.addEventListener('mousemove', (e) => {
+            tooltip.style.left = `${e.clientX}px`;
+            tooltip.style.top = `${e.clientY}px`;
+        });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => {
+            loadSelectedZone = zoneId;
+            loadSelectedSource = 'entsoe';
+            updateLoadZoneRangeButtonActive();
+            loadLoadZoneChart(loadSelectedZone, loadZoneRange, 'entsoe');
+            renderLoadGeoMap(container, rows).catch(() => {});
+        });
+
+        svg.appendChild(path);
+    }
 }
 
 async function loadLoadEuChart(range) {
@@ -1882,7 +2122,7 @@ async function loadLoadEuChart(range) {
 
             let points;
             if (useRaw) {
-                // No EU load aggregate MV — fetch per-zone snapshots and sum by timestamp.
+                // Online behaviour: sum per-zone snapshots by timestamp (15m-ish) for day/week.
                 const rawRows = await gasFetchAllPaged(() =>
                     supabase
                         .from('electricity_load_snapshots')
@@ -1900,6 +2140,7 @@ async function loadLoadEuChart(range) {
                     .sort((a, b) => a[0] < b[0] ? -1 : 1)
                     .map(([ts, y]) => ({ ts, y }));
             } else {
+                // Online behaviour: use precomputed energy (MWh) tables and display as GWh.
                 const table = useWeekly ? 'electricity_eu_load_weekly_mwh' : 'electricity_eu_load_daily_mwh';
                 const { data, error } = await supabase
                     .from(table)
