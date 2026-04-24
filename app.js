@@ -232,18 +232,46 @@ function setupNavigation() {
     // Modal close
     document.getElementById('modalClose')?.addEventListener('click', closeModal);
     document.getElementById('measureModalClose')?.addEventListener('click', closeMeasureModal);
-    
+
     // Close modal on outside click
     document.getElementById('dataModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'dataModal') {
             closeModal();
         }
     });
-    
+
     document.getElementById('measureModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'measureModal') {
             closeMeasureModal();
         }
+    });
+
+    // Chart info modal
+    document.getElementById('chartInfoClose')?.addEventListener('click', () => {
+        document.getElementById('chartInfoModal')?.classList.remove('active');
+    });
+    document.getElementById('chartInfoModal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'chartInfoModal') {
+            document.getElementById('chartInfoModal').classList.remove('active');
+        }
+    });
+    document.querySelectorAll('.chart-info-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const chartId = btn.getAttribute('data-chart');
+            if (chartId) showChartInfo(chartId);
+        });
+    });
+
+    // Contact form
+    document.getElementById('contactForm')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = (document.getElementById('contactName')?.value || '').trim();
+        const email = (document.getElementById('contactEmail')?.value || '').trim();
+        const subject = (document.getElementById('contactSubject')?.value || '').trim() || 'Message from EU Energy Data Platform';
+        const message = (document.getElementById('contactMessage')?.value || '').trim();
+        const body = encodeURIComponent(`From: ${name} <${email}>\n\n${message}`);
+        const mailtoUrl = `mailto:lucas.deschenes@e3g.org?subject=${encodeURIComponent(subject)}&body=${body}`;
+        window.location.href = mailtoUrl;
     });
     
     // Comparison table selector
@@ -312,7 +340,7 @@ function readLastPageState() {
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed.page !== 'string') return null;
-        const allowed = new Set(['dashboard', 'energy-meter', 'gas-meter', 'country']);
+        const allowed = new Set(['dashboard', 'energy-meter', 'gas-meter', 'country', 'contact', 'about', 'terms']);
         if (!allowed.has(parsed.page)) return null;
         if (parsed.page === 'country' && !parsed.countryId) return null;
         return parsed;
@@ -351,6 +379,18 @@ function navigateToPage(page, countryId = null) {
         document.getElementById('countryPage').classList.add('active');
         document.getElementById('pageTitle').textContent = 'National renovation building plans';
         loadCountryPage(countryId);
+    } else if (page === 'contact') {
+        document.getElementById('contactPage')?.classList.add('active');
+        document.querySelector('[data-page="contact"]')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'Contact';
+    } else if (page === 'about') {
+        document.getElementById('aboutPage')?.classList.add('active');
+        document.querySelector('[data-page="about"]')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'About & Sitemap';
+    } else if (page === 'terms') {
+        document.getElementById('termsPage')?.classList.add('active');
+        document.querySelector('[data-page="terms"]')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'Terms of Use';
     } else {
         // Unknown/invalid page -> fall back to dashboard so the app never
         // ends up blank.
@@ -427,7 +467,7 @@ async function loadEnergyMeterPage() {
 
             // Avoid querying the "latest per zone" view because it can time out on big backfills.
             // Instead, fetch a narrow recent window and dedupe.
-            const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+            const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
             const { data, error } = await supabase
                 .from('energy_mix_snapshots')
                 .select('id, zone_id, country_code, ts, renewable_percent, carbon_intensity_g_per_kwh, source')
@@ -986,6 +1026,8 @@ async function renderEnergyGeoMap(container, rows) {
         if (!iso2) continue;
         if (iso2 === 'RU' || iso2 === 'BY') continue;
         if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+        // GB rendered via zone overlay below (same as DK/SE/NO); skip base layer to avoid double-draw
+        if (iso2 === 'GB' || iso2 === 'UK') continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const val = byCountry[dataKey]?.pct;
@@ -1045,10 +1087,10 @@ async function renderEnergyGeoMap(container, rows) {
         svg.appendChild(path);
     }
 
-    // Overlay bidding zones for DK/SE/NO
+    // Overlay bidding zones for DK/SE/NO/GB (GB = single national zone)
     const europeBbox = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
     const zoneFeaturesAll = Array.isArray(zoneGeo?.features) ? zoneGeo.features : [];
-    const overlayZones = new Set(['DK1', 'DK2', 'SE1', 'SE2', 'SE3', 'SE4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5']);
+    const overlayZones = new Set(['DK1', 'DK2', 'SE1', 'SE2', 'SE3', 'SE4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'GB']);
     for (const f of zoneFeaturesAll) {
         const zoneId = normalizeZoneNameToId(f?.properties?.zoneName);
         if (!zoneId || !overlayZones.has(zoneId)) continue;
@@ -1823,34 +1865,51 @@ async function loadLoadEuChart(range) {
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
             const since = euRangeToSinceIso(range);
+            const useRaw = range === 'day' || range === 'week';
             const useWeekly = range === '5y';
-            const useDaily = range === '6m' || range === '1y';
-            const table = useWeekly ? 'electricity_eu_load_weekly_mwh' : useDaily ? 'electricity_eu_load_daily_mwh' : 'electricity_eu_load_15m_mv';
-            const valueCol = (useWeekly || useDaily) ? 'consumption_mwh' : 'load_mw';
-            const fmtVal = (useWeekly || useDaily) ? fmtGWh : fmtMwShort;
-            const unit = (useWeekly || useDaily) ? 'GWh' : 'MW';
-            const maxPoints = useWeekly ? 400 : useDaily ? 900 : range === 'month' ? 3200 : 2000;
+            const fmtVal = useRaw ? fmtMwShort : fmtGWh;
+            const unit = useRaw ? 'MW' : 'GWh';
 
             setStatus(`Loading EU demand (${range})…`);
             if (titleEl) titleEl.textContent = `EU — Total electricity demand (${unit})`;
 
-            const { data, error } = await supabase
-                .from(table)
-                .select(`ts, ${valueCol}`)
-                .gte('ts', since)
-                .order('ts', { ascending: false })
-                .limit(maxPoints);
-            if (error) throw new Error(error.message);
-            const rows = (Array.isArray(data) ? data : []).reverse();
-            const points = rows
-                .filter(r => r.ts && Number.isFinite(Number(r[valueCol])))
-                .map(r => ({ ts: r.ts, y: Number(r[valueCol]) }));
+            let points;
+            if (useRaw) {
+                // No EU load aggregate MV — fetch per-zone snapshots and sum by timestamp.
+                const rawRows = await gasFetchAllPaged(() =>
+                    supabase
+                        .from('electricity_load_snapshots')
+                        .select('ts, load_mw')
+                        .eq('source', 'entsoe')
+                        .gte('ts', since)
+                        .order('ts', { ascending: true })
+                );
+                const byTs = new Map();
+                for (const r of rawRows) {
+                    if (r.ts && Number.isFinite(Number(r.load_mw)) && Number(r.load_mw) > 0)
+                        byTs.set(r.ts, (byTs.get(r.ts) || 0) + Number(r.load_mw));
+                }
+                points = [...byTs.entries()]
+                    .sort((a, b) => a[0] < b[0] ? -1 : 1)
+                    .map(([ts, y]) => ({ ts, y }));
+            } else {
+                const table = useWeekly ? 'electricity_eu_load_weekly_mwh' : 'electricity_eu_load_daily_mwh';
+                const { data, error } = await supabase
+                    .from(table)
+                    .select('ts, consumption_mwh')
+                    .gte('ts', since)
+                    .order('ts', { ascending: false })
+                    .limit(useWeekly ? 400 : 900);
+                if (error) throw new Error(error.message);
+                points = (Array.isArray(data) ? data : []).reverse()
+                    .filter(r => r.ts && Number.isFinite(Number(r.consumption_mwh)))
+                    .map(r => ({ ts: r.ts, y: Number(r.consumption_mwh) }));
+            }
 
             const labels = points.map(p => {
                 const d = new Date(p.ts);
                 if (Number.isNaN(d.getTime())) return String(p.ts);
-                if (useWeekly || useDaily) return d.toLocaleDateString();
-                return d.toLocaleString();
+                return useRaw ? d.toLocaleString() : d.toLocaleDateString();
             });
             const series = points.map(p => p.y);
 
@@ -1998,8 +2057,8 @@ async function loadElectricityTabData(forceRefresh = false) {
         setStatus('Fetching latest generation…');
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>';
 
-        // Pull the last 3 hours of snapshots and extract totalMw / renewableMw via JSONB projection.
-        const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+        // Pull the last 24 hours of snapshots and extract totalMw / renewableMw via JSONB projection.
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data, error } = await supabase
             .from('energy_mix_snapshots')
             .select('id, zone_id, country_code, ts, source, totalMw:raw->>totalMw, totalMwAlt:raw->>total_mw, renewableMw:raw->>renewableMw, renewableMwAlt:raw->>renewable_mw, euTotalMw:raw->>euTotalMw, euTotalMwAlt:raw->>euTotal_mw')
@@ -2265,13 +2324,15 @@ async function renderElectricityGeoMap(container, rows) {
         document.body.appendChild(tooltip);
     }
 
-    // Base countries (exclude DK/SE/NO; those get zone overlays)
+    // Base countries (exclude DK/SE/NO/GB; those get zone overlays)
     const countryFeatures = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
     for (const f of countryFeatures) {
         const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
         if (!iso2) continue;
         if (iso2 === 'RU' || iso2 === 'BY') continue;
         if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+        // GB rendered via zone overlay below; skip base layer to avoid double-draw
+        if (iso2 === 'GB' || iso2 === 'UK') continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const mw = byCountry[dataKey]?.mw;
@@ -2324,10 +2385,10 @@ async function renderElectricityGeoMap(container, rows) {
         svg.appendChild(path);
     }
 
-    // Overlay DK/SE/NO bidding zones
+    // Overlay DK/SE/NO/GB bidding zones
     const europeBbox = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
     const zoneFeaturesAll = Array.isArray(zoneGeo?.features) ? zoneGeo.features : [];
-    const overlayZones = new Set(['DK1', 'DK2', 'SE1', 'SE2', 'SE3', 'SE4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5']);
+    const overlayZones = new Set(['DK1', 'DK2', 'SE1', 'SE2', 'SE3', 'SE4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'GB']);
     for (const f of zoneFeaturesAll) {
         const zoneId = normalizeZoneNameToId(f?.properties?.zoneName);
         if (!zoneId || !overlayZones.has(zoneId)) continue;
@@ -2444,7 +2505,7 @@ function buildElecTypeDatasets(rows, valueCol) {
 async function elecFetchEuTotalSeries(range) {
     const since = euRangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const use15m = range === 'day';
+    const use15m = range === 'day' || range === 'week';
     const table = useWeekly ? 'electricity_eu_generation_weekly_mwh'
                 : use15m    ? 'electricity_eu_generation_15m_mv'
                 :              'electricity_eu_generation_daily_mwh';
@@ -2463,7 +2524,7 @@ async function elecFetchEuTotalSeries(range) {
 async function elecFetchZoneTotalSeries(zone, range, source) {
     const since = rangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const use15m = range === 'day';
+    const use15m = range === 'day' || range === 'week';
     const table = useWeekly ? 'electricity_generation_weekly_mwh'
                 : use15m    ? 'electricity_generation_snapshots'
                 :              'electricity_generation_daily_mwh';
@@ -2717,6 +2778,115 @@ function elecDropExtremeSpike(points) {
         out.push(pts[i]);
     }
     return out.length ? out : pts;
+}
+
+// =========================
+// Chart info modal — methodology & data source descriptions
+// =========================
+
+const CHART_INFO = {
+    energyEuChart: {
+        title: 'EU Renewable Share — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — Document type A75 (Actual Generation Per Production Type), process type A16 (Realised).</p>
+            <p><strong>Coverage:</strong> All EU member states plus Norway, Switzerland, and the United Kingdom (GB bidding zone). Each country or bidding zone is queried individually using its official EIC code.</p>
+            <p><strong>Renewable share (%):</strong> Computed as the ratio of renewable generation to total generation at the time of the latest available interval. Renewable PSR types included: B01 (Biomass), B09 (Geothermal), B11 (Hydro Run-of-River), B12 (Hydro Reservoir), B13 (Marine), B15 (Other Renewable), B16 (Solar), B17 (Wind Offshore), B18 (Wind Onshore), B19 (Waste).</p>
+            <p><strong>Update frequency:</strong> Hourly (data ingested at :12 past each hour).</p>
+            <p><strong>Aggregation:</strong> EU aggregate is the sum of renewable MW / sum of total MW across all reporting zones at the latest available timestamp.</p>
+        `,
+    },
+    energyFranceChart: {
+        title: 'Zone Renewable Share — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — Document type A75 (Actual Generation Per Production Type).</p>
+            <p><strong>Coverage:</strong> Individual bidding zone selected on the map or table. For France (FR), the data is sourced from RTE France via ENTSO-E.</p>
+            <p><strong>Renewable share (%):</strong> Same renewable PSR type definition as the EU aggregate chart. The percentage is the ratio of renewable MW to total MW at each reported interval.</p>
+            <p><strong>Historical data:</strong> Day/week views use raw 15-minute or hourly snapshots. Month/6m/1y views aggregate to daily averages. 5-year view uses weekly averages.</p>
+        `,
+    },
+    elecEuChart: {
+        title: 'EU Electricity Generation by Type — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — Document type A75 (Actual Generation Per Production Type).</p>
+            <p><strong>Coverage:</strong> EU member states plus Norway, Switzerland, and the United Kingdom.</p>
+            <p><strong>PSR types shown:</strong> Nuclear (B14), Hard Coal (B05), Natural Gas (B04 + B07), Hydro (B11 + B12), Wind Onshore (B18), Wind Offshore (B17), Solar (B16), Oil (B06), Biomass (B01 + B15), Other (remaining types).</p>
+            <p><strong>Unit:</strong> Megawatts (MW) for Day/Week ranges; GWh per day or per week for longer ranges (computed as avg MW × 24h).</p>
+            <p><strong>Update frequency:</strong> Hourly ingestion. Day/week ranges show raw 15-minute or hourly resolution; longer ranges use pre-aggregated daily/weekly materialized views.</p>
+        `,
+    },
+    elecZoneChart: {
+        title: 'Zone Electricity Generation by Type — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — Document type A75, per bidding zone.</p>
+            <p><strong>Coverage:</strong> Individual zone selected on the map or table. For multi-zone countries (Denmark, Sweden, Norway) the zone breakdown is shown separately.</p>
+            <p><strong>PSR types:</strong> Same generation type breakdown as the EU chart. The stacked area chart shows the contribution of each technology to the total at each point in time.</p>
+            <p><strong>Historical data:</strong> Day/week views use 15-minute granularity to reveal daily patterns (night vs. day, baseload vs. peak). Month and longer ranges aggregate to daily GWh.</p>
+        `,
+    },
+    loadEuChart: {
+        title: 'EU Electricity Demand — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — Document type A65 (System Total Load, Actual), process type A16.</p>
+            <p><strong>Coverage:</strong> All reporting ENTSO-E zones (EU + EEA + UK). The EU aggregate is the sum of actual load across all zones at each timestamp.</p>
+            <p><strong>Unit:</strong> MW for day/week ranges; GWh per day or per week for longer ranges (computed as avg load MW × 24h using uniform ENTSO-E reporting intervals).</p>
+            <p><strong>Update frequency:</strong> Hourly ingestion. The daily/weekly MWh materialized views are refreshed automatically after each ingestion run.</p>
+            <p><strong>Note:</strong> Load data represents actual consumption including transmission losses, excluding pumped-storage consumption.</p>
+        `,
+    },
+    loadZoneChart: {
+        title: 'Zone Electricity Demand — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — Document type A65 (System Total Load, Actual), per bidding zone.</p>
+            <p><strong>Coverage:</strong> Individual zone selected on the map or table.</p>
+            <p><strong>Unit:</strong> MW for day/week ranges (raw resolution); GWh per day/week for longer ranges.</p>
+            <p><strong>Historical data:</strong> Day/week ranges use raw 15-minute or half-hourly resolution snapshots for intraday patterns. Month and longer ranges use the <code>electricity_load_daily_mwh</code> or <code>electricity_load_weekly_mwh</code> materialized views.</p>
+        `,
+    },
+    gasEuChart: {
+        title: 'EU Gas Demand — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> National transmission system operators (TSOs) — data accessed via native TSO APIs and ENTSOG transparency platforms. Countries and sources:</p>
+            <ul>
+                <li><strong>FR</strong>: GRTgaz (native API)</li>
+                <li><strong>AT</strong>: AGGM (native API)</li>
+                <li><strong>DE</strong>: THE marketplace (native API)</li>
+                <li><strong>DK</strong>: Energinet (native API)</li>
+                <li><strong>IE</strong>: Gas Networks Ireland / CSO (native API)</li>
+                <li><strong>UK</strong>: National Gas (NTS offtake data)</li>
+                <li><strong>PT</strong>: REN DataHub (native API)</li>
+                <li><strong>BE, BG, EE, HR, HU, IT, LU, LV, NL, PL, RO, SI</strong>: ENTSOG off-take points</li>
+            </ul>
+            <p><strong>Methodology:</strong> Bruegel-parity methodology. Total demand = power sector + household/LDZ + industry offtake. Power gas consumption is derived from gas-fired generation (ENTSO-E A75) and an assumed thermal efficiency factor.</p>
+            <p><strong>Unit:</strong> GWh per gas day (06:00–06:00 UTC).</p>
+            <p><strong>Calibration:</strong> Monthly values are calibrated to Eurostat monthly statistics where available to correct for double-counting or measurement biases in TSO signals.</p>
+        `,
+    },
+    gasCountryChart: {
+        title: 'Country Gas Demand — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> National TSO — see EU aggregate chart for source by country.</p>
+            <p><strong>Sector breakdown:</strong></p>
+            <ul>
+                <li><strong>Power:</strong> Gas consumed by gas-fired power plants (derived from ENTSO-E generation data or TSO power offtake signals)</li>
+                <li><strong>Household/LDZ:</strong> Low-pressure distribution zone offtake — proxy for residential and small commercial demand</li>
+                <li><strong>Industry:</strong> High-pressure industrial offtake</li>
+            </ul>
+            <p><strong>Data availability:</strong> Varies by country. Not all TSOs publish sector-level breakdowns. Where sector data is unavailable, total demand only is shown.</p>
+            <p><strong>Update frequency:</strong> Daily (05:00 UTC, after the previous gas day closes). Data may lag 1–3 days depending on TSO publication schedules.</p>
+        `,
+    },
+};
+
+function showChartInfo(chartId) {
+    const info = CHART_INFO[chartId];
+    if (!info) return;
+    const modal = document.getElementById('chartInfoModal');
+    const title = document.getElementById('chartInfoTitle');
+    const body = document.getElementById('chartInfoBody');
+    if (!modal || !title || !body) return;
+    title.textContent = info.title;
+    body.innerHTML = info.html;
+    modal.classList.add('active');
 }
 
 // =========================

@@ -33,6 +33,21 @@
                     <span>EU gas meter</span>
                 </a>
             </div>
+            <div class="nav-section">
+                <div class="nav-section-header">Info</div>
+                <a href="#" class="nav-item" data-page="contact">
+                    <span class="nav-icon">✉</span>
+                    <span>Contact</span>
+                </a>
+                <a href="#" class="nav-item" data-page="about">
+                    <span class="nav-icon">ℹ</span>
+                    <span>About &amp; Sitemap</span>
+                </a>
+                <a href="#" class="nav-item" data-page="terms">
+                    <span class="nav-icon">📄</span>
+                    <span>Terms of Use</span>
+                </a>
+            </div>
         </nav>
     </aside>
 
@@ -311,7 +326,7 @@
                     <div class="section">
                         <div class="section-header">
                             <h2 class="section-title">EU + EEA + UK aggregate renewable share (ENTSO‑E)</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                                 <button class="btn-secondary" id="energyEuRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="energyEuRangeWeekBtn">Week</button>
                                 <button class="btn-secondary" id="energyEuRangeMonthBtn">Month</button>
@@ -319,6 +334,7 @@
                                 <button class="btn-secondary" id="energyEuRange1yBtn">1y</button>
                                 <button class="btn-secondary" id="energyEuRange5yBtn">5y</button>
                                 <button class="btn-secondary" id="energyEuAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                                <button class="chart-info-btn" data-chart="energyEuChart" title="Methodology &amp; data source">ⓘ</button>
                             </div>
                         </div>
                         <div id="energyEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -346,7 +362,7 @@
                     <div class="section">
                         <div class="section-header">
                             <h2 class="section-title">Selected zone renewable share</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                                 <button class="btn-secondary" id="energyRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="energyRangeWeekBtn">Week</button>
                                 <button class="btn-secondary" id="energyRangeMonthBtn">Month</button>
@@ -354,6 +370,7 @@
                                 <button class="btn-secondary" id="energyRange1yBtn">1y</button>
                                 <button class="btn-secondary" id="energyRange5yBtn">5y</button>
                                 <button class="btn-secondary" id="energyAutoRefreshBtn" title="Toggle auto-refresh">Auto: On</button>
+                                <button class="chart-info-btn" data-chart="energyFranceChart" title="Methodology &amp; data source">ⓘ</button>
                             </div>
                         </div>
                         <div id="energyFranceStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -424,13 +441,14 @@
                     <div class="section">
                         <div class="section-header">
                             <h2 class="section-title">EU + EEA electricity generation by type (ENTSO‑E)</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                                 <button class="btn-secondary" id="elecEuRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="elecEuRangeWeekBtn">Week</button>
                                 <button class="btn-secondary" id="elecEuRangeMonthBtn">Month</button>
                                 <button class="btn-secondary" id="elecEuRange6mBtn">6m</button>
                                 <button class="btn-secondary" id="elecEuRange1yBtn">1y</button>
                                 <button class="btn-secondary" id="elecEuRange5yBtn">5y</button>
+                                <button class="chart-info-btn" data-chart="elecEuChart" title="Methodology &amp; data source">ⓘ</button>
                             </div>
                         </div>
                         <div id="elecEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -458,13 +476,14 @@
                     <div class="section">
                         <div class="section-header">
                             <h2 class="section-title">Selected zone electricity generation by type</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                                 <button class="btn-secondary" id="elecZoneRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="elecZoneRangeWeekBtn">Week</button>
                                 <button class="btn-secondary" id="elecZoneRangeMonthBtn">Month</button>
                                 <button class="btn-secondary" id="elecZoneRange6mBtn">6m</button>
                                 <button class="btn-secondary" id="elecZoneRange1yBtn">1y</button>
                                 <button class="btn-secondary" id="elecZoneRange5yBtn">5y</button>
+                                <button class="chart-info-btn" data-chart="elecZoneChart" title="Methodology &amp; data source">ⓘ</button>
                             </div>
                         </div>
                         <div id="elecZoneStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -535,13 +554,14 @@
                     <div class="section">
                         <div class="section-header">
                             <h2 class="section-title">EU + EEA total electricity demand (ENTSO‑E)</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                                 <button class="btn-secondary" id="loadEuRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="loadEuRangeWeekBtn">Week</button>
                                 <button class="btn-secondary" id="loadEuRangeMonthBtn">Month</button>
                                 <button class="btn-secondary" id="loadEuRange6mBtn">6m</button>
                                 <button class="btn-secondary" id="loadEuRange1yBtn">1y</button>
                                 <button class="btn-secondary" id="loadEuRange5yBtn">5y</button>
+                                <button class="chart-info-btn" data-chart="loadEuChart" title="Methodology &amp; data source">ⓘ</button>
                             </div>
                         </div>
                         <div id="loadEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -569,13 +589,14 @@
                     <div class="section">
                         <div class="section-header">
                             <h2 class="section-title">Selected zone electricity demand</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                                 <button class="btn-secondary" id="loadZoneRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="loadZoneRangeWeekBtn">Week</button>
                                 <button class="btn-secondary" id="loadZoneRangeMonthBtn">Month</button>
                                 <button class="btn-secondary" id="loadZoneRange6mBtn">6m</button>
                                 <button class="btn-secondary" id="loadZoneRange1yBtn">1y</button>
                                 <button class="btn-secondary" id="loadZoneRange5yBtn">5y</button>
+                                <button class="chart-info-btn" data-chart="loadZoneChart" title="Methodology &amp; data source">ⓘ</button>
                             </div>
                         </div>
                         <div id="loadZoneStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -651,13 +672,14 @@
                 <div class="section">
                     <div class="section-header">
                         <h2 class="section-title">EU27 aggregate gas demand by sector</h2>
-                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                             <button class="btn-secondary" id="gasEuRangeMonthBtn">Month</button>
                             <button class="btn-secondary" id="gasEuRange3mBtn">3m</button>
                             <button class="btn-secondary" id="gasEuRange6mBtn">6m</button>
                             <button class="btn-secondary" id="gasEuRange1yBtn">1y</button>
                             <button class="btn-secondary" id="gasEuRange2yBtn">2y</button>
                             <button class="btn-secondary" id="gasEuRange5yBtn">5y</button>
+                            <button class="chart-info-btn" data-chart="gasEuChart" title="Methodology &amp; data source">ⓘ</button>
                         </div>
                     </div>
                     <div id="gasEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -686,13 +708,14 @@
                 <div class="section">
                     <div class="section-header">
                         <h2 class="section-title">Selected country gas demand by sector</h2>
-                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                        <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
                             <button class="btn-secondary" id="gasRangeMonthBtn">Month</button>
                             <button class="btn-secondary" id="gasRange3mBtn">3m</button>
                             <button class="btn-secondary" id="gasRange6mBtn">6m</button>
                             <button class="btn-secondary" id="gasRange1yBtn">1y</button>
                             <button class="btn-secondary" id="gasRange2yBtn">2y</button>
                             <button class="btn-secondary" id="gasRange5yBtn">5y</button>
+                            <button class="chart-info-btn" data-chart="gasCountryChart" title="Methodology &amp; data source">ⓘ</button>
                         </div>
                     </div>
                     <div id="gasCountryStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
@@ -759,11 +782,160 @@
             </div>
         </div>
 
+        <!-- Chart Info Modal -->
+        <div id="chartInfoModal" class="modal">
+            <div class="modal-content" style="max-width: 680px;">
+                <div class="modal-header">
+                    <h2 id="chartInfoTitle">Chart Methodology</h2>
+                    <button class="modal-close" id="chartInfoClose">&times;</button>
+                </div>
+                <div class="modal-body chart-info-body" id="chartInfoBody"></div>
+            </div>
+        </div>
+
+        <!-- Contact Page -->
+        <div id="contactPage" class="page">
+            <div class="page-header">
+                <h1>Contact</h1>
+                <p class="page-subtitle">Get in touch with the EU Energy Team Data Platform</p>
+            </div>
+            <div class="section" style="max-width: 640px;">
+                <div class="info-page-card">
+                    <p style="margin-bottom: 24px; color: var(--text-secondary);">
+                        Have a question, found a data issue, or want to discuss the methodology? Fill in the form below — it will open your email client pre-filled and ready to send.
+                    </p>
+                    <form id="contactForm" class="contact-form">
+                        <div class="form-group">
+                            <label for="contactName">Your name</label>
+                            <input type="text" id="contactName" placeholder="Name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="contactEmail">Your email</label>
+                            <input type="email" id="contactEmail" placeholder="your@email.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="contactSubject">Subject</label>
+                            <input type="text" id="contactSubject" placeholder="e.g. Data question, methodology feedback…">
+                        </div>
+                        <div class="form-group">
+                            <label for="contactMessage">Message</label>
+                            <textarea id="contactMessage" rows="6" placeholder="Your message…" required></textarea>
+                        </div>
+                        <button type="submit" class="btn-primary-contact">Send via email client</button>
+                    </form>
+                    <p style="margin-top: 16px; color: var(--text-secondary); font-size: 13px;">
+                        Or email directly: <a href="mailto:lucas.deschenes@e3g.org">lucas.deschenes@e3g.org</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- About & Sitemap Page -->
+        <div id="aboutPage" class="page">
+            <div class="page-header">
+                <h1>About &amp; Sitemap</h1>
+                <p class="page-subtitle">What this platform does and how to navigate it</p>
+            </div>
+            <div class="section" style="max-width: 800px;">
+                <div class="info-page-card">
+                    <h2 style="margin-bottom: 12px; font-size: 18px;">About this platform</h2>
+                    <p>The <strong>EU Energy Team Data Platform</strong> is built and maintained by the <a href="https://www.e3g.org" target="_blank" rel="noopener">E3G</a> EU Energy Team. It aggregates near real-time and historical energy data from authoritative public sources to support policy analysis, monitoring, and research.</p>
+                    <p style="margin-top: 12px;">All data displayed on this platform is sourced exclusively from publicly available datasets published by official bodies (ENTSO-E, national TSOs, Eurostat). No proprietary or confidential data is used.</p>
+
+                    <h2 style="margin-top: 32px; margin-bottom: 16px; font-size: 18px;">Sitemap</h2>
+                    <div class="sitemap-grid">
+                        <div class="sitemap-section">
+                            <h3>National renovation building plans</h3>
+                            <p>Country-by-country data on national building renovation plans, policy measures, targets, and stakeholder mapping.</p>
+                            <a href="#" data-page="dashboard" class="sitemap-link">Go to Renovation Plans</a>
+                        </div>
+                        <div class="sitemap-section">
+                            <h3>EU electricity meter</h3>
+                            <p>Near real-time electricity data for EU + EEA + UK from ENTSO-E:</p>
+                            <ul>
+                                <li><strong>Renewable tab</strong> — current renewable share per zone + EU aggregate trend</li>
+                                <li><strong>Generation tab</strong> — total generation by technology type (stacked area)</li>
+                                <li><strong>Demand tab</strong> — actual total load per zone + EU aggregate</li>
+                            </ul>
+                            <a href="#" data-page="energy-meter" class="sitemap-link">Go to Electricity Meter</a>
+                        </div>
+                        <div class="sitemap-section">
+                            <h3>EU gas meter</h3>
+                            <p>Daily natural gas demand for EU27 + UK by sector (power, household, industry), sourced from national TSOs using the Bruegel methodology.</p>
+                            <a href="#" data-page="gas-meter" class="sitemap-link">Go to Gas Meter</a>
+                        </div>
+                        <div class="sitemap-section">
+                            <h3>Contact</h3>
+                            <p>Get in touch with the team for questions, data issues, or methodology feedback.</p>
+                            <a href="#" data-page="contact" class="sitemap-link">Go to Contact</a>
+                        </div>
+                    </div>
+
+                    <h2 style="margin-top: 32px; margin-bottom: 12px; font-size: 18px;">Data sources</h2>
+                    <ul class="source-list">
+                        <li><a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a> — electricity generation (A75) and load (A65)</li>
+                        <li><a href="https://www.entsog.eu/transparency" target="_blank" rel="noopener">ENTSOG Transparency Platform</a> — gas offtake points for BE, BG, EE, HR, HU, IT, LU, LV, NL, PL, RO, SI</li>
+                        <li><a href="https://www.grtgaz.com" target="_blank" rel="noopener">GRTgaz</a> (FR gas), <a href="https://www.aggm.at" target="_blank" rel="noopener">AGGM</a> (AT), <a href="https://www.the-marketplace.eu" target="_blank" rel="noopener">THE</a> (DE), <a href="https://www.energinet.dk" target="_blank" rel="noopener">Energinet</a> (DK), <a href="https://www.nationalgas.com" target="_blank" rel="noopener">National Gas</a> (UK), <a href="https://www.ren.pt" target="_blank" rel="noopener">REN</a> (PT)</li>
+                        <li><a href="https://ec.europa.eu/eurostat" target="_blank" rel="noopener">Eurostat</a> — monthly natural gas statistics used for calibration</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terms of Use Page -->
+        <div id="termsPage" class="page">
+            <div class="page-header">
+                <h1>Terms of Use &amp; Disclaimer</h1>
+                <p class="page-subtitle">Public information for public utility purposes</p>
+            </div>
+            <div class="section" style="max-width: 800px;">
+                <div class="info-page-card">
+                    <h2 style="margin-bottom: 12px; font-size: 18px;">Purpose</h2>
+                    <p>This platform is provided by <a href="https://www.e3g.org" target="_blank" rel="noopener">E3G — Third Generation Environmentalism</a> as a public-interest resource for energy policy analysts, researchers, journalists, and the general public. It is intended solely for informational, analytical, and educational purposes.</p>
+
+                    <h2 style="margin-top: 28px; margin-bottom: 12px; font-size: 18px;">Data &amp; Sources</h2>
+                    <p>All data displayed on this platform originates from publicly available sources including ENTSO-E, ENTSOG, national transmission system operators, and Eurostat. E3G processes and displays this data in good faith but makes no warranty as to its accuracy, completeness, or timeliness.</p>
+                    <p style="margin-top: 10px;">Data may be subject to revisions by the original source at any time. Users should verify critical figures directly with the primary sources listed on the <a href="#" data-page="about">About page</a> before making decisions.</p>
+
+                    <h2 style="margin-top: 28px; margin-bottom: 12px; font-size: 18px;">Disclaimer</h2>
+                    <p>The information provided by this platform does not constitute financial, investment, or professional advice. E3G accepts no liability for decisions made on the basis of data displayed here.</p>
+                    <p style="margin-top: 10px;">This platform processes publicly available data exclusively. No personal data of platform visitors is collected beyond standard anonymised analytics, if any.</p>
+
+                    <h2 style="margin-top: 28px; margin-bottom: 12px; font-size: 18px;">Intellectual Property</h2>
+                    <p>The underlying data is the property of the respective original publishers (ENTSO-E, Eurostat, national TSOs, etc.) and is subject to their respective terms of use. The platform code and visual presentation are the work of E3G.</p>
+                    <p style="margin-top: 10px;">Reproduction of charts or data tables for non-commercial, public-interest purposes is permitted provided the source ("<em>E3G EU Energy Team Data Platform / [original data source]</em>") is cited.</p>
+
+                    <h2 style="margin-top: 28px; margin-bottom: 12px; font-size: 18px;">Contact</h2>
+                    <p>For questions about data, methodology, or terms of use, please <a href="#" data-page="contact">contact us</a>.</p>
+
+                    <p style="margin-top: 32px; color: var(--text-secondary); font-size: 13px;">Last updated: April 2026</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Loading Indicator -->
         <div id="loadingIndicator" class="loading-overlay" style="display: none;">
             <div class="spinner"></div>
             <p>Loading data...</p>
         </div>
+
+        <!-- Site Footer -->
+        <footer class="app-footer">
+            <div class="app-footer-content">
+                <div class="app-footer-brand">
+                    <img src="https://rvxukmupuzxbrwicowyn.supabase.co/storage/v1/object/public/logo/logo.png" alt="E3G Logo" style="height: 24px; width: auto; vertical-align: middle;" onerror="this.style.display='none'">
+                    <span>EU Energy Team Data Platform</span>
+                </div>
+                <div class="app-footer-links">
+                    <a href="#" data-page="about">About &amp; Sitemap</a>
+                    <a href="#" data-page="contact">Contact</a>
+                    <a href="#" data-page="terms">Terms of Use</a>
+                </div>
+                <div class="app-footer-copy">
+                    &copy; 2024–2026 <a href="https://www.e3g.org" target="_blank" rel="noopener">E3G</a>. Data from ENTSO-E, ENTSOG &amp; national TSOs.
+                </div>
+            </div>
+        </footer>
     </main>
     
     <!-- Chart.js for visualizations -->
