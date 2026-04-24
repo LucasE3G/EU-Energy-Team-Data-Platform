@@ -189,7 +189,10 @@ body {
     margin-left: var(--sidebar-width);
     min-height: 100vh;
     transition: margin-left 0.3s ease;
+    display: flex;
+    flex-direction: column;
 }
+
 
 /* Top Bar */
 .top-bar {
@@ -248,6 +251,17 @@ body {
 /* Page Content */
 .page-content {
     padding: 32px;
+    flex: 1;
+}
+
+/* Centered layout mode for info pages (Contact/About/Terms) */
+.page-content.info-page-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.page-content.info-page-layout > .page.active {
+    width: min(100%, 980px);
 }
 
 .page {
@@ -1342,11 +1356,35 @@ body {
 }
 
 /* ── Info pages (Contact / About / Terms) ───────────────────────── */
-/* These pages live outside .page-content so need their own padding */
-#contactPage,
-#aboutPage,
-#termsPage {
-    padding: 32px;
+/* Target .active so display:flex doesn't fight display:none */
+#contactPage.active,
+#aboutPage.active,
+#termsPage.active {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1;                  /* fills remaining height → footer goes to bottom */
+    padding: 56px 32px 48px;
+    width: min(100%, 980px);
+    margin: 0 auto;
+}
+
+#contactPage .page-header,
+#aboutPage .page-header,
+#termsPage .page-header {
+    text-align: center;
+    width: 100%;
+    max-width: 640px;
+    margin-bottom: 40px;
+}
+
+/* Centered content container (avoid using `.section` which looks left-cramped here) */
+.info-page-container {
+    width: min(100%, 920px);
+    margin: 0 auto;
+}
+.info-page-container--narrow {
+    width: min(100%, 680px);
 }
 
 .info-page-card {
@@ -1371,15 +1409,28 @@ body {
 }
 
 /* Contact form */
-.contact-form { display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; gap: 6px; }
+.contact-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
 .form-group label {
+    display: block;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
 }
 .form-group input,
 .form-group textarea {
+    display: block;
+    width: 100%;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -1396,16 +1447,18 @@ body {
     border-color: var(--primary-color);
 }
 .btn-primary-contact {
-    align-self: flex-start;
+    align-self: stretch;
     background: var(--primary-color);
     color: #fff;
     border: none;
     border-radius: 8px;
-    padding: 11px 24px;
+    padding: 13px 24px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.15s;
+    text-align: center;
+    margin-top: 4px;
 }
 .btn-primary-contact:hover { opacity: 0.88; }
 
@@ -1448,43 +1501,63 @@ body {
 .app-footer {
     margin-top: auto;
     border-top: 1px solid var(--border-color);
-    padding: 20px 32px;
-    background: var(--bg-primary);
+    background:
+        radial-gradient(900px 420px at 20% 0%, rgba(38, 41, 88, 0.06), rgba(255,255,255,0) 60%),
+        radial-gradient(800px 380px at 90% 20%, rgba(197, 183, 114, 0.10), rgba(255,255,255,0) 60%),
+        linear-gradient(180deg, #ffffff, #fbfdff);
+    padding: 44px 32px 34px;
+    text-align: center;
 }
 .app-footer-content {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 24px;
-    flex-wrap: wrap;
-    font-size: 13px;
-    color: var(--text-secondary);
+    gap: 0;
+    width: min(100%, 1100px);
+    margin: 0 auto;
 }
 .app-footer-brand {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 600;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
     color: var(--text-primary);
-    flex: 1;
-    min-width: 200px;
+    margin-bottom: 20px;
 }
 .app-footer-links {
-    display: flex;
-    gap: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
     flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 28px;
 }
 .app-footer-links a {
     color: var(--text-secondary);
     text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 16px;
     transition: color 0.15s;
+    border-right: 1px solid var(--border-color);
+    white-space: nowrap;
 }
+.app-footer-links a:last-child { border-right: none; }
 .app-footer-links a:hover { color: var(--text-primary); }
+.app-footer-divider {
+    width: 240px;
+    height: 1px;
+    background: var(--border-color);
+    margin-bottom: 20px;
+}
 .app-footer-copy {
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
     font-size: 12px;
+    line-height: 1.8;
 }
 .app-footer-copy a {
-    color: var(--primary-color);
+    color: var(--text-secondary);
     text-decoration: none;
 }
 .app-footer-copy a:hover { text-decoration: underline; }

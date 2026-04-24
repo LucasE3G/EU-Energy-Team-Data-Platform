@@ -354,6 +354,13 @@ function navigateToPage(page, countryId = null) {
     }
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+
+    // Layout mode: center info pages (Contact / About / Terms)
+    const pageContent = document.querySelector('.page-content');
+    if (pageContent) {
+        const isInfo = page === 'contact' || page === 'about' || page === 'terms';
+        pageContent.classList.toggle('info-page-layout', isInfo);
+    }
     
     // Update navigation
     document.querySelectorAll('.nav-item, .country-nav-item').forEach(item => {
