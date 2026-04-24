@@ -45,6 +45,10 @@ jobs:
       GAS_NATIVE_UK_START_YEAR: ${{ github.event.inputs.start_year }}
       GAS_NATIVE_PT_START_YEAR: ${{ github.event.inputs.start_year }}
       GAS_NATIVE_ENTSOG_START_YEAR: ${{ github.event.inputs.start_year }}
+      # Limits ENTSOG-POINTS to a 90-day lookback on daily incremental runs so all
+      # 13 countries finish within the 45-min job limit. When start_year is provided
+      # via workflow_dispatch for full backfills, the script uses start_year instead.
+      GAS_NATIVE_ENTSOG_DAYS_BACK: "90"
 
     steps:
       - name: Checkout

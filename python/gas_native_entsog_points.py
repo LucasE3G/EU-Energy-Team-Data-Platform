@@ -342,8 +342,18 @@ def main() -> int:
     efficiency = float(os.getenv("GAS_POWER_EFFICIENCY", "0.5"))
 
     today = date.today()
-    start_year = int(os.getenv("GAS_NATIVE_ENTSOG_START_YEAR") or today.year - 5)
-    start = date(start_year, 1, 1)
+    start_year_env = os.getenv("GAS_NATIVE_ENTSOG_START_YEAR", "").strip()
+    days_back_env  = os.getenv("GAS_NATIVE_ENTSOG_DAYS_BACK", "").strip()
+    if start_year_env:
+        # Explicit year override — used for full backfills via workflow_dispatch.
+        start = date(int(start_year_env), 1, 1)
+    elif days_back_env:
+        # Incremental daily mode: only look back N days so all 13 countries finish
+        # within the 45-min GitHub Actions limit.
+        start = today - timedelta(days=int(days_back_env))
+    else:
+        # Local / manual fallback: full 5-year history.
+        start = date(today.year - 5, 1, 1)
     end = today - timedelta(days=1)
 
     sleep_ms = int(os.getenv("GAS_NATIVE_ENTSOG_SLEEP_MS") or "300")
