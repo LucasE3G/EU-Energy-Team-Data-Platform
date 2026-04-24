@@ -1478,6 +1478,20 @@ let elecLatestRows = [];            // latest rows per zone with totalMw extract
 let elecSelectedZone = null;        // separate from renewable selection so the tabs don't fight
 let elecSelectedSource = null;
 
+// Demand (load) tab
+let loadEuChart = null;
+let loadEuRange = '1y';
+let loadEuChartLoadInFlight = null;
+
+let loadZoneChart = null;
+let loadZoneRange = 'day';
+let loadZoneChartLoadInFlight = null;
+
+let loadTabInited = false;
+let loadLatestRows = [];
+let loadSelectedZone = null;
+let loadSelectedSource = null;
+
 function fmtMwShort(mw) {
     const n = Number(mw);
     if (!Number.isFinite(n)) return '-';
@@ -1514,6 +1528,13 @@ function switchElectricityMeterTab(target) {
             initElectricityTabControls();
         }
         loadElectricityTabData();
+    } else if (target === 'demand') {
+        document.getElementById('demandEmTab')?.classList.add('active');
+        if (!loadTabInited) {
+            loadTabInited = true;
+            initLoadTabControls();
+        }
+        loadDemandTabData();
     } else {
         document.getElementById('renewableEmTab')?.classList.add('active');
     }
@@ -1563,6 +1584,48 @@ function initElectricityTabControls() {
     }
 }
 
+function initLoadTabControls() {
+    const bindEu = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            loadEuRange = range;
+            updateLoadEuRangeButtonActive();
+            loadLoadEuChart(range);
+        });
+    };
+    bindEu('loadEuRangeDayBtn', 'day');
+    bindEu('loadEuRangeWeekBtn', 'week');
+    bindEu('loadEuRangeMonthBtn', 'month');
+    bindEu('loadEuRange6mBtn', '6m');
+    bindEu('loadEuRange1yBtn', '1y');
+    bindEu('loadEuRange5yBtn', '5y');
+
+    const bindZone = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            loadZoneRange = range;
+            updateLoadZoneRangeButtonActive();
+            if (loadSelectedZone) loadLoadZoneChart(loadSelectedZone, range, loadSelectedSource);
+        });
+    };
+    bindZone('loadZoneRangeDayBtn', 'day');
+    bindZone('loadZoneRangeWeekBtn', 'week');
+    bindZone('loadZoneRangeMonthBtn', 'month');
+    bindZone('loadZoneRange6mBtn', '6m');
+    bindZone('loadZoneRange1yBtn', '1y');
+    bindZone('loadZoneRange5yBtn', '5y');
+
+    const refreshBtn = document.getElementById('loadRefreshBtn');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = '1';
+        refreshBtn.addEventListener('click', () => loadDemandTabData(true));
+    }
+}
+
 function updateElecEuRangeButtonActive() {
     const map = {
         day: 'elecEuRangeDayBtn',
@@ -1596,6 +1659,332 @@ function updateElecZoneRangeButtonActive() {
         else el.classList.remove('active');
     });
 }
+
+function updateLoadEuRangeButtonActive() {
+    const map = {
+        day: 'loadEuRangeDayBtn',
+        week: 'loadEuRangeWeekBtn',
+        month: 'loadEuRangeMonthBtn',
+        '6m': 'loadEuRange6mBtn',
+        '1y': 'loadEuRange1yBtn',
+        '5y': 'loadEuRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', loadEuRange === range);
+    });
+}
+
+function updateLoadZoneRangeButtonActive() {
+    const map = {
+        day: 'loadZoneRangeDayBtn',
+        week: 'loadZoneRangeWeekBtn',
+        month: 'loadZoneRangeMonthBtn',
+        '6m': 'loadZoneRange6mBtn',
+        '1y': 'loadZoneRange1yBtn',
+        '5y': 'loadZoneRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', loadZoneRange === range);
+    });
+}
+
+async function loadDemandTabData(forceRefresh = false) {
+    const statusEl = document.getElementById('loadMeterStatus');
+    const tbody = document.getElementById('loadMeterTableBody');
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+    if (!tbody) return;
+
+    try {
+        if (!supabase) throw new Error('Supabase client not initialized.');
+
+        setStatus('Fetching latest demand snapshot…');
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>';
+
+        const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+            .from('electricity_load_snapshots')
+            .select('id, zone_id, country_code, ts, load_mw, source')
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: false })
+            .limit(2000);
+        if (error) throw new Error(error.message);
+
+        const rows = Array.isArray(data) ? data : [];
+        const latestByZone = dedupeLatestByZone(rows);
+        latestByZone.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+        loadLatestRows = latestByZone;
+
+        if (!latestByZone.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 24px;">No demand data yet. Run ENTSO‑E load ingestion.</td></tr>';
+            setStatus('No snapshots found.');
+            document.getElementById('loadLastUpdated').textContent = '-';
+            document.getElementById('loadZones').textContent = '0';
+            document.getElementById('loadEuTotal').textContent = '-';
+            document.getElementById('loadAvgZone').textContent = '-';
+            return;
+        }
+
+        const newest = latestByZone.reduce((acc, r) => {
+            const t = new Date(r.ts).getTime();
+            return Number.isFinite(t) ? Math.max(acc, t) : acc;
+        }, 0);
+        const loads = latestByZone.map(r => Number(r.load_mw)).filter(Number.isFinite);
+        const avgZoneMw = loads.length ? loads.reduce((a, b) => a + b, 0) / loads.length : null;
+        const euTotal = loads.length ? loads.reduce((a, b) => a + b, 0) : null;
+
+        document.getElementById('loadLastUpdated').textContent = newest ? new Date(newest).toLocaleString() : '-';
+        document.getElementById('loadZones').textContent = String(latestByZone.length);
+        document.getElementById('loadAvgZone').textContent = fmtMwShort(avgZoneMw);
+        document.getElementById('loadEuTotal').textContent = fmtMwShort(euTotal);
+
+        tbody.innerHTML = latestByZone.map(r => {
+            const zone = r.zone_id || r.country_code || '-';
+            const tsStr = r.ts ? new Date(r.ts).toLocaleString() : '-';
+            const mw = Number(r.load_mw);
+            return `
+                <tr class="load-row" data-zone="${escapeHtml(String(zone))}" data-source="${escapeHtml(String(r.source || '-'))}">
+                    <td>${escapeHtml(String(zone))}</td>
+                    <td>${escapeHtml(tsStr)}</td>
+                    <td>${escapeHtml(Number.isFinite(mw) ? Math.round(mw).toLocaleString() : '-')}</td>
+                    <td>${escapeHtml(String(r.source || '-'))}</td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.querySelectorAll('tr.load-row').forEach(tr => {
+            tr.addEventListener('click', () => {
+                const z = tr.getAttribute('data-zone');
+                const s = tr.getAttribute('data-source');
+                if (!z) return;
+                loadSelectedZone = z;
+                loadSelectedSource = s || null;
+                loadLoadZoneChart(z, loadZoneRange, loadSelectedSource);
+            });
+        });
+
+        // Default selection mirrors renewable/electricity selection if possible
+        if (!loadSelectedZone) {
+            const fr = latestByZone.find(r => (r.zone_id || r.country_code) === 'FR');
+            const pick = (energySelectedZone && latestByZone.find(r => (r.zone_id || r.country_code) === energySelectedZone))
+                || (elecSelectedZone && latestByZone.find(r => (r.zone_id || r.country_code) === elecSelectedZone))
+                || fr
+                || latestByZone[0];
+            if (pick) {
+                loadSelectedZone = pick.zone_id || pick.country_code;
+                loadSelectedSource = pick.source || 'entsoe';
+            }
+        }
+
+        renderLoadMap(latestByZone);
+        updateLoadEuRangeButtonActive();
+        updateLoadZoneRangeButtonActive();
+        await loadLoadEuChart(loadEuRange);
+        if (loadSelectedZone) await loadLoadZoneChart(loadSelectedZone, loadZoneRange, loadSelectedSource);
+
+        setStatus(`Loaded ${latestByZone.length} zones.`);
+    } catch (err) {
+        console.error('Demand tab load failed:', err);
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--error-color); padding: 24px;">Failed to load: ${escapeHtml(err.message || String(err))}</td></tr>`;
+        setStatus('Failed to load.');
+    }
+}
+
+function renderLoadMap(latestRows) {
+    const container = document.getElementById('loadMapContainer');
+    if (!container) return;
+    const rows = (latestRows || []).filter(r => (r.zone_id || r.country_code) && Number.isFinite(Number(r.load_mw)));
+    if (!rows.length) {
+        container.innerHTML = '<div class="chart-loading">No ENTSO‑E load data yet.</div>';
+        return;
+    }
+    // Reuse the electricity geo renderer by mapping to the fields it expects.
+    // (It uses r.totalMw and zone_id/country_code + ts.)
+    const mapped = rows.map(r => ({ ...r, totalMw: Number(r.load_mw) }));
+    renderElectricityGeoMap(container, mapped).catch((e) => {
+        console.warn('Load geo map render failed, falling back to tile grid:', e);
+        renderElectricityTileGrid(container, mapped);
+    });
+}
+
+async function loadLoadEuChart(range) {
+    if (loadEuChartLoadInFlight) return await loadEuChartLoadInFlight;
+    loadEuChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('loadEuStatus');
+        const titleEl = document.getElementById('loadEuChartTitle');
+        const canvas = document.getElementById('loadEuChart');
+        if (!canvas) return;
+        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+            const since = euRangeToSinceIso(range);
+            const useWeekly = range === '5y';
+            const useDaily = range === '6m' || range === '1y';
+            const table = useWeekly ? 'electricity_eu_load_weekly_mwh' : useDaily ? 'electricity_eu_load_daily_mwh' : 'electricity_eu_load_15m_mv';
+            const valueCol = (useWeekly || useDaily) ? 'consumption_mwh' : 'load_mw';
+            const fmtVal = (useWeekly || useDaily) ? fmtGWh : fmtMwShort;
+            const unit = (useWeekly || useDaily) ? 'GWh' : 'MW';
+            const maxPoints = useWeekly ? 400 : useDaily ? 900 : range === 'month' ? 3200 : 2000;
+
+            setStatus(`Loading EU demand (${range})…`);
+            if (titleEl) titleEl.textContent = `EU — Total electricity demand (${unit})`;
+
+            const { data, error } = await supabase
+                .from(table)
+                .select(`ts, ${valueCol}`)
+                .gte('ts', since)
+                .order('ts', { ascending: false })
+                .limit(maxPoints);
+            if (error) throw new Error(error.message);
+            const rows = (Array.isArray(data) ? data : []).reverse();
+            const points = rows
+                .filter(r => r.ts && Number.isFinite(Number(r[valueCol])))
+                .map(r => ({ ts: r.ts, y: Number(r[valueCol]) }));
+
+            const labels = points.map(p => {
+                const d = new Date(p.ts);
+                if (Number.isNaN(d.getTime())) return String(p.ts);
+                if (useWeekly || useDaily) return d.toLocaleDateString();
+                return d.toLocaleString();
+            });
+            const series = points.map(p => p.y);
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            if (loadEuChart) { try { loadEuChart.destroy(); } catch (_) {} loadEuChart = null; }
+
+            loadEuChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: `EU total demand (${unit})`,
+                        data: series,
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.12)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius: series.length <= 2 ? 3 : 0,
+                        borderWidth: 2,
+                    }],
+                    labels,
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    parsing: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { callback: (v) => fmtVal(Number(v)) } },
+                    },
+                },
+            });
+        } catch (err) {
+            console.error('EU load chart failed:', err);
+            setStatus(`Failed: ${err.message || String(err)}`);
+        }
+    })();
+    try { return await loadEuChartLoadInFlight; }
+    finally { loadEuChartLoadInFlight = null; }
+}
+
+async function loadLoadZoneChart(zone, range, source = null) {
+    if (loadZoneChartLoadInFlight) return await loadZoneChartLoadInFlight;
+    loadZoneChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('loadZoneStatus');
+        const titleEl = document.getElementById('loadZoneChartTitle');
+        const canvas = document.getElementById('loadZoneChart');
+        if (!canvas) return;
+        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+            const since = rangeToSinceIso(range);
+            const useWeekly = range === '5y';
+            const useDaily = range === '6m' || range === '1y';
+            const table = useWeekly ? 'electricity_load_weekly_mwh' : useDaily ? 'electricity_load_daily_mwh' : 'electricity_load_snapshots';
+            const valueCol = (useWeekly || useDaily) ? 'consumption_mwh' : 'load_mw';
+            const fmtVal = (useWeekly || useDaily) ? fmtGWh : fmtMwShort;
+            const unit = (useWeekly || useDaily) ? 'GWh' : 'MW';
+            const maxPoints = useWeekly ? 400 : useDaily ? 900 : 2000;
+
+            setStatus(`Loading ${zone} demand (${range})…`);
+            if (titleEl) titleEl.textContent = `${zone} — Electricity demand (${unit})${source ? ` [${source}]` : ''}`;
+
+            let q = supabase
+                .from(table)
+                .select(`ts, ${valueCol}`)
+                .eq('zone_id', zone)
+                .gte('ts', since)
+                .order('ts', { ascending: false })
+                .limit(maxPoints);
+            if (source && !useWeekly && !useDaily) q = q.eq('source', source);
+
+            const { data, error } = await q;
+            if (error) throw new Error(error.message);
+            const rows = (Array.isArray(data) ? data : []).reverse();
+            const points = rows
+                .filter(r => r.ts && Number.isFinite(Number(r[valueCol])))
+                .map(r => ({ ts: r.ts, y: Number(r[valueCol]) }));
+
+            const labels = points.map(p => {
+                const d = new Date(p.ts);
+                if (Number.isNaN(d.getTime())) return String(p.ts);
+                if (useWeekly || useDaily) return d.toLocaleDateString();
+                return d.toLocaleString();
+            });
+            const series = points.map(p => p.y);
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            if (loadZoneChart) { try { loadZoneChart.destroy(); } catch (_) {} loadZoneChart = null; }
+
+            loadZoneChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: `Demand (${unit})`,
+                        data: series,
+                        borderColor: '#0284c7',
+                        backgroundColor: 'rgba(2, 132, 199, 0.12)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius: series.length <= 2 ? 3 : 0,
+                        borderWidth: 2,
+                    }],
+                    labels,
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    parsing: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { callback: (v) => fmtVal(Number(v)) } },
+                    },
+                },
+            });
+        } catch (err) {
+            console.error('Zone load chart failed:', err);
+            setStatus(`Failed: ${err.message || String(err)}`);
+        }
+    })();
+    try { return await loadZoneChartLoadInFlight; }
+    finally { loadZoneChartLoadInFlight = null; }
+}
+
 
 async function loadElectricityTabData(forceRefresh = false) {
     const statusEl = document.getElementById('elecMeterStatus');
@@ -1992,129 +2381,105 @@ async function renderElectricityGeoMap(container, rows) {
     }
 }
 
+// ENTSO-E psrType codes grouped into display categories for the stacked chart.
+const ELEC_TYPE_GROUPS = [
+    { key: 'wind',         label: 'Wind',            types: ['B18', 'B19'], color: '#38bdf8' },
+    { key: 'solar',        label: 'Solar',            types: ['B16'],        color: '#fbbf24' },
+    { key: 'hydro',        label: 'Hydro',            types: ['B10', 'B11', 'B12'], color: '#2dd4bf' },
+    { key: 'nuclear',      label: 'Nuclear',          types: ['B14'],        color: '#a78bfa' },
+    { key: 'gas',          label: 'Gas',              types: ['B04'],        color: '#fb923c' },
+    { key: 'coal',         label: 'Coal',             types: ['B02', 'B05'], color: '#78716c' },
+    { key: 'biomass',      label: 'Biomass/Waste',    types: ['B01', 'B17'], color: '#4ade80' },
+    { key: 'other_ren',    label: 'Other renew.',     types: ['B09', 'B13', 'B15'], color: '#86efac' },
+    { key: 'other_fossil', label: 'Oil/Other fossil', types: ['B03', 'B06', 'B07', 'B08'], color: '#d97706' },
+    { key: 'other',        label: 'Other',            types: ['B20'],        color: '#94a3b8' },
+];
+
+// Transform flat rows [{ts, psr_type, <valueCol>}] into Chart.js stacked datasets.
+function buildElecTypeDatasets(rows, valueCol) {
+    // Collect unique sorted timestamps
+    const tsSet = new Set();
+    for (const r of rows) { if (r.ts) tsSet.add(String(r.ts)); }
+    const timestamps = Array.from(tsSet).sort();
+
+    // Build lookup ts → { psr_type → value }
+    const lookup = Object.create(null);
+    for (const r of rows) {
+        if (!r.ts) continue;
+        const k = String(r.ts);
+        if (!lookup[k]) lookup[k] = Object.create(null);
+        const v = Number(r[valueCol]);
+        if (Number.isFinite(v)) lookup[k][r.psr_type] = (lookup[k][r.psr_type] || 0) + v;
+    }
+
+    const datasets = [];
+    for (const g of ELEC_TYPE_GROUPS) {
+        const data = timestamps.map(ts => {
+            const byType = lookup[ts] || {};
+            const sum = g.types.reduce((acc, t) => acc + (byType[t] || 0), 0);
+            return sum > 0 ? sum : null;
+        });
+        if (data.some(v => v != null)) {
+            datasets.push({
+                label: g.label,
+                data,
+                backgroundColor: g.color + 'cc',
+                borderColor: g.color,
+                fill: true,
+                pointRadius: 0,
+                tension: 0.2,
+                borderWidth: 1,
+                stack: 'gen',
+                spanGaps: true,
+            });
+        }
+    }
+    return { timestamps, datasets };
+}
+
 /**
- * EU total generation time series. Mirrors the Renewable tab: prefers materialized
- * views (same cadence as energy_eu_*_mv) so 6m/1y/5y cover the full window.
- * Raw snapshots are ~15 min; a naive .limit(5000) only spans ~52 days.
+ * EU generation by type — fetches from generation MWh MVs (daily/weekly)
+ * or the 15-min EU aggregate MV for the "day" range.
  */
 async function elecFetchEuTotalSeries(range) {
     const since = euRangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const useDaily = range === '6m' || range === '1y';
-    const use15m = range === 'day' || range === 'week' || range === 'month';
-    const maxPoints =
-        useWeekly ? 400 :
-        useDaily ? 900 :
-        range === 'month' ? 3200 : 2000;
+    const use15m = range === 'day';
+    const table = useWeekly ? 'electricity_eu_generation_weekly_mwh'
+                : use15m    ? 'electricity_eu_generation_15m_mv'
+                :              'electricity_eu_generation_daily_mwh';
+    const valueCol = use15m ? 'mw' : 'production_mwh';
 
-    const table = useWeekly
-        ? 'energy_eu_total_weekly_mv'
-        : useDaily
-        ? 'energy_eu_total_daily_mv'
-        : 'energy_eu_total_15m_mv';
-
-    const { data, error } = await supabase
-        .from(table)
-        .select('ts, total_mw')
-        .gte('ts', since)
-        .order('ts', { ascending: false })
-        .limit(maxPoints);
-
-    // MVs only contain history that exists in energy_mix_snapshots. A "5y" chart
-    // can still show only a few weeks if the MV was built from a short snapshot
-    // history — treat sparse MVs as a miss and use raw rows (same limitation).
-    const mvSparse =
-        (range === '5y' && Array.isArray(data) && data.length > 0 && data.length < 40) ||
-        ((range === '1y' || range === '6m') && Array.isArray(data) && data.length > 0 && data.length < 45);
-
-    if (!error && Array.isArray(data) && data.length && !mvSparse) {
-        const rows = data.slice().reverse();
-        const points = rows
-            .filter(r => r.ts && Number.isFinite(Number(r.total_mw)))
-            .map(r => ({ ts: r.ts, y: Number(r.total_mw) }));
-        return {
-            points,
-            labelDaily: useWeekly || useDaily,
-            source: 'mv',
-        };
-    }
-
-    // Fallback: paginate raw EU rows (install + refresh electricity_meter_total.sql MVs for speed).
     const rows = await gasFetchAllPaged(() =>
         supabase
-            .from('energy_mix_snapshots')
-            .select('ts, euTotalMw:raw->>euTotalMw')
-            .eq('source', 'entsoe')
-            .eq('zone_id', 'EU')
+            .from(table)
+            .select(`ts, psr_type, ${valueCol}`)
             .gte('ts', since)
             .order('ts', { ascending: true })
     );
-    const dedup = new Map();
-    for (const r of rows) {
-        if (!r.ts || !Number.isFinite(Number(r.euTotalMw))) continue;
-        dedup.set(String(r.ts), { ts: r.ts, y: Number(r.euTotalMw) });
-    }
-    const raw = Array.from(dedup.values()).sort(
-        (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime()
-    );
-    const bucket = useWeekly ? 'week' : useDaily ? 'day' : null;
-    const points = bucketPoints(raw, bucket);
-    return {
-        points,
-        labelDaily: !!(useWeekly || useDaily),
-        source: 'snapshots',
-    };
+    return { rows, valueCol, labelDaily: !use15m };
 }
 
 async function elecFetchZoneTotalSeries(zone, range, source) {
     const since = rangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const useDaily = range === '6m' || range === '1y';
-    const maxPoints =
-        useWeekly ? 400 :
-        useDaily ? 900 :
-        range === 'month' ? 3200 : 2000;
-
-    if (useWeekly || useDaily) {
-        const tbl = useWeekly ? 'energy_zone_total_weekly' : 'energy_zone_total_daily';
-        let q = supabase
-            .from(tbl)
-            .select('ts, total_mw')
-            .eq('zone_id', zone)
-            .gte('ts', since)
-            .order('ts', { ascending: false })
-            .limit(maxPoints);
-        if (source) q = q.eq('source', source);
-        const { data, error } = await q;
-        if (!error && Array.isArray(data) && data.length) {
-            const rows = data.slice().reverse();
-            const points = rows
-                .filter(r => r.ts && Number.isFinite(Number(r.total_mw)))
-                .map(r => ({ ts: r.ts, y: Number(r.total_mw) }));
-            return { points, labelDaily: true, source: 'view' };
-        }
-    }
+    const use15m = range === 'day';
+    const table = useWeekly ? 'electricity_generation_weekly_mwh'
+                : use15m    ? 'electricity_generation_snapshots'
+                :              'electricity_generation_daily_mwh';
+    const valueCol = use15m ? 'mw' : 'production_mwh';
 
     const rows = await gasFetchAllPaged(() => {
         let q = supabase
-            .from('energy_mix_snapshots')
-            .select('ts, totalMw:raw->>totalMw, totalMwAlt:raw->>total_mw')
+            .from(table)
+            .select(`ts, psr_type, ${valueCol}`)
             .eq('zone_id', zone)
             .gte('ts', since)
             .order('ts', { ascending: true });
-        if (source) q = q.eq('source', source);
+        if (source && use15m) q = q.eq('source', source);
         return q;
     });
-    const raw = rows
-        .map(r => ({ ts: r.ts, y: Number(r.totalMw ?? r.totalMwAlt) }))
-        .filter(r => r.ts && Number.isFinite(Number(r.y)));
-    const bucket = useWeekly ? 'week' : useDaily ? 'day' : null;
-    const points = bucketPoints(raw, bucket);
-    return {
-        points,
-        labelDaily: !!(useWeekly || useDaily),
-        source: 'snapshots',
-    };
+    return { rows, valueCol, labelDaily: !use15m };
 }
 
 async function loadElecEuTotalChart(range) {
@@ -2125,36 +2490,30 @@ async function loadElecEuTotalChart(range) {
         const titleEl = document.getElementById('elecEuChartTitle');
         const canvas = document.getElementById('elecEuChart');
         if (!canvas) return;
-
         const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
 
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
+            const isMwh = range !== 'day';
+            const unit = isMwh ? 'GWh' : 'MW';
+            const fmt = isMwh ? fmtGWh : fmtMwShort;
 
-            setStatus(`Loading EU generation (${range})…`);
-            if (titleEl) titleEl.textContent = 'EU — Total electricity generation (MW)';
+            setStatus(`Loading EU generation by type (${range})…`);
+            if (titleEl) titleEl.textContent = `EU — Electricity generation by type (${unit})`;
 
-            const { points: rawPoints, labelDaily, source: src } = await elecFetchEuTotalSeries(range);
-            const points = elecDropExtremeSpike(rawPoints);
+            const { rows, valueCol, labelDaily } = await elecFetchEuTotalSeries(range);
+            const { timestamps, datasets } = buildElecTypeDatasets(rows, valueCol);
 
-            const labels = points.map(p => {
-                const d = new Date(p.ts);
-                if (Number.isNaN(d.getTime())) return String(p.ts);
-                if (labelDaily) return d.toLocaleDateString();
-                return d.toLocaleString();
+            const labels = timestamps.map(ts => {
+                const d = new Date(ts);
+                return Number.isNaN(d.getTime()) ? ts : (labelDaily ? d.toLocaleDateString() : d.toLocaleString());
             });
-            const series = points.map(p => p.y);
 
-            if (!points.length) {
-                setStatus('No EU generation data yet in selected range.');
+            if (!timestamps.length) {
+                setStatus('No generation data yet. Run electricity_generation_mwh.sql then refresh MVs.');
             } else {
-                const last = points[points.length - 1];
-                const lastD = new Date(last.ts);
-                let msg = `Last: ${fmtMwShort(last.y)} @ ${Number.isNaN(lastD.getTime()) ? last.ts : lastD.toLocaleString()}`;
-                if (src === 'snapshots') {
-                    msg += ' · Using raw EU rows (run electricity_meter_total.sql + refresh MVs for faster charts).';
-                }
-                setStatus(msg);
+                const lastTotal = datasets.reduce((s, ds) => s + (Number(ds.data[ds.data.length - 1]) || 0), 0);
+                setStatus(`Latest total: ${fmt(lastTotal)}`);
             }
 
             const ctx = canvas.getContext('2d');
@@ -2163,43 +2522,40 @@ async function loadElecEuTotalChart(range) {
             if (existing) existing.destroy();
             if (elecEuChart) { try { elecEuChart.destroy(); } catch (_) {} elecEuChart = null; }
 
-            const pointRadius = series.length <= 2 ? 3 : 0;
             elecEuChart = new Chart(ctx, {
                 type: 'line',
-                data: {
-                    datasets: [{
-                        label: 'EU total generation (MW)',
-                        data: series,
-                        borderColor: '#1d4ed8',
-                        backgroundColor: 'rgba(29, 78, 216, 0.14)',
-                        fill: true,
-                        tension: 0.25,
-                        pointRadius,
-                        borderWidth: 2,
-                    }],
-                    labels,
-                },
+                data: { labels, datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    parsing: true,
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { display: false },
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
                         tooltip: {
                             backgroundColor: 'rgba(15, 23, 42, 0.92)',
                             titleColor: '#fff',
                             bodyColor: '#fff',
                             padding: 10,
-                            displayColors: false,
-                            callbacks: { label: (ctx) => fmtMwShort(Number(ctx.parsed.y)) },
+                            filter: (item) => item.raw != null && item.raw > 0,
+                            callbacks: {
+                                label: (item) => {
+                                    const total = item.chart.data.datasets.reduce((s, ds) => s + (Number(ds.data[item.dataIndex]) || 0), 0);
+                                    const pct = total > 0 ? ` (${((Number(item.raw) / total) * 100).toFixed(1)}%)` : '';
+                                    return `${item.dataset.label}: ${fmt(Number(item.raw))}${pct}`;
+                                },
+                                footer: (items) => {
+                                    const total = items.reduce((s, i) => s + (Number(i.raw) || 0), 0);
+                                    return total > 0 ? `Total: ${fmt(total)}` : '';
+                                },
+                            },
                         },
                     },
                     scales: {
-                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
                         y: {
+                            stacked: true,
                             beginAtZero: true,
-                            ticks: { callback: (v) => fmtMwShort(Number(v)) },
+                            ticks: { callback: (v) => fmt(Number(v)) },
                             grid: { color: 'rgba(148, 163, 184, 0.25)' },
                         },
                     },
@@ -2223,35 +2579,30 @@ async function loadElecZoneTotalChart(zone, range, source = null) {
         const titleEl = document.getElementById('elecZoneChartTitle');
         const canvas = document.getElementById('elecZoneChart');
         if (!canvas) return;
-
         const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
 
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
-            setStatus(`Loading ${zone} generation (${range})…`);
-            if (titleEl) titleEl.textContent = `${zone} — Total generation (MW)${source ? ` [${source}]` : ''}`;
+            const isMwh = range !== 'day';
+            const unit = isMwh ? 'GWh' : 'MW';
+            const fmt = isMwh ? fmtGWh : fmtMwShort;
 
-            const { points: rawPoints, labelDaily, source: zsrc } = await elecFetchZoneTotalSeries(zone, range, source);
-            const points = elecDropExtremeSpike(rawPoints);
+            setStatus(`Loading ${zone} generation by type (${range})…`);
+            if (titleEl) titleEl.textContent = `${zone} — Generation by type (${unit})`;
 
-            const labels = points.map(p => {
-                const d = new Date(p.ts);
-                if (Number.isNaN(d.getTime())) return String(p.ts);
-                if (labelDaily) return d.toLocaleDateString();
-                return d.toLocaleString();
+            const { rows, valueCol, labelDaily } = await elecFetchZoneTotalSeries(zone, range, source);
+            const { timestamps, datasets } = buildElecTypeDatasets(rows, valueCol);
+
+            const labels = timestamps.map(ts => {
+                const d = new Date(ts);
+                return Number.isNaN(d.getTime()) ? ts : (labelDaily ? d.toLocaleDateString() : d.toLocaleString());
             });
-            const series = points.map(p => p.y);
 
-            if (!points.length) {
+            if (!timestamps.length) {
                 setStatus(`No generation data for ${zone} in selected range.`);
             } else {
-                const last = points[points.length - 1];
-                const lastD = new Date(last.ts);
-                let msg = `Last: ${fmtMwShort(last.y)} @ ${Number.isNaN(lastD.getTime()) ? last.ts : lastD.toLocaleString()}`;
-                if (zsrc === 'snapshots' && (range === '6m' || range === '1y' || range === '5y')) {
-                    msg += ' · Using raw snapshots (ensure energy_zone_total_* views exist for full-range speed).';
-                }
-                setStatus(msg);
+                const lastTotal = datasets.reduce((s, ds) => s + (Number(ds.data[ds.data.length - 1]) || 0), 0);
+                setStatus(`Latest total: ${fmt(lastTotal)}`);
             }
 
             const ctx = canvas.getContext('2d');
@@ -2260,43 +2611,40 @@ async function loadElecZoneTotalChart(zone, range, source = null) {
             if (existing) existing.destroy();
             if (elecZoneChart) { try { elecZoneChart.destroy(); } catch (_) {} elecZoneChart = null; }
 
-            const pointRadius = series.length <= 2 ? 3 : 0;
             elecZoneChart = new Chart(ctx, {
                 type: 'line',
-                data: {
-                    datasets: [{
-                        label: 'Total generation (MW)',
-                        data: series,
-                        borderColor: '#2563eb',
-                        backgroundColor: 'rgba(37, 99, 235, 0.12)',
-                        fill: true,
-                        tension: 0.25,
-                        pointRadius,
-                        borderWidth: 2,
-                    }],
-                    labels,
-                },
+                data: { labels, datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    parsing: true,
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { display: false },
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
                         tooltip: {
                             backgroundColor: 'rgba(15, 23, 42, 0.92)',
                             titleColor: '#fff',
                             bodyColor: '#fff',
                             padding: 10,
-                            displayColors: false,
-                            callbacks: { label: (ctx) => fmtMwShort(Number(ctx.parsed.y)) },
+                            filter: (item) => item.raw != null && item.raw > 0,
+                            callbacks: {
+                                label: (item) => {
+                                    const total = item.chart.data.datasets.reduce((s, ds) => s + (Number(ds.data[item.dataIndex]) || 0), 0);
+                                    const pct = total > 0 ? ` (${((Number(item.raw) / total) * 100).toFixed(1)}%)` : '';
+                                    return `${item.dataset.label}: ${fmt(Number(item.raw))}${pct}`;
+                                },
+                                footer: (items) => {
+                                    const total = items.reduce((s, i) => s + (Number(i.raw) || 0), 0);
+                                    return total > 0 ? `Total: ${fmt(total)}` : '';
+                                },
+                            },
                         },
                     },
                     scales: {
-                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
                         y: {
+                            stacked: true,
                             beginAtZero: true,
-                            ticks: { callback: (v) => fmtMwShort(Number(v)) },
+                            ticks: { callback: (v) => fmt(Number(v)) },
                             grid: { color: 'rgba(148, 163, 184, 0.25)' },
                         },
                     },

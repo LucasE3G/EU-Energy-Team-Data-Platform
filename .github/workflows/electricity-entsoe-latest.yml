@@ -1,0 +1,87 @@
+name: Electricity ENTSO-E latest (generation + load)
+
+# Calls the Supabase edge functions that ingest the latest:
+# - generation mix snapshots (A75) into public.energy_mix_snapshots
+# - load snapshots (A65) into public.electricity_load_snapshots
+#
+# Required repo secrets:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY  -> sent as the function Authorization header
+#
+# Note: energy_eu_*_mv and energy_eu_total_*_mv must still be refreshed via pg_cron.
+# The electricity_load_*_mwh views (daily/weekly MWh consumption) are refreshed
+# automatically by entsoe_ingest_load_eu_latest at the end of each run.
+
+on:
+  # Hourly keeps the meter feeling "near real-time" while staying within ENTSO-E limits.
+  schedule:
+    - cron: "12 * * * *"
+  workflow_dispatch:
+    inputs:
+      delay_ms:
+        description: "Delay between ENTSO-E zone requests (default 200)"
+        required: false
+        default: "200"
+        type: string
+
+concurrency:
+  group: electricity-entsoe-latest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Call ENTSO-E generation ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_FUNCTIONS_AUTH: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DELAY_MS: ${{ github.event.inputs.delay_ms || '200' }}
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL missing"; exit 1; }
+          [ -n "$SUPABASE_FUNCTIONS_AUTH" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
+          url="${SUPABASE_URL%/}/functions/v1/entsoe_ingest_eu_latest"
+          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d}' <<< '{}')
+          echo "POST $url"
+          http_code=$(curl -sS -o response_gen.json -w '%{http_code}' \
+            --max-time 900 \
+            -X POST "$url" \
+            -H "Authorization: Bearer $SUPABASE_FUNCTIONS_AUTH" \
+            -H "Content-Type: application/json" \
+            --data "$body")
+          echo "HTTP $http_code"
+          cat response_gen.json || true
+          echo
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Generation ingest returned HTTP $http_code"
+            exit 1
+          fi
+
+      - name: Call ENTSO-E load ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_FUNCTIONS_AUTH: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DELAY_MS: ${{ github.event.inputs.delay_ms || '200' }}
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL missing"; exit 1; }
+          [ -n "$SUPABASE_FUNCTIONS_AUTH" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
+          url="${SUPABASE_URL%/}/functions/v1/entsoe_ingest_load_eu_latest"
+          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d}' <<< '{}')
+          echo "POST $url"
+          http_code=$(curl -sS -o response_load.json -w '%{http_code}' \
+            --max-time 900 \
+            -X POST "$url" \
+            -H "Authorization: Bearer $SUPABASE_FUNCTIONS_AUTH" \
+            -H "Content-Type: application/json" \
+            --data "$body")
+          echo "HTTP $http_code"
+          cat response_load.json || true
+          echo
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Load ingest returned HTTP $http_code"
+            exit 1
+          fi
+

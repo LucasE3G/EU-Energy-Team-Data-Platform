@@ -199,6 +199,82 @@ def supabase_upsert_rows(
         raise RuntimeError(f"Supabase upsert failed HTTP {r.status_code}: {r.text[:300]}")
 
 
+def supabase_get_zone_earliest_ts(
+    supabase_url: str,
+    service_role_key: str,
+    zone_id: str,
+    source: str = "entsoe",
+) -> Optional[datetime]:
+    """
+    Return the earliest timestamp we already have for this zone in energy_mix_snapshots.
+    This lets the backfill skip re-fetching intraday history that's already stored.
+    """
+    url = f"{supabase_url.rstrip('/')}/rest/v1/energy_mix_snapshots"
+    params = {
+        "select": "ts",
+        "source": f"eq.{source}",
+        "zone_id": f"eq.{zone_id}",
+        "order": "ts.asc",
+        "limit": "1",
+    }
+    headers = {
+        "apikey": service_role_key,
+        "Authorization": f"Bearer {service_role_key}",
+        "Accept": "application/json",
+    }
+    r = requests.get(url, headers=headers, params=params, timeout=60)
+    if not r.ok:
+        raise RuntimeError(f"Supabase earliest-ts query failed HTTP {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    if not data:
+        return None
+    ts = data[0].get("ts")
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def supabase_get_zone_latest_ts(
+    supabase_url: str,
+    service_role_key: str,
+    zone_id: str,
+    source: str = "entsoe",
+) -> Optional[datetime]:
+    """
+    Return the latest timestamp we already have for this zone in energy_mix_snapshots.
+    Used to backfill/repair the newest missing days without re-fetching history.
+    """
+    url = f"{supabase_url.rstrip('/')}/rest/v1/energy_mix_snapshots"
+    params = {
+        "select": "ts",
+        "source": f"eq.{source}",
+        "zone_id": f"eq.{zone_id}",
+        "order": "ts.desc",
+        "limit": "1",
+    }
+    headers = {
+        "apikey": service_role_key,
+        "Authorization": f"Bearer {service_role_key}",
+        "Accept": "application/json",
+    }
+    r = requests.get(url, headers=headers, params=params, timeout=60)
+    if not r.ok:
+        raise RuntimeError(f"Supabase latest-ts query failed HTTP {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    if not data:
+        return None
+    ts = data[0].get("ts")
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
 def main() -> None:
     load_dotenv()
     entsoe_token = os.getenv("ENTSOE_API_TOKEN")
@@ -216,6 +292,8 @@ def main() -> None:
     delay_s = float(os.getenv("ENTSOE_DELAY_SECONDS", "0.2"))  # ~5 req/sec average
     max_requests = int(os.getenv("ENTSOE_MAX_REQUESTS", "1000000"))
     batch_size = int(os.getenv("ENTSOE_UPSERT_BATCH", "500"))
+    fill_recent = os.getenv("ENTSOE_FILL_RECENT", "1").strip() not in ("0", "false", "False", "no", "NO")
+    recent_days = int(os.getenv("ENTSOE_RECENT_DAYS", "14"))
 
     # Optional: limit zones for testing, e.g. "FR,DE,ES"
     zones_env = os.getenv("ENTSOE_ZONES")
@@ -223,6 +301,8 @@ def main() -> None:
 
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     target_start = now - timedelta(days=years * 365)
+    # When resuming, overlap slightly to avoid edge gaps due to resolution changes (15m/30m/60m).
+    overlap_days = int(os.getenv("ENTSOE_BACKFILL_OVERLAP_DAYS", "2"))
 
     req = 0
     for zone in zones:
@@ -231,7 +311,80 @@ def main() -> None:
             continue
 
         print(f"\n== {zone} ({domain}) ==")
-        end = now
+
+        # Skip already-covered history: if we already have data going back to (target_start),
+        # don't waste ENTSO-E requests re-downloading intradays.
+        earliest = None
+        latest = None
+        try:
+            earliest = supabase_get_zone_earliest_ts(supabase_url, service_role, zone, source="entsoe")
+            latest = supabase_get_zone_latest_ts(supabase_url, service_role, zone, source="entsoe")
+        except Exception as e:
+            # Non-fatal: fall back to full backfill for this zone.
+            print(f"Warn: couldn't query earliest ts for {zone}: {e}", file=sys.stderr)
+            earliest = None
+            latest = None
+
+        if earliest and earliest <= target_start:
+            print(f"Skip {zone}: already covered (earliest={earliest.date()} <= target_start={target_start.date()})")
+            # Still optionally fill the newest missing days.
+            if not fill_recent:
+                continue
+
+        # 1) Fill the newest missing window (forward) to repair gaps near "now".
+        # We don't know exactly which intraday points are missing, but upsert makes this safe.
+        if fill_recent:
+            recent_floor = now - timedelta(days=recent_days)
+            # Start from (latest - overlap) if we have it, else from recent_floor.
+            forward_start = (latest - timedelta(days=overlap_days)) if latest else recent_floor
+            if forward_start < recent_floor:
+                forward_start = recent_floor
+            forward_end = now
+            if forward_start < forward_end:
+                cur = forward_start
+                while cur < forward_end and req < max_requests:
+                    cur_end = min(cur + timedelta(days=chunk_days), forward_end)
+                    try:
+                        xml = fetch_a75_xml(entsoe_token, domain, cur, cur_end)
+                        points = parse_timeseries_points(xml)
+                    except Exception as e:
+                        msg = str(e)
+                        print(f"Error (recent) {zone} {cur.isoformat()} -> {cur_end.isoformat()}: {msg}", file=sys.stderr)
+                        if "429" in msg:
+                            time.sleep(10)
+                        else:
+                            time.sleep(2)
+                        continue
+
+                    req += 1
+                    if delay_s > 0:
+                        time.sleep(delay_s)
+
+                    rows = []
+                    for p in points:
+                        pct = p.renewable_percent
+                        if pct is None:
+                            continue
+                        rows.append(
+                            {
+                                "zone_id": zone,
+                                "country_code": zone,
+                                "ts": p.ts.isoformat().replace("+00:00", "Z"),
+                                "renewable_percent": pct,
+                                "carbon_intensity_g_per_kwh": None,
+                                "source": "entsoe",
+                                "raw": {"renewable_mw": p.renewable_mw, "total_mw": p.total_mw},
+                            }
+                        )
+                    for chunk in chunked(rows, batch_size):
+                        supabase_upsert_rows(supabase_url, service_role, chunk, on_conflict="source,zone_id,ts")
+                    print(f"OK recent req={req} points={len(rows)} range={cur.date()} -> {cur_end.date()}")
+                    cur = cur_end
+
+        # 2) Backfill older history (backward) until target_start.
+        end = earliest - timedelta(days=overlap_days) if earliest else now
+        if end > now:
+            end = now
 
         while end > target_start and req < max_requests:
             start = end - timedelta(days=chunk_days)

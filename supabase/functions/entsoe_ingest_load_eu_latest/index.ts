@@ -16,7 +16,7 @@ function sleep(ms: number) {
 }
 
 // Bidding zone EICs for EU + EEA + UK (practical set).
-// Note: Some countries are split into multiple bidding zones (DK, SE, NO, IT, etc.).
+// This mirrors `entsoe_ingest_eu_latest` so the UI can join zones consistently.
 const DOMAINS: Record<string, string> = {
   AT: "10YAT-APG------L",
   BE: "10YBE----------2",
@@ -82,20 +82,16 @@ function pickAll(text: string, regex: RegExp) {
   return out;
 }
 
-function parseGenerationPerTypeLatest(xml: string) {
+// Parse the latest load value for the time window.
+// ENTSO-E load comes as one or more TimeSeries; we take the maximum "latest"
+// quantity across series to avoid double-counting duplicates.
+function parseLoadLatest(xml: string) {
   const timeSeriesBlocks = pickAll(xml, /<TimeSeries[\s\S]*?<\/TimeSeries>/g);
-  // ENTSO-E can emit multiple TimeSeries with the same psrType (e.g. different
-  // businessType / production units). Summing their "latest" quantities can
-  // double-count the same physical generation and inflate totals (spikes).
-  // We take the max per psrType across blocks (conservative vs double-count).
-  const latestQtyByType: Record<string, number> = {};
   let bestTs: string | null = null;
+  let bestQty: number | null = null;
 
   for (const m of timeSeriesBlocks) {
     const block = m[0];
-    const psrType = (block.match(/<psrType>([^<]+)<\/psrType>/) || [])[1];
-    if (!psrType) continue;
-
     const periodStart = (block.match(/<timeInterval>\s*<start>([^<]+)<\/start>/) || [])[1];
     const resolution = (block.match(/<resolution>([^<]+)<\/resolution>/) || [])[1];
     const startMs = periodStart ? Date.parse(periodStart) : NaN;
@@ -114,9 +110,8 @@ function parseGenerationPerTypeLatest(xml: string) {
     }
     if (latestPos < 0 || latestQty == null) continue;
 
-    const prev = latestQtyByType[psrType];
-    latestQtyByType[psrType] =
-      prev == null ? latestQty : Math.max(prev, latestQty);
+    // Pick the max across series (dedupe-ish).
+    if (bestQty == null || latestQty > bestQty) bestQty = latestQty;
 
     if (Number.isFinite(startMs)) {
       const stepMinutes = resolution === "PT15M" ? 15 : resolution === "PT30M" ? 30 : 60;
@@ -125,32 +120,27 @@ function parseGenerationPerTypeLatest(xml: string) {
     }
   }
 
-  const byType: Record<string, number> = latestQtyByType;
-
-  const renewablePsr = new Set(["B01", "B09", "B11", "B12", "B13", "B15", "B16", "B17", "B18", "B19"]);
-  const total = Object.values(byType).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
-  const renewable = Object.entries(byType).reduce((a, [k, v]) => a + (renewablePsr.has(k) ? v : 0), 0);
-  const renewablePercent = total > 0 ? (renewable / total) * 100 : null;
-
-  return { ts: bestTs, renewablePercent, totalMw: total, renewableMw: renewable, byType };
+  return { ts: bestTs, loadMw: bestQty };
 }
 
-async function fetchZoneLatest(token: string, zone: string, domain: string) {
+async function fetchZoneLoadLatest(token: string, zone: string, domain: string) {
   const now = new Date();
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), 0, 0));
   const start = new Date(end.getTime() - 3 * 60 * 60 * 1000);
 
+  // Load: Total load value (Actual) is typically DocumentType=A65, ProcessType=A16.
+  // (ENTSO-E naming: Total Load, but still returned as timeseries of quantities.)
   const params = new URLSearchParams({
     securityToken: token,
-    documentType: "A75",
+    documentType: "A65",
     processType: "A16",
-    in_Domain: domain,
+    outBiddingZone_Domain: domain,
     periodStart: entsoeFormatYmdHm(start),
     periodEnd: entsoeFormatYmdHm(end),
   });
   const url = `https://web-api.tp.entsoe.eu/api?${params.toString()}`;
   const xml = await entsoeFetchText(url);
-  const parsed = parseGenerationPerTypeLatest(xml);
+  const parsed = parseLoadLatest(xml);
   return { zone, domain, ...parsed };
 }
 
@@ -169,13 +159,9 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const zones = (Array.isArray(body?.zones) && body.zones.length ? body.zones : Object.keys(DOMAINS)).map(String);
-
-    // Throttle: keep average ~5 req/sec (well under 400 req/min even with bursts).
     const perRequestDelayMs = Number(body?.delay_ms ?? 200);
 
     const perZone: any[] = [];
-    let euRenewableMw = 0;
-    let euTotalMw = 0;
     let bestTs: string | null = null;
     const errors: Record<string, string> = {};
     const skipped: Record<string, string> = {};
@@ -184,23 +170,9 @@ serve(async (req) => {
       const domain = DOMAINS[z];
       if (!domain) continue;
       try {
-        const r = await fetchZoneLatest(entsoeToken, z, domain);
-        perZone.push({
-          zone: z,
-          ts: r.ts,
-          renewablePercent: r.renewablePercent,
-          totalMw: r.totalMw,
-          renewableMw: r.renewableMw,
-          byType: r.byType,
-        });
-
-        // Skip zones with no usable data in the requested window so the aggregate isn't biased toward 0.
-        if (!r.ts || !r.totalMw || r.totalMw <= 0) {
-          skipped[z] = "no_usable_data";
-        } else {
-          euRenewableMw += r.renewableMw || 0;
-          euTotalMw += r.totalMw || 0;
-        }
+        const r = await fetchZoneLoadLatest(entsoeToken, z, domain);
+        perZone.push({ zone: z, ts: r.ts, loadMw: r.loadMw });
+        if (!r.ts || r.loadMw == null || r.loadMw <= 0) skipped[z] = "no_usable_data";
         if (r.ts && (!bestTs || Date.parse(r.ts) > Date.parse(bestTs))) bestTs = r.ts;
       } catch (e) {
         errors[z] = e?.message ?? String(e);
@@ -208,84 +180,43 @@ serve(async (req) => {
       if (perRequestDelayMs > 0) await sleep(perRequestDelayMs);
     }
 
-    // Ensure we never store null if we had at least some usable zones.
-    const euRenewablePercent = euTotalMw > 0 ? (euRenewableMw / euTotalMw) * 100 : 0;
-    const ts = bestTs ?? new Date().toISOString();
-
     const supabase = createClient(supabaseUrl, serviceRole, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Upsert per-zone snapshots (so you can click a country/zone and chart it)
-    // Note: timestamps may differ per zone; we store each zone with its own ts.
-    const zoneRows = perZone
-      .filter((z) => z.zone && z.ts && typeof z.renewablePercent === "number")
+    const rows = perZone
+      .filter((z) => z.zone && z.ts && typeof z.loadMw === "number")
       .map((z) => ({
         zone_id: String(z.zone),
         country_code: String(z.zone),
         ts: z.ts,
-        renewable_percent: z.renewablePercent,
-        carbon_intensity_g_per_kwh: null,
+        load_mw: z.loadMw,
         source: "entsoe",
-        raw: { totalMw: z.totalMw, renewableMw: z.renewableMw, byType: z.byType ?? {} },
+        raw: { loadMw: z.loadMw },
       }));
 
-    if (zoneRows.length) {
-      // Insert in chunks to avoid request size limits
+    if (rows.length) {
       const chunkSize = 200;
-      for (let i = 0; i < zoneRows.length; i += chunkSize) {
-        const chunk = zoneRows.slice(i, i + chunkSize);
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize);
         const { error: zoneErr } = await supabase
-          .from("energy_mix_snapshots")
+          .from("electricity_load_snapshots")
           .upsert(chunk, { onConflict: "source,zone_id,ts" });
         if (zoneErr) return json({ error: "db_error", message: zoneErr.message }, 500);
       }
+
+      // Refresh MWh materialized views so daily/weekly charts stay current.
+      const { error: refreshErr } = await supabase.rpc("refresh_electricity_load_mvs");
+      if (refreshErr) console.error("MV refresh failed:", refreshErr.message);
     }
-
-    // Upsert per-zone, per-psrType generation points into generation table.
-    const genRows: any[] = [];
-    for (const z of perZone) {
-      if (!z.zone || !z.ts || !z.byType) continue;
-      for (const [psrType, mw] of Object.entries(z.byType as Record<string, number>)) {
-        if (typeof mw !== "number" || mw < 0) continue;
-        genRows.push({ zone_id: String(z.zone), ts: z.ts, psr_type: psrType, mw, source: "entsoe" });
-      }
-    }
-    if (genRows.length) {
-      const chunkSize = 500;
-      for (let i = 0; i < genRows.length; i += chunkSize) {
-        const { error: genErr } = await supabase
-          .from("electricity_generation_snapshots")
-          .upsert(genRows.slice(i, i + chunkSize), { onConflict: "source,zone_id,ts,psr_type" });
-        if (genErr) console.error("Generation by type upsert failed:", genErr.message);
-      }
-    }
-
-    // Store EU aggregate as zone_id='EU'
-    const payload = {
-      zone_id: "EU",
-      country_code: null,
-      ts,
-      renewable_percent: euRenewablePercent,
-      carbon_intensity_g_per_kwh: null,
-      source: "entsoe",
-      raw: { scope: "EU+EEA+UK", euRenewableMw, euTotalMw, zones: perZone, skipped, errors },
-    };
-
-    const { error } = await supabase
-      .from("energy_mix_snapshots")
-      .upsert(payload, { onConflict: "source,zone_id,ts" });
-
-    if (error) return json({ error: "db_error", message: error.message }, 500);
 
     return json({
       ok: true,
-      inserted: payload,
-      zones_total: perZone.length,
-      zones_used_in_aggregate: perZone.length - Object.keys(skipped).length,
+      ts: bestTs ?? null,
+      zones_total: zones.length,
+      zone_rows_upserted: rows.length,
       zones_skipped: Object.keys(skipped).length,
       errors: Object.keys(errors).length,
-      zone_rows_upserted: zoneRows.length,
     });
   } catch (e) {
     return json({ error: "internal_error", message: e?.message ?? String(e) }, 500);

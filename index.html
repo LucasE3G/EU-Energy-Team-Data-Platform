@@ -271,7 +271,8 @@
                 <!-- Electricity meter tabs -->
                 <div class="em-tabs">
                     <button class="em-tab-btn active" data-em-tab="renewable">Renewable energy</button>
-                    <button class="em-tab-btn" data-em-tab="electricity">Electricity</button>
+                    <button class="em-tab-btn" data-em-tab="electricity">Generation</button>
+                    <button class="em-tab-btn" data-em-tab="demand">Demand</button>
                 </div>
 
                 <!-- Renewable energy tab -->
@@ -422,7 +423,7 @@
 
                     <div class="section">
                         <div class="section-header">
-                            <h2 class="section-title">EU + EEA total electricity generation (ENTSO‑E)</h2>
+                            <h2 class="section-title">EU + EEA electricity generation by type (ENTSO‑E)</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
                                 <button class="btn-secondary" id="elecEuRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="elecEuRangeWeekBtn">Week</button>
@@ -456,7 +457,7 @@
 
                     <div class="section">
                         <div class="section-header">
-                            <h2 class="section-title">Selected zone total electricity generation</h2>
+                            <h2 class="section-title">Selected zone electricity generation by type</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
                                 <button class="btn-secondary" id="elecZoneRangeDayBtn">Day</button>
                                 <button class="btn-secondary" id="elecZoneRangeWeekBtn">Week</button>
@@ -492,6 +493,116 @@
                                 </thead>
                                 <tbody id="elecMeterTableBody">
                                     <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Demand tab (total load) -->
+                <div id="demandEmTab" class="em-tab-pane">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🕒</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="loadLastUpdated">-</div>
+                                <div class="stat-label">Last updated</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌍</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="loadZones">-</div>
+                                <div class="stat-label">Zones</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🔌</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="loadEuTotal">-</div>
+                                <div class="stat-label">EU total load</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📈</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="loadAvgZone">-</div>
+                                <div class="stat-label">Avg zone load</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU + EEA total electricity demand (ENTSO‑E)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                                <button class="btn-secondary" id="loadEuRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="loadEuRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="loadEuRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="loadEuRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="loadEuRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="loadEuRange5yBtn">5y</button>
+                            </div>
+                        </div>
+                        <div id="loadEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="loadEuChartTitle">EU — Total electricity demand (MW)</h3>
+                            <div class="chart-container">
+                                <canvas id="loadEuChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU electricity demand map (latest)</h2>
+                            <div class="section-actions">
+                                <button class="btn-secondary" id="loadRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div id="loadMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div id="loadMapContainer" class="energy-map-card">
+                            <div class="chart-loading">Loading map...</div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Selected zone electricity demand</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap;">
+                                <button class="btn-secondary" id="loadZoneRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="loadZoneRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="loadZoneRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="loadZoneRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="loadZoneRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="loadZoneRange5yBtn">5y</button>
+                            </div>
+                        </div>
+                        <div id="loadZoneStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="loadZoneChartTitle">Click a zone to chart</h3>
+                            <div class="chart-container">
+                                <canvas id="loadZoneChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Latest snapshot</h2>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Zone</th>
+                                        <th>Timestamp</th>
+                                        <th>Load (MW)</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="loadMeterTableBody">
+                                    <tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
                                 </tbody>
                             </table>
                         </div>
