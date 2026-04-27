@@ -1,0 +1,3 @@
+name = "entsoe_ingest_price_eu_latest"
+verify_jwt = false
+

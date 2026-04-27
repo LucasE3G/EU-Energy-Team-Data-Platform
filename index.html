@@ -279,6 +279,7 @@
                 <div class="em-tabs">
                     <button class="em-tab-btn active" data-em-tab="renewable">Renewable energy</button>
                     <button class="em-tab-btn" data-em-tab="electricity">Generation</button>
+                    <button class="em-tab-btn" data-em-tab="prices">Prices</button>
                     <button class="em-tab-btn" data-em-tab="demand">Demand</button>
                 </div>
 
@@ -506,6 +507,97 @@
                                     <tr><td colspan="5" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prices tab (day-ahead market) -->
+                <div id="pricesEmTab" class="em-tab-pane">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🕒</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceLastUpdated">-</div>
+                                <div class="stat-label">Last updated</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌍</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceZones">-</div>
+                                <div class="stat-label">Zones</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">💶</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceEuAvg">-</div>
+                                <div class="stat-label" id="priceEuAvgLabel">EU avg (last 24h)</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📈</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceSelected">-</div>
+                                <div class="stat-label">Selected zone</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU + EEA day-ahead electricity price (ENTSO‑E)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="priceEuRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="priceEuRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="priceEuRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="priceEuRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="priceEuRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="priceEuRange5yBtn">5y</button>
+                            </div>
+                        </div>
+                        <div id="priceEuStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="priceEuChartTitle">EU — Day-ahead price (€/MWh)</h3>
+                            <div class="chart-container">
+                                <canvas id="priceEuChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title" id="priceMapTitle">Price map (last 24h avg)</h2>
+                            <div class="section-actions">
+                                <button class="btn-secondary active" id="priceMapWindow24hBtn">24h</button>
+                                <button class="btn-secondary" id="priceMapWindow30dBtn">30d</button>
+                                <button class="btn-secondary" id="priceRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div id="priceMeterStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div id="priceMapContainer" class="energy-map-card">
+                            <div class="chart-loading">Loading map...</div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Selected zone day-ahead price</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="priceZoneRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="priceZoneRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="priceZoneRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="priceZoneRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="priceZoneRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="priceZoneRange5yBtn">5y</button>
+                            </div>
+                        </div>
+                        <div id="priceZoneStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="priceZoneChartTitle">Click a zone to chart</h3>
+                            <div class="chart-container">
+                                <canvas id="priceZoneChart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>

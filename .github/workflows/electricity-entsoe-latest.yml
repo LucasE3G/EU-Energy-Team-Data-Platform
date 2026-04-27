@@ -1,8 +1,9 @@
-name: Electricity ENTSO-E latest (generation + load)
+name: Electricity ENTSO-E latest (generation + load + price)
 
 # Calls the Supabase edge functions that ingest the latest:
 # - generation mix snapshots (A75) into public.energy_mix_snapshots
 # - load snapshots (A65) into public.electricity_load_snapshots
+# - day-ahead prices (A44) into public.electricity_day_ahead_prices
 #
 # Required repo secrets:
 #   SUPABASE_URL
@@ -43,7 +44,7 @@ jobs:
           [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL missing"; exit 1; }
           [ -n "$SUPABASE_FUNCTIONS_AUTH" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
           url="${SUPABASE_URL%/}/functions/v1/entsoe_ingest_eu_latest"
-          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d}' <<< '{}')
+          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d, concurrency:6}' <<< '{}')
           echo "POST $url"
           http_code=$(curl -sS -o response_gen.json -w '%{http_code}' \
             --max-time 900 \
@@ -69,7 +70,7 @@ jobs:
           [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL missing"; exit 1; }
           [ -n "$SUPABASE_FUNCTIONS_AUTH" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
           url="${SUPABASE_URL%/}/functions/v1/entsoe_ingest_load_eu_latest"
-          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d}' <<< '{}')
+          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d, concurrency:6}' <<< '{}')
           echo "POST $url"
           http_code=$(curl -sS -o response_load.json -w '%{http_code}' \
             --max-time 900 \
@@ -82,6 +83,32 @@ jobs:
           echo
           if [ "$http_code" -ge 400 ]; then
             echo "::error::Load ingest returned HTTP $http_code"
+            exit 1
+          fi
+
+      - name: Call ENTSO-E day-ahead price ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_FUNCTIONS_AUTH: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DELAY_MS: ${{ github.event.inputs.delay_ms || '200' }}
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL missing"; exit 1; }
+          [ -n "$SUPABASE_FUNCTIONS_AUTH" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY missing"; exit 1; }
+          url="${SUPABASE_URL%/}/functions/v1/entsoe_ingest_price_eu_latest"
+          body=$(jq -c --argjson d "${INPUT_DELAY_MS:-200}" '{delay_ms:$d, concurrency:6}' <<< '{}')
+          echo "POST $url"
+          http_code=$(curl -sS -o response_price.json -w '%{http_code}' \
+            --max-time 900 \
+            -X POST "$url" \
+            -H "Authorization: Bearer $SUPABASE_FUNCTIONS_AUTH" \
+            -H "Content-Type: application/json" \
+            --data "$body")
+          echo "HTTP $http_code"
+          cat response_price.json || true
+          echo
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Price ingest returned HTTP $http_code"
             exit 1
           fi
 

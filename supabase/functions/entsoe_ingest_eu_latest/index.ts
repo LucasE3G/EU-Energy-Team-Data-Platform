@@ -69,7 +69,9 @@ function entsoeFormatYmdHm(date: Date) {
 }
 
 async function entsoeFetchText(url: string) {
-  const res = await fetch(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const res = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
   const text = await res.text();
   if (!res.ok) throw new Error(`ENTSOE HTTP ${res.status}: ${text.slice(0, 300)}`);
   return text;
@@ -180,33 +182,41 @@ serve(async (req) => {
     const errors: Record<string, string> = {};
     const skipped: Record<string, string> = {};
 
-    for (const z of zones) {
-      const domain = DOMAINS[z];
-      if (!domain) continue;
-      try {
-        const r = await fetchZoneLatest(entsoeToken, z, domain);
-        perZone.push({
-          zone: z,
-          ts: r.ts,
-          renewablePercent: r.renewablePercent,
-          totalMw: r.totalMw,
-          renewableMw: r.renewableMw,
-          byType: r.byType,
-        });
+    // Concurrency pool so this finishes under the 150s idle timeout.
+    const concurrency = Math.max(1, Math.min(8, Number(body?.concurrency ?? 6)));
+    const queue = [...zones];
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (queue.length) {
+        const z = String(queue.shift());
+        const domain = DOMAINS[z];
+        if (!domain) continue;
+        try {
+          const r = await fetchZoneLatest(entsoeToken, z, domain);
+          perZone.push({
+            zone: z,
+            ts: r.ts,
+            renewablePercent: r.renewablePercent,
+            totalMw: r.totalMw,
+            renewableMw: r.renewableMw,
+            byType: r.byType,
+          });
 
-        // Skip zones with no usable data in the requested window so the aggregate isn't biased toward 0.
-        if (!r.ts || !r.totalMw || r.totalMw <= 0) {
-          skipped[z] = "no_usable_data";
-        } else {
-          euRenewableMw += r.renewableMw || 0;
-          euTotalMw += r.totalMw || 0;
+          // Skip zones with no usable data in the requested window so the aggregate isn't biased toward 0.
+          if (!r.ts || !r.totalMw || r.totalMw <= 0) {
+            skipped[z] = "no_usable_data";
+          } else {
+            euRenewableMw += r.renewableMw || 0;
+            euTotalMw += r.totalMw || 0;
+          }
+          if (r.ts && (!bestTs || Date.parse(r.ts) > Date.parse(bestTs))) bestTs = r.ts;
+        } catch (e) {
+          errors[z] = e?.message ?? String(e);
         }
-        if (r.ts && (!bestTs || Date.parse(r.ts) > Date.parse(bestTs))) bestTs = r.ts;
-      } catch (e) {
-        errors[z] = e?.message ?? String(e);
+        if (perRequestDelayMs > 0) await sleep(perRequestDelayMs);
       }
-      if (perRequestDelayMs > 0) await sleep(perRequestDelayMs);
-    }
+    });
+
+    await Promise.all(workers);
 
     // Ensure we never store null if we had at least some usable zones.
     const euRenewablePercent = euTotalMw > 0 ? (euRenewableMw / euTotalMw) * 100 : 0;
@@ -286,6 +296,7 @@ serve(async (req) => {
       zones_skipped: Object.keys(skipped).length,
       errors: Object.keys(errors).length,
       zone_rows_upserted: zoneRows.length,
+      concurrency,
     });
   } catch (e) {
     return json({ error: "internal_error", message: e?.message ?? String(e) }, 500);

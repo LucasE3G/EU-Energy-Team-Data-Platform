@@ -1541,6 +1541,20 @@ let loadLatestRows = [];
 let loadSelectedZone = null;
 let loadSelectedSource = null;
 
+// Prices tab (day-ahead)
+let priceEuChart = null;
+let priceEuRange = '1y';
+let priceEuChartLoadInFlight = null;
+
+let priceZoneChart = null;
+let priceZoneRange = 'day';
+let priceZoneChartLoadInFlight = null;
+
+let priceTabInited = false;
+let priceLatestRows = []; // latest avg price per zone (last 24h)
+let priceSelectedZone = null;
+let priceMapWindow = '24h'; // '24h' | '30d'
+
 function fmtMwShort(mw) {
     const n = Number(mw);
     if (!Number.isFinite(n)) return '-';
@@ -1548,6 +1562,12 @@ function fmtMwShort(mw) {
     if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(2)} TW`;
     if (abs >= 1_000) return `${(n / 1_000).toFixed(1)} GW`;
     return `${Math.round(n)} MW`;
+}
+
+function fmtEurPerMwh(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '-';
+    return `${n.toFixed(1)} €/MWh`;
 }
 
 function setupElectricityMeterTabs() {
@@ -1577,6 +1597,13 @@ function switchElectricityMeterTab(target) {
             initElectricityTabControls();
         }
         loadElectricityTabData();
+    } else if (target === 'prices') {
+        document.getElementById('pricesEmTab')?.classList.add('active');
+        if (!priceTabInited) {
+            priceTabInited = true;
+            initPriceTabControls();
+        }
+        loadPriceTabData();
     } else if (target === 'demand') {
         document.getElementById('demandEmTab')?.classList.add('active');
         if (!loadTabInited) {
@@ -1587,6 +1614,76 @@ function switchElectricityMeterTab(target) {
     } else {
         document.getElementById('renewableEmTab')?.classList.add('active');
     }
+}
+
+function initPriceTabControls() {
+    const bindEu = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            priceEuRange = range;
+            updatePriceEuRangeButtonActive();
+            loadPriceEuChart(range);
+        });
+    };
+    bindEu('priceEuRangeDayBtn', 'day');
+    bindEu('priceEuRangeWeekBtn', 'week');
+    bindEu('priceEuRangeMonthBtn', 'month');
+    bindEu('priceEuRange6mBtn', '6m');
+    bindEu('priceEuRange1yBtn', '1y');
+    bindEu('priceEuRange5yBtn', '5y');
+
+    const bindZone = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            priceZoneRange = range;
+            updatePriceZoneRangeButtonActive();
+            if (priceSelectedZone) loadPriceZoneChart(priceSelectedZone, range);
+        });
+    };
+    bindZone('priceZoneRangeDayBtn', 'day');
+    bindZone('priceZoneRangeWeekBtn', 'week');
+    bindZone('priceZoneRangeMonthBtn', 'month');
+    bindZone('priceZoneRange6mBtn', '6m');
+    bindZone('priceZoneRange1yBtn', '1y');
+    bindZone('priceZoneRange5yBtn', '5y');
+
+    const refreshBtn = document.getElementById('priceRefreshBtn');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = '1';
+        refreshBtn.addEventListener('click', () => loadPriceTabData(true));
+    }
+
+    const w24 = document.getElementById('priceMapWindow24hBtn');
+    if (w24 && !w24.dataset.bound) {
+        w24.dataset.bound = '1';
+        w24.addEventListener('click', () => {
+            priceMapWindow = '24h';
+            updatePriceMapWindowButtons();
+            loadPriceTabData();
+        });
+    }
+    const w30 = document.getElementById('priceMapWindow30dBtn');
+    if (w30 && !w30.dataset.bound) {
+        w30.dataset.bound = '1';
+        w30.addEventListener('click', () => {
+            priceMapWindow = '30d';
+            updatePriceMapWindowButtons();
+            loadPriceTabData();
+        });
+    }
+}
+
+function updatePriceMapWindowButtons() {
+    document.getElementById('priceMapWindow24hBtn')?.classList.toggle('active', priceMapWindow === '24h');
+    document.getElementById('priceMapWindow30dBtn')?.classList.toggle('active', priceMapWindow === '30d');
+    const title = document.getElementById('priceMapTitle');
+    if (title) title.textContent = `Price map (${priceMapWindow === '30d' ? 'last 30d avg' : 'last 24h avg'})`;
+    const label = document.getElementById('priceEuAvgLabel');
+    if (label) label.textContent = `EU avg (${priceMapWindow === '30d' ? 'last 30d' : 'last 24h'})`;
 }
 
 function initElectricityTabControls() {
@@ -2292,6 +2389,445 @@ async function loadLoadZoneChart(zone, range, source = null) {
     finally { loadZoneChartLoadInFlight = null; }
 }
 
+
+function updatePriceEuRangeButtonActive() {
+    const map = {
+        day: 'priceEuRangeDayBtn',
+        week: 'priceEuRangeWeekBtn',
+        month: 'priceEuRangeMonthBtn',
+        '6m': 'priceEuRange6mBtn',
+        '1y': 'priceEuRange1yBtn',
+        '5y': 'priceEuRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', priceEuRange === range);
+    });
+}
+
+function updatePriceZoneRangeButtonActive() {
+    const map = {
+        day: 'priceZoneRangeDayBtn',
+        week: 'priceZoneRangeWeekBtn',
+        month: 'priceZoneRangeMonthBtn',
+        '6m': 'priceZoneRange6mBtn',
+        '1y': 'priceZoneRange1yBtn',
+        '5y': 'priceZoneRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', priceZoneRange === range);
+    });
+}
+
+function priceRangeToSinceIso(range) {
+    const now = Date.now();
+    const days =
+        range === 'day' ? 1 :
+        range === 'week' ? 7 :
+        range === 'month' ? 31 :
+        range === '6m' ? 183 :
+        range === '1y' ? 365 :
+        range === '5y' ? 365 * 5 : 365;
+    return new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+async function loadPriceTabData(forceRefresh = false) {
+    const statusEl = document.getElementById('priceMeterStatus');
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+    const container = document.getElementById('priceMapContainer');
+    if (!container) return;
+
+    try {
+        if (!supabase) throw new Error('Supabase client not initialized.');
+        setStatus('Fetching latest prices…');
+        container.innerHTML = '<div class="chart-loading">Loading map…</div>';
+
+        // Optional: trigger fresh ingestion (if Edge Function is reachable).
+        if (forceRefresh) {
+            try {
+                await fetch(`${SUPABASE_URL}/functions/v1/entsoe_ingest_price_eu_latest`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ delay_ms: 0, concurrency: 6 }),
+                });
+            } catch (_) {}
+        }
+
+        updatePriceMapWindowButtons();
+        const days = priceMapWindow === '30d' ? 30 : 1;
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+            .from('electricity_day_ahead_prices')
+            .select('zone_id, ts, price_eur_per_mwh')
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: false })
+            .limit(priceMapWindow === '30d' ? 50000 : 5000);
+        if (error) throw new Error(error.message);
+
+        const rows = Array.isArray(data) ? data : [];
+        const byZone = new Map();
+        for (const r of rows) {
+            const z = String(r.zone_id || '').toUpperCase();
+            const v = Number(r.price_eur_per_mwh);
+            if (!z || !Number.isFinite(v)) continue;
+            const prev = byZone.get(z) || { sum: 0, n: 0, newest: null };
+            prev.sum += v;
+            prev.n += 1;
+            const t = r.ts ? new Date(r.ts).getTime() : NaN;
+            if (Number.isFinite(t) && (!prev.newest || t > prev.newest)) prev.newest = t;
+            byZone.set(z, prev);
+        }
+        const latest = [];
+        for (const [z, v] of byZone.entries()) {
+            latest.push({ zone_id: z, ts: v.newest ? new Date(v.newest).toISOString() : null, price: v.n ? (v.sum / v.n) : null });
+        }
+        latest.sort((a, b) => String(a.zone_id).localeCompare(String(b.zone_id)));
+        priceLatestRows = latest;
+
+        const newestMs = Math.max(0, ...latest.map(r => r.ts ? new Date(r.ts).getTime() : 0));
+        document.getElementById('priceLastUpdated').textContent = newestMs ? new Date(newestMs).toLocaleString() : '-';
+        document.getElementById('priceZones').textContent = String(latest.length);
+        const vals = latest.map(r => Number(r.price)).filter(Number.isFinite);
+        const euAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+        document.getElementById('priceEuAvg').textContent = fmtEurPerMwh(euAvg);
+        document.getElementById('priceSelected').textContent = priceSelectedZone ? String(priceSelectedZone) : '-';
+
+        // Use the same clickable EU geo map style as generation/demand tabs.
+        renderPriceGeoMap(container, latest).catch((e) => {
+            console.warn('Price geo map render failed, falling back to tile grid:', e);
+            renderPriceTileGrid(container, latest);
+        });
+        updatePriceEuRangeButtonActive();
+        updatePriceZoneRangeButtonActive();
+        await loadPriceEuChart(priceEuRange);
+        if (priceSelectedZone) await loadPriceZoneChart(priceSelectedZone, priceZoneRange);
+        setStatus('');
+    } catch (err) {
+        console.error('Price tab failed:', err);
+        setStatus(`Failed: ${err.message || String(err)}`);
+        container.innerHTML = '<div class="chart-loading">Failed to load prices.</div>';
+    }
+}
+
+function renderPriceTileGrid(container, rows) {
+    const values = rows.map(r => Number(r.price)).filter(Number.isFinite);
+    const max = values.length ? Math.max(...values) : 1;
+    const min = values.length ? Math.min(...values) : 0;
+    const legend = `
+        <div class="energy-map-legend">
+            <span>Low price</span>
+            <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgba(34,197,94,0.2), rgba(239,68,68,0.9));"></div>
+            <span>High price</span>
+        </div>
+    `;
+    const tiles = rows.map(r => {
+        const zone = String(r.zone_id || '');
+        const v = Number(r.price);
+        const t = Number.isFinite(v) && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : 0;
+        const bg = `rgba(${Math.round(34 + t * (239-34))},${Math.round(197 + t * (68-197))},${Math.round(94 + t * (68-94))},${0.18 + t * 0.55})`;
+        const isActive = String(priceSelectedZone || '').toUpperCase() === zone.toUpperCase();
+        return `
+            <div class="energy-map-tile ${isActive ? 'active' : ''}" data-zone="${escapeHtml(zone)}" style="background:${bg}">
+                <div class="energy-map-tile-code">${escapeHtml(zone)}</div>
+                <div class="energy-map-tile-value">${escapeHtml(Number.isFinite(v) ? fmtEurPerMwh(v) : '—')}</div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `${legend}<div class="energy-map-grid">${tiles}</div>`;
+    container.querySelectorAll('.energy-map-tile').forEach(el => {
+        el.addEventListener('click', () => {
+            const z = el.getAttribute('data-zone');
+            if (!z) return;
+            priceSelectedZone = z;
+            document.getElementById('priceSelected').textContent = z;
+            updatePriceZoneRangeButtonActive();
+            loadPriceZoneChart(z, priceZoneRange);
+            container.querySelectorAll('.energy-map-tile').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+        });
+    });
+}
+
+async function renderPriceGeoMap(container, latestRows) {
+    const rows = (latestRows || []).filter(r => r.zone_id && Number.isFinite(Number(r.price)));
+    if (!rows.length) throw new Error('No price rows.');
+
+    const countryGeo = await fetchEuropeCountriesGeoJsonOnce();
+    const width = 1400;
+    const height = 860;
+    const padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+
+    const byCountry = {};
+    for (const r of rows) {
+        const iso2 = zoneToCountryIso2(r.zone_id);
+        const v = Number(r.price);
+        if (!iso2 || !Number.isFinite(v)) continue;
+        // If multiple bidding zones map to same ISO2, average them.
+        const prev = byCountry[iso2] || { sum: 0, n: 0 };
+        prev.sum += v;
+        prev.n += 1;
+        byCountry[iso2] = prev;
+    }
+    const values = Object.values(byCountry).map(v => v.n ? v.sum / v.n : NaN).filter(Number.isFinite);
+    const min = values.length ? Math.min(...values) : 0;
+    const max = values.length ? Math.max(...values) : 1;
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Day-ahead electricity price</div>
+                    <div class="energy-map-subtitle">Last 24h average (click a country to chart)</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(priceSelectedZone || '—')}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span>Low</span>
+                <div class="energy-map-legend-bar" style="background: linear-gradient(90deg, rgba(34,197,94,0.2), rgba(239,68,68,0.9));"></div>
+                <span>High</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Day-ahead price map"></svg>
+            </div>
+        </div>
+    `;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    const features = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    for (const f of features) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2) continue;
+        if (iso2 === 'RU' || iso2 === 'BY') continue;
+
+        const dataKey = iso2GeoToDataKey(iso2);
+        const agg = byCountry[dataKey];
+        const v = agg && agg.n ? (agg.sum / agg.n) : null;
+        const t = Number.isFinite(v) && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : null;
+        const fill = t == null ? 'rgba(148,163,184,0.18)' : `rgba(${Math.round(34 + t * (239-34))},${Math.round(197 + t * (68-197))},${Math.round(94 + t * (68-94))},${0.18 + t * 0.55})`;
+
+        const geom = f.geometry;
+        if (!geom) continue;
+        const type = geom.type;
+        const coords = geom.coordinates;
+
+        const paths = [];
+        if (type === 'Polygon') {
+            paths.push(polygonToPath(coords[0], width, height, bounds, padding));
+        } else if (type === 'MultiPolygon') {
+            for (const poly of coords) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+
+        const d = paths.join(' ');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-iso2', iso2);
+        path.style.cursor = 'pointer';
+
+        path.addEventListener('mouseenter', () => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${iso2} — ${Number.isFinite(v) ? fmtEurPerMwh(v) : '—'}`;
+        });
+        path.addEventListener('mousemove', (e) => {
+            tooltip.style.left = `${e.clientX}px`;
+            tooltip.style.top = `${e.clientY}px`;
+        });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => {
+            const picked = pickZoneForCountry(rows.map(r => ({ zone_id: r.zone_id })), iso2);
+            // If we can't pick a zone from the price rows (some countries split), fall back to ISO2.
+            priceSelectedZone = picked?.zone_id ? String(picked.zone_id) : iso2;
+            document.getElementById('priceSelected').textContent = priceSelectedZone;
+            updatePriceZoneRangeButtonActive();
+            loadPriceZoneChart(priceSelectedZone, priceZoneRange);
+        });
+
+        svg.appendChild(path);
+    }
+}
+
+async function loadPriceEuChart(range) {
+    if (priceEuChartLoadInFlight) return await priceEuChartLoadInFlight;
+    priceEuChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('priceEuStatus');
+        const titleEl = document.getElementById('priceEuChartTitle');
+        const canvas = document.getElementById('priceEuChart');
+        if (!canvas) return;
+        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+            const since = priceRangeToSinceIso(range);
+            const useWeekly = range === '5y';
+            const useDaily = range === '6m' || range === '1y';
+            const mvTable = useWeekly
+                ? 'electricity_eu_price_weekly_mv'
+                : useDaily
+                ? 'electricity_eu_price_daily_mv'
+                : 'electricity_eu_price_hourly_mv';
+
+            setStatus(`Loading EU prices (${range})…`);
+            if (titleEl) titleEl.textContent = 'EU — Day-ahead price (€/MWh)';
+
+            const maxPoints = useWeekly ? 400 : useDaily ? 900 : (range === 'month' ? 1200 : 400);
+            const { data, error } = await supabase
+                .from(mvTable)
+                .select('ts, price_eur_per_mwh')
+                .gte('ts', since)
+                .order('ts', { ascending: false })
+                .limit(maxPoints);
+            if (error) throw new Error(error.message);
+
+            const rows = (Array.isArray(data) ? data : []).reverse();
+            const labels = rows.map(r => {
+                const d = new Date(r.ts);
+                if (Number.isNaN(d.getTime())) return String(r.ts);
+                return (useWeekly || useDaily) ? d.toLocaleDateString() : d.toLocaleString();
+            });
+            const series = rows.map(r => Number(r.price_eur_per_mwh));
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            if (priceEuChart) { try { priceEuChart.destroy(); } catch (_) {} priceEuChart = null; }
+
+            priceEuChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'EU day-ahead price (€/MWh)',
+                        data: series,
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.10)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius: series.length <= 2 ? 3 : 0,
+                        borderWidth: 2,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        y: { beginAtZero: false, ticks: { callback: (v) => fmtEurPerMwh(Number(v)) } },
+                    },
+                },
+            });
+            setStatus('');
+        } catch (err) {
+            console.error('EU price chart failed:', err);
+            setStatus(`Failed: ${err.message || String(err)}`);
+        }
+    })();
+    try { return await priceEuChartLoadInFlight; }
+    finally { priceEuChartLoadInFlight = null; }
+}
+
+async function loadPriceZoneChart(zone, range) {
+    if (priceZoneChartLoadInFlight) return await priceZoneChartLoadInFlight;
+    priceZoneChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('priceZoneStatus');
+        const titleEl = document.getElementById('priceZoneChartTitle');
+        const canvas = document.getElementById('priceZoneChart');
+        if (!canvas) return;
+        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+            const since = priceRangeToSinceIso(range);
+            const useWeekly = range === '5y';
+            const useDaily = range === '6m' || range === '1y';
+            const table = useWeekly ? 'electricity_price_weekly' : useDaily ? 'electricity_price_daily' : 'electricity_day_ahead_prices';
+            const valueCol = useWeekly || useDaily ? 'price_eur_per_mwh' : 'price_eur_per_mwh';
+            const maxPoints = useWeekly ? 400 : useDaily ? 900 : 800;
+
+            setStatus(`Loading ${zone} prices (${range})…`);
+            if (titleEl) titleEl.textContent = `${zone} — Day-ahead price (€/MWh)`;
+
+            const { data, error } = await supabase
+                .from(table)
+                .select(`ts, ${valueCol}`)
+                .eq('zone_id', zone)
+                .gte('ts', since)
+                .order('ts', { ascending: false })
+                .limit(maxPoints);
+            if (error) throw new Error(error.message);
+
+            const rows = (Array.isArray(data) ? data : []).reverse();
+            const labels = rows.map(r => {
+                const d = new Date(r.ts);
+                if (Number.isNaN(d.getTime())) return String(r.ts);
+                return (useWeekly || useDaily) ? d.toLocaleDateString() : d.toLocaleString();
+            });
+            const series = rows.map(r => Number(r[valueCol]));
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            if (priceZoneChart) { try { priceZoneChart.destroy(); } catch (_) {} priceZoneChart = null; }
+
+            priceZoneChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Price (€/MWh)',
+                        data: series,
+                        borderColor: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.10)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius: series.length <= 2 ? 3 : 0,
+                        borderWidth: 2,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
+                        y: { beginAtZero: false, ticks: { callback: (v) => fmtEurPerMwh(Number(v)) } },
+                    },
+                },
+            });
+            setStatus('');
+        } catch (err) {
+            console.error('Zone price chart failed:', err);
+            setStatus(`Failed: ${err.message || String(err)}`);
+        }
+    })();
+    try { return await priceZoneChartLoadInFlight; }
+    finally { priceZoneChartLoadInFlight = null; }
+}
 
 async function loadElectricityTabData(forceRefresh = false) {
     const statusEl = document.getElementById('elecMeterStatus');
