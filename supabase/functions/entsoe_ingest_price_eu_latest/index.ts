@@ -29,11 +29,14 @@ const DOMAINS: Record<string, string> = {
   EE: "10Y1001A1001A39I",
   FI: "10YFI-1--------U",
   FR: "10YFR-RTE------C",
-  DE: "10Y1001A1001A83F",
+  // Note: prices use different EICs than generation/load for some zones.
+  // DE day-ahead prices are available under 10Y1001A1001A82H.
+  DE: "10Y1001A1001A82H",
   GR: "10YGR-HTSO-----Y",
   HU: "10YHU-MAVIR----U",
   IE: "10YIE-1001A00010",
-  IT: "10YIT-GRTN-----B",
+  // Italy is split into multiple price areas; use IT-NORD as a practical proxy for now.
+  IT: "10Y1001A1001A73I",
   LV: "10YLV-1001A00074",
   LT: "10YLT-1001A0008Q",
   MT: "10YMT-1001A0003F",
@@ -55,6 +58,15 @@ const DOMAINS: Record<string, string> = {
   SE4: "10Y1001A1001A47J",
   CH: "10YCH-SWISSGRIDZ",
   GB: "10YGB----------A",
+};
+
+// For some countries, ENTSO-E day-ahead prices are published per price area.
+// We can combine multiple areas into a single country-level proxy by averaging
+// prices by timestamp across the available areas.
+const PRICE_DOMAIN_OVERRIDES: Record<string, string[]> = {
+  // IT-NORD + IT-CNOR are commonly available. If one is missing for a window,
+  // the other will still contribute.
+  IT: ["10Y1001A1001A73I", "10Y1001A1001A74G"],
 };
 
 function entsoeFormatYmdHm(date: Date) {
@@ -166,19 +178,37 @@ serve(async (req) => {
         const domain = DOMAINS[z];
         if (!domain) continue;
         try {
-          const { points } = await fetchZoneDayAheadPrices(entsoeToken, z, domain, start, end);
+        const domains = PRICE_DOMAIN_OVERRIDES[z] ?? [domain];
+        const sumByTs: Record<string, number> = {};
+        const nByTs: Record<string, number> = {};
+
+        for (const dom of domains) {
+          const { points } = await fetchZoneDayAheadPrices(entsoeToken, z, dom, start, end);
           if (!points.length) continue;
 
-          const rows = points
-            .filter((p) => p.ts && Number.isFinite(p.price))
-            .map((p) => ({
+          // Dedupe timestamps within a response (ENTSO-E can return multiple
+          // TimeSeries that overlap). Postgres rejects upsert batches that
+          // contain duplicate conflict keys.
+          const byTs: Record<string, number> = {};
+          for (const p of points) {
+            if (!p.ts || !Number.isFinite(p.price)) continue;
+            byTs[p.ts] = p.price;
+          }
+
+          for (const [ts, price] of Object.entries(byTs)) {
+            sumByTs[ts] = (sumByTs[ts] ?? 0) + price;
+            nByTs[ts] = (nByTs[ts] ?? 0) + 1;
+          }
+        }
+
+        const rows = Object.keys(sumByTs).sort().map((ts) => ({
               zone_id: String(z),
-              ts: p.ts,
-              price_eur_per_mwh: p.price,
+            ts,
+            price_eur_per_mwh: sumByTs[ts] / nByTs[ts],
               currency: "EUR",
               source: "entsoe",
-              raw: { domain },
-            }));
+            raw: { domains },
+          }));
 
           const chunkSize = 500;
           for (let i = 0; i < rows.length; i += chunkSize) {

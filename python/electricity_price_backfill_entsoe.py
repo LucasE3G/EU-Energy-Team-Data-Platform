@@ -20,11 +20,13 @@ DOMAINS: Dict[str, str] = {
     "EE": "10Y1001A1001A39I",
     "FI": "10YFI-1--------U",
     "FR": "10YFR-RTE------C",
-    "DE": "10Y1001A1001A83F",
+    # Prices use different EICs than generation/load for some zones.
+    "DE": "10Y1001A1001A82H",
     "GR": "10YGR-HTSO-----Y",
     "HU": "10YHU-MAVIR----U",
     "IE": "10YIE-1001A00010",
-    "IT": "10YIT-GRTN-----B",
+    # Italy is split into multiple price areas; we combine them below.
+    "IT": "10Y1001A1001A73I",
     "LV": "10YLV-1001A00074",
     "LT": "10YLT-1001A0008Q",
     "MT": "10YMT-1001A0003F",
@@ -46,6 +48,12 @@ DOMAINS: Dict[str, str] = {
     "SE4": "10Y1001A1001A47J",
     "CH": "10YCH-SWISSGRIDZ",
     "GB": "10YGB----------A",
+}
+
+# Some countries publish day-ahead prices per price area. For those, we
+# combine multiple domains by timestamp (simple average).
+PRICE_DOMAIN_OVERRIDES: Dict[str, List[str]] = {
+    "IT": ["10Y1001A1001A73I", "10Y1001A1001A74G"],
 }
 
 
@@ -176,15 +184,32 @@ def main() -> int:
         domain = DOMAINS.get(zone)
         if not domain:
             continue
-        print(f"\n--- {zone}: {domain} ---", flush=True)
+        domains = PRICE_DOMAIN_OVERRIDES.get(zone, [domain])
+        print(f"\n--- {zone}: {','.join(domains)} ---", flush=True)
         t0 = start
         while t0 < end:
             t1 = min(t0 + timedelta(days=chunk_days), end)
             try:
-                xml = entsoe_get_prices(token, domain, t0, t1, s)
-                points = parse_a44(xml)
+                # Merge multiple price areas if configured.
+                sum_by_ts: Dict[str, float] = {}
+                n_by_ts: Dict[str, int] = {}
+                for dom in domains:
+                    xml = entsoe_get_prices(token, dom, t0, t1, s)
+                    pts = parse_a44(xml)
+                    if not pts:
+                        continue
+                    # Dedupe within each doc
+                    by_ts: Dict[str, float] = {}
+                    for ts, price in pts:
+                        by_ts[ts] = price
+                    for ts, price in by_ts.items():
+                        sum_by_ts[ts] = sum_by_ts.get(ts, 0.0) + float(price)
+                        n_by_ts[ts] = n_by_ts.get(ts, 0) + 1
+
+                points = [(ts, sum_by_ts[ts] / n_by_ts[ts]) for ts in sorted(sum_by_ts.keys())]
                 if points:
-                    supabase_upsert_prices(s, supabase_url, service_role, zone, domain, points)
+                    # Use the primary domain for raw tagging; actual domains are in the price average.
+                    supabase_upsert_prices(s, supabase_url, service_role, zone, domains[0], points)
                     total_points += len(points)
                 print(f"{zone} {t0.date()} -> {t1.date()} points={len(points)}", flush=True)
             except Exception as e:
