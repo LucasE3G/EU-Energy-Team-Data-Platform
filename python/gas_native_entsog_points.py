@@ -256,9 +256,12 @@ def reconstruct_rows(
                 if all(x is not None for x in (power, household, industry))
                 else "entsog_offtake_points_partial"
             ),
+            # gas_demand_daily.source_power is NOT NULL; when we don't have a power
+            # component (and cannot reconstruct it), make that explicit.
             "source_power": (
-                "entsog_offtake_points" if t.get("power") is not None
-                else ("entsoe_a75_b04" if power is not None else None)
+                "entsog_offtake_points"
+                if t.get("power") is not None
+                else ("entsoe_a75_b04" if power is not None else "missing")
             ),
             "quality_flag": "native_entsog_offtake_points",
             "raw": raw,
