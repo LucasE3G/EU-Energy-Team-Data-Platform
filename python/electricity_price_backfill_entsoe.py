@@ -62,6 +62,16 @@ def ymdhm(dt: datetime) -> str:
     return dt.strftime("%Y%m%d%H%M")
 
 
+def _retry_after_seconds(r: requests.Response) -> Optional[float]:
+    ra = (r.headers.get("Retry-After") or "").strip()
+    if not ra:
+        return None
+    try:
+        return float(ra)
+    except Exception:
+        return None
+
+
 def entsoe_get_prices(token: str, domain: str, start_utc: datetime, end_utc: datetime, session: requests.Session) -> str:
     params = {
         "securityToken": token,
@@ -72,9 +82,30 @@ def entsoe_get_prices(token: str, domain: str, start_utc: datetime, end_utc: dat
         "periodStart": ymdhm(start_utc),
         "periodEnd": ymdhm(end_utc),
     }
-    r = session.get("https://web-api.tp.entsoe.eu/api", params=params, timeout=60)
-    r.raise_for_status()
-    return r.text
+    max_attempts = int(os.getenv("ENTSOE_PRICE_HTTP_RETRIES", "6"))
+    backoff_s = float(os.getenv("ENTSOE_PRICE_HTTP_BACKOFF_SECONDS", "1.0"))
+    transient = {408, 429, 500, 502, 503, 504}
+    last_err: Optional[Exception] = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            r = session.get("https://web-api.tp.entsoe.eu/api", params=params, timeout=60)
+            if r.status_code in transient:
+                ra_s = _retry_after_seconds(r)
+                sleep_s = ra_s if ra_s is not None else backoff_s * (2 ** (attempt - 1))
+                if attempt >= max_attempts:
+                    r.raise_for_status()
+                time.sleep(min(60.0, sleep_s))
+                continue
+            r.raise_for_status()
+            return r.text
+        except requests.RequestException as e:
+            last_err = e
+            if attempt >= max_attempts:
+                raise
+            time.sleep(min(60.0, backoff_s * (2 ** (attempt - 1))))
+
+    raise RuntimeError(f"Failed to fetch ENTSO-E prices after {max_attempts} attempts: {last_err}")
 
 
 _TS_RE = re.compile(r"<timeInterval>\s*<start>([^<]+)</start>", re.M)

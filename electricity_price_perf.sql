@@ -45,6 +45,10 @@ group by 1;
 create index if not exists electricity_eu_price_hourly_mv_ts_desc
   on public.electricity_eu_price_hourly_mv (ts desc);
 
+-- Required for REFRESH MATERIALIZED VIEW CONCURRENTLY
+create unique index if not exists electricity_eu_price_hourly_mv_ts_unique
+  on public.electricity_eu_price_hourly_mv (ts);
+
 -- EU daily avg from hourly MV
 create materialized view if not exists public.electricity_eu_price_daily_mv as
 select
@@ -58,6 +62,10 @@ group by 1;
 create index if not exists electricity_eu_price_daily_mv_ts_desc
   on public.electricity_eu_price_daily_mv (ts desc);
 
+-- Required for REFRESH MATERIALIZED VIEW CONCURRENTLY
+create unique index if not exists electricity_eu_price_daily_mv_ts_unique
+  on public.electricity_eu_price_daily_mv (ts);
+
 -- EU weekly avg from hourly MV
 create materialized view if not exists public.electricity_eu_price_weekly_mv as
 select
@@ -70,6 +78,10 @@ group by 1;
 
 create index if not exists electricity_eu_price_weekly_mv_ts_desc
   on public.electricity_eu_price_weekly_mv (ts desc);
+
+-- Required for REFRESH MATERIALIZED VIEW CONCURRENTLY
+create unique index if not exists electricity_eu_price_weekly_mv_ts_unique
+  on public.electricity_eu_price_weekly_mv (ts);
 
 -- Grants for public dashboard reads (views/MVs don't have RLS policies)
 grant select on public.electricity_day_ahead_prices to anon;

@@ -7,9 +7,23 @@ language plpgsql
 security definer
 as $$
 begin
-  refresh materialized view concurrently public.electricity_eu_price_hourly_mv;
-  refresh materialized view concurrently public.electricity_eu_price_daily_mv;
-  refresh materialized view concurrently public.electricity_eu_price_weekly_mv;
+  begin
+    refresh materialized view concurrently public.electricity_eu_price_hourly_mv;
+  exception when others then
+    refresh materialized view public.electricity_eu_price_hourly_mv;
+  end;
+
+  begin
+    refresh materialized view concurrently public.electricity_eu_price_daily_mv;
+  exception when others then
+    refresh materialized view public.electricity_eu_price_daily_mv;
+  end;
+
+  begin
+    refresh materialized view concurrently public.electricity_eu_price_weekly_mv;
+  exception when others then
+    refresh materialized view public.electricity_eu_price_weekly_mv;
+  end;
 end;
 $$;
 

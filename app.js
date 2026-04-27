@@ -291,6 +291,7 @@ function setupNavigation() {
 // tracking prevention or private modes throw on any storage access.
 const LAST_PAGE_STORAGE_KEY = 'app.lastPage';
 const ELEC_METER_RANGES_KEY = 'app.elecMeterRanges';
+const ELEC_METER_TAB_KEY = 'app.elecMeterTab';
 
 function readElecMeterRanges() {
     try {
@@ -309,6 +310,21 @@ function saveElecMeterRanges() {
             elecEuRange,
             elecZoneRange,
         }));
+    } catch (_) { /* ignore */ }
+}
+
+function readElecMeterTab() {
+    try {
+        const raw = (localStorage.getItem(ELEC_METER_TAB_KEY) || '').trim();
+        const ok = new Set(['renewable', 'electricity', 'prices', 'demand']);
+        if (raw && ok.has(raw)) return raw;
+    } catch (_) { /* ignore */ }
+    return null;
+}
+function saveElecMeterTab(tab) {
+    try {
+        if (!tab) return;
+        localStorage.setItem(ELEC_METER_TAB_KEY, String(tab));
     } catch (_) { /* ignore */ }
 }
 function saveLastPageState(page, countryId = null, countryName = null) {
@@ -417,6 +433,14 @@ async function loadEnergyMeterPage() {
     // is loaded lazily on first click.
     setupElectricityMeterTabs();
     readElecMeterRanges();
+
+    // Persist the electricity meter sub-tab across reloads. If the user was on
+    // Prices/Demand/Generation, don't bounce them back to Renewables on refresh.
+    const savedTab = readElecMeterTab();
+    if (savedTab && savedTab !== 'renewable') {
+        switchElectricityMeterTab(savedTab);
+        return;
+    }
 
     const statusEl = document.getElementById('energyMeterStatus');
     const tbody = document.getElementById('energyMeterTableBody');
@@ -1584,6 +1608,7 @@ function setupElectricityMeterTabs() {
 }
 
 function switchElectricityMeterTab(target) {
+    saveElecMeterTab(target || 'renewable');
     const buttons = document.querySelectorAll('#energyMeterPage .em-tab-btn');
     buttons.forEach(b => {
         b.classList.toggle('active', b.getAttribute('data-em-tab') === target);
@@ -2459,27 +2484,40 @@ async function loadPriceTabData(forceRefresh = false) {
         updatePriceMapWindowButtons();
         const days = priceMapWindow === '30d' ? 30 : 1;
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        const { data, error } = await supabase
-            .from('electricity_day_ahead_prices')
-            .select('zone_id, ts, price_eur_per_mwh')
-            .eq('source', 'entsoe')
-            .gte('ts', since)
-            .order('ts', { ascending: false })
-            .limit(priceMapWindow === '30d' ? 50000 : 5000);
-        if (error) throw new Error(error.message);
-
-        const rows = Array.isArray(data) ? data : [];
+        // Supabase / PostgREST often caps responses (commonly 1000 rows). Page
+        // so late-publishing zones (e.g. IT sometimes lags others) still appear
+        // in the map window.
         const byZone = new Map();
-        for (const r of rows) {
-            const z = String(r.zone_id || '').toUpperCase();
-            const v = Number(r.price_eur_per_mwh);
-            if (!z || !Number.isFinite(v)) continue;
-            const prev = byZone.get(z) || { sum: 0, n: 0, newest: null };
-            prev.sum += v;
-            prev.n += 1;
-            const t = r.ts ? new Date(r.ts).getTime() : NaN;
-            if (Number.isFinite(t) && (!prev.newest || t > prev.newest)) prev.newest = t;
-            byZone.set(z, prev);
+        const pageSize = 1000;
+        let from = 0;
+        let fetched = 0;
+        const maxRows = priceMapWindow === '30d' ? 140_000 : 20_000;
+        while (true) {
+            const to = from + pageSize - 1;
+            const { data, error } = await supabase
+                .from('electricity_day_ahead_prices')
+                .select('zone_id, ts, price_eur_per_mwh')
+                .eq('source', 'entsoe')
+                .gte('ts', since)
+                .order('ts', { ascending: false })
+                .range(from, to);
+            if (error) throw new Error(error.message);
+            const rows = Array.isArray(data) ? data : [];
+            fetched += rows.length;
+            for (const r of rows) {
+                const z = String(r.zone_id || '').toUpperCase();
+                const v = Number(r.price_eur_per_mwh);
+                if (!z || !Number.isFinite(v)) continue;
+                const prev = byZone.get(z) || { sum: 0, n: 0, newest: null };
+                prev.sum += v;
+                prev.n += 1;
+                const t = r.ts ? new Date(r.ts).getTime() : NaN;
+                if (Number.isFinite(t) && (!prev.newest || t > prev.newest)) prev.newest = t;
+                byZone.set(z, prev);
+            }
+            if (rows.length < pageSize) break;
+            from += pageSize;
+            if (fetched >= maxRows) break;
         }
         const latest = [];
         for (const [z, v] of byZone.entries()) {
@@ -2558,6 +2596,10 @@ async function renderPriceGeoMap(container, latestRows) {
     if (!rows.length) throw new Error('No price rows.');
 
     const countryGeo = await fetchEuropeCountriesGeoJsonOnce();
+    const PRICE_NOT_AVAILABLE = {
+        GB: 'No ENTSO‑E day-ahead price data for GB (API returns “No matching data found”).',
+        IE: 'No ENTSO‑E day-ahead price data for IE (API returns “No matching data found”).',
+    };
     const width = 1400;
     const height = 860;
     const padding = 10;
@@ -2583,7 +2625,7 @@ async function renderPriceGeoMap(container, latestRows) {
             <div class="energy-map-top">
                 <div class="energy-map-top-left">
                     <div class="energy-map-title">Day-ahead electricity price</div>
-                    <div class="energy-map-subtitle">Last 24h average (click a country to chart)</div>
+                    <div class="energy-map-subtitle">${priceMapWindow === '30d' ? 'Last 30d average' : 'Last 24h average'} (click a country to chart)</div>
                 </div>
                 <div class="energy-map-top-right">
                     <div class="energy-map-chip">
@@ -2621,6 +2663,7 @@ async function renderPriceGeoMap(container, latestRows) {
         if (iso2 === 'RU' || iso2 === 'BY') continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
+        const naReason = PRICE_NOT_AVAILABLE[dataKey] || null;
         const agg = byCountry[dataKey];
         const v = agg && agg.n ? (agg.sum / agg.n) : null;
         const t = Number.isFinite(v) && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : null;
@@ -2643,11 +2686,17 @@ async function renderPriceGeoMap(container, latestRows) {
         path.setAttribute('d', d);
         path.setAttribute('fill', fill);
         path.setAttribute('data-iso2', iso2);
-        path.style.cursor = 'pointer';
+        path.style.cursor = naReason ? 'not-allowed' : 'pointer';
+        if (naReason) {
+            path.setAttribute('stroke', 'rgba(100,116,139,0.65)');
+            path.setAttribute('stroke-width', '1');
+            path.setAttribute('stroke-dasharray', '4 3');
+        }
 
         path.addEventListener('mouseenter', () => {
             tooltip.style.display = 'block';
-            tooltip.textContent = `${iso2} — ${Number.isFinite(v) ? fmtEurPerMwh(v) : '—'}`;
+            if (naReason) tooltip.textContent = `${iso2} — N/A (${naReason})`;
+            else tooltip.textContent = `${iso2} — ${Number.isFinite(v) ? fmtEurPerMwh(v) : '—'}`;
         });
         path.addEventListener('mousemove', (e) => {
             tooltip.style.left = `${e.clientX}px`;
@@ -2655,6 +2704,7 @@ async function renderPriceGeoMap(container, latestRows) {
         });
         path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
         path.addEventListener('click', () => {
+            if (naReason) return;
             const picked = pickZoneForCountry(rows.map(r => ({ zone_id: r.zone_id })), iso2);
             // If we can't pick a zone from the price rows (some countries split), fall back to ISO2.
             priceSelectedZone = picked?.zone_id ? String(picked.zone_id) : iso2;
@@ -3657,6 +3707,25 @@ const CHART_INFO = {
             </ul>
             <p><strong>Data availability:</strong> Varies by country. Not all TSOs publish sector-level breakdowns. Where sector data is unavailable, total demand only is shown.</p>
             <p><strong>Update frequency:</strong> Daily (05:00 UTC, after the previous gas day closes). Data may lag 1–3 days depending on TSO publication schedules.</p>
+        `,
+    },
+    priceEuChart: {
+        title: 'EU Day-Ahead Electricity Prices — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> ENTSO‑E Transparency Platform — Day-ahead prices (<code>A44</code>, process <code>A01</code>).</p>
+            <p><strong>Coverage:</strong> EU + EEA bidding zones where ENTSO‑E publishes day-ahead prices. Some zones (e.g. GB/IE) may return “No matching data found” for some windows.</p>
+            <p><strong>Aggregation:</strong> Simple average across zones per timestamp (unweighted).</p>
+            <p><strong>Update frequency:</strong> Hourly ingestion (prices are day-ahead, published daily; intraday availability depends on zone).</p>
+            <p><strong>Units:</strong> €/MWh.</p>
+        `,
+    },
+    priceZoneChart: {
+        title: 'Zone Day-Ahead Electricity Prices — Methodology & Source',
+        html: `
+            <p><strong>Data source:</strong> ENTSO‑E Transparency Platform — Day-ahead prices (<code>A44</code>, process <code>A01</code>).</p>
+            <p><strong>Zone definition:</strong> Bidding zones (e.g. <code>DE</code>, <code>ES</code>, <code>NO1</code>, <code>SE3</code>).</p>
+            <p><strong>Special cases:</strong> Countries split into multiple price areas (e.g. Italy) are averaged across selected areas by timestamp to provide a single country proxy.</p>
+            <p><strong>Units:</strong> €/MWh.</p>
         `,
     },
 };
