@@ -98,7 +98,67 @@ document.addEventListener('DOMContentLoaded', async () => {
                 },
             });
         }
-        
+
+        // ── White background + E3G text watermark on every chart ────────
+        // Two separate plugins:
+        //   1. beforeDraw  — fill white so exported PNGs aren't transparent/black
+        //   2. afterDraw   — draw text watermark (no external image on canvas to
+        //                    avoid CORS canvas-taint that breaks toDataURL)
+        if (window.Chart && !window.__e3gWatermarkPluginRegistered) {
+            window.__e3gWatermarkPluginRegistered = true;
+            Chart.register({
+                id: 'e3gChartBg',
+                beforeDraw(chart) {
+                    const { ctx, width, height } = chart;
+                    ctx.save();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.restore();
+                },
+            });
+            Chart.register({
+                id: 'e3gWatermark',
+                afterDraw(chart) {
+                    const { ctx, chartArea } = chart;
+                    if (!chartArea) return;
+                    ctx.save();
+                    ctx.globalAlpha = 0.55;
+                    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+                    ctx.fillStyle = '#262958';
+                    ctx.textBaseline = 'bottom';
+                    ctx.textAlign = 'right';
+                    ctx.fillText('E3G · EU Energy Team Data Platform', chartArea.right - 8, chartArea.bottom - 6);
+                    ctx.restore();
+                },
+            });
+
+            // Inject E3G logo into .chart-card (NOT .chart-container) so it
+            // is never hidden behind the canvas stacking context.
+            const logoUrl = 'https://rvxukmupuzxbrwicowyn.supabase.co/storage/v1/object/public/logo/logo.png';
+            document.querySelectorAll('.chart-card').forEach(card => {
+                if (card.querySelector('.chart-logo-overlay')) return;
+                const img = document.createElement('img');
+                img.className = 'chart-logo-overlay';
+                img.src = logoUrl;
+                img.alt = '';
+                img.setAttribute('aria-hidden', 'true');
+                card.appendChild(img);
+            });
+
+            // Pre-fetch logo as base64 data URL so export always has it
+            // (avoids CORS timing issues at click time).
+            window._e3gLogoDataUrl = null;
+            fetch(logoUrl)
+                .then(r => r.blob())
+                .then(blob => new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                }))
+                .then(dataUrl => { window._e3gLogoDataUrl = dataUrl; })
+                .catch(() => {});
+        }
+
         // Country navigation must be loaded regardless of which page we'll
         // actually show (the sidebar is shared across pages).
         await loadCountryNavigation();
@@ -259,6 +319,12 @@ function setupNavigation() {
         btn.addEventListener('click', () => {
             const chartId = btn.getAttribute('data-chart');
             if (chartId) showChartInfo(chartId);
+        });
+    });
+    document.querySelectorAll('.chart-export-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const chartId = btn.getAttribute('data-chart');
+            if (chartId) exportChart(chartId);
         });
     });
 
@@ -1326,7 +1392,7 @@ async function loadEnergyRenewableShareChart(zone, range, source = null) {
                 parsing: true,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
                     tooltip: {
                         backgroundColor: 'rgba(15, 23, 42, 0.92)',
                         titleColor: '#fff',
@@ -1497,7 +1563,7 @@ async function loadEnergyEuAggregateChart(range) {
                     maintainAspectRatio: false,
                 parsing: true,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { type: 'category', ticks: { maxRotation: 0 } },
                         y: { suggestedMin: 0, suggestedMax: 100, ticks: { callback: (v) => `${v}%` } },
@@ -2309,7 +2375,7 @@ async function loadLoadEuChart(range) {
                     maintainAspectRatio: false,
                     parsing: true,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
                         y: { beginAtZero: true, ticks: { callback: (v) => fmtVal(Number(v)) } },
@@ -2398,7 +2464,7 @@ async function loadLoadZoneChart(zone, range, source = null) {
                     maintainAspectRatio: false,
                     parsing: true,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { type: 'category', ticks: { maxRotation: 0 }, grid: { display: false } },
                         y: { beginAtZero: true, ticks: { callback: (v) => fmtVal(Number(v)) } },
@@ -3740,6 +3806,61 @@ function showChartInfo(chartId) {
     title.textContent = info.title;
     body.innerHTML = info.html;
     modal.classList.add('active');
+}
+
+// ── Chart PNG export ──────────────────────────────────────────────
+// Grabs the canvas (which already has the E3G watermark drawn by the
+// plugin) and triggers a PNG download.
+const CHART_EXPORT_NAMES = {
+    energyEuChart:      'e3g-eu-renewable-share.png',
+    energyFranceChart:  'e3g-zone-renewable-share.png',
+    elecEuChart:        'e3g-eu-electricity-generation.png',
+    elecZoneChart:      'e3g-zone-electricity-generation.png',
+    loadEuChart:        'e3g-eu-electricity-demand.png',
+    loadZoneChart:      'e3g-zone-electricity-demand.png',
+    gasEuChart:         'e3g-eu-gas-demand.png',
+    gasCountryChart:    'e3g-country-gas-demand.png',
+};
+function exportChart(canvasId) {
+    const srcCanvas = document.getElementById(canvasId);
+    if (!srcCanvas) return;
+    const filename = CHART_EXPORT_NAMES[canvasId] || `${canvasId}.png`;
+
+    const out = document.createElement('canvas');
+    out.width  = srcCanvas.width;
+    out.height = srcCanvas.height;
+    const ctx = out.getContext('2d');
+
+    // White background (srcCanvas already has it from e3gChartBg plugin,
+    // but explicit here guarantees a clean white PNG regardless).
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(srcCanvas, 0, 0);
+
+    const doDownload = () => {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = out.toDataURL('image/png');
+        link.click();
+    };
+
+    // Use the pre-fetched base64 logo (loaded at startup) to avoid
+    // CORS timing issues and canvas taint.
+    const dataUrl = window._e3gLogoDataUrl;
+    if (!dataUrl) { doDownload(); return; }
+
+    const logo = new Image();
+    logo.onload = () => {
+        const h = 28;
+        const w = (logo.naturalWidth / logo.naturalHeight) * h;
+        ctx.save();
+        ctx.globalAlpha = 0.65;
+        ctx.drawImage(logo, out.width - w - 14, 12, w, h);
+        ctx.restore();
+        doDownload();
+    };
+    logo.onerror = doDownload;
+    logo.src = dataUrl;
 }
 
 // =========================

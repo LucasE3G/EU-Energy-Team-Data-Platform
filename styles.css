@@ -966,6 +966,7 @@ body {
 }
 
 .chart-card {
+    position: relative;          /* containing block for the logo overlay */
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -978,6 +979,20 @@ body {
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
     border-color: rgba(38, 41, 88, 0.25);
+}
+
+/* E3G logo overlay — injected into .chart-card (not .chart-container)
+   so it is never behind the canvas */
+.chart-logo-overlay {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    width: 28px;
+    height: 28px;
+    opacity: 0.65;
+    pointer-events: none;
+    z-index: 2;
+    object-fit: contain;
 }
 
 .chart-card h3 {
@@ -1326,6 +1341,30 @@ body {
 .chart-info-btn:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
+    border-color: var(--primary-color);
+}
+
+/* ── Chart export button ────────────────────────────────────────── */
+.chart-export-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+.chart-export-btn:hover {
+    background: var(--primary-color);
+    color: #fff;
     border-color: var(--primary-color);
 }
 
