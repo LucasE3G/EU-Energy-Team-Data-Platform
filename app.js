@@ -429,11 +429,21 @@ function readLastPageState() {
     } catch (_) { return null; }
 }
 
+// ── Analytics helpers ─────────────────────────────────────────────
+// Vercel Analytics (window.va) is loaded via script tag in index.html.
+// Safe no-op when not available (local dev, ad-blockers, etc.).
+function track(event, props) {
+    try {
+        if (typeof window.va === 'function') window.va('event', { name: event, data: props || {} });
+    } catch (_) {}
+}
+
 // Navigate to page
 function navigateToPage(page, countryId = null) {
     if (page !== 'energy-meter') {
         teardownEnergyRealtimeSubscription();
     }
+    track('page_view', { page: countryId ? `country/${countryId}` : page });
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 
@@ -1645,13 +1655,13 @@ let priceLatestRows = []; // latest avg price per zone (last 24h)
 let priceSelectedZone = null;
 let priceMapWindow = '24h'; // '24h' | '30d'
 
-// Chart builder tab (multi-country, total metrics)
+// Chart builder tab (multi-series, per-series metric)
 let chartBuilderTabInited = false;
 let chartBuilderChart = null;
-let cbMetric = 'renewable'; // 'renewable' | 'generation' | 'demand' | 'prices'
+let cbComposerMetric = 'renewable'; // metric applied to next country click
+let cbComposerGenFilter = null;     // psr_type group key when generation is active (null = total)
 let cbRange = 'day'; // 'day' | 'week' | 'month' | '6m' | '1y' | '5y'
-let cbIncludeEU = true;
-let cbSelectedCountries = ['DE', 'FR', 'ES'];
+let cbSelected = []; // [{ id, country, metric, psrFilter, color, visible }]
 
 function fmtMwShort(mw) {
     const n = Number(mw);
@@ -2545,39 +2555,100 @@ function cbRangeToSinceIso(range) {
 }
 
 const CB_COUNTRIES = [
+    'EU',
     'AT','BE','BG','CH','CY','CZ','DE','DK','EE','ES','FI','FR','GB','GR','HR','HU','IE','IT',
     'LT','LU','LV','MT','NL','NO','PL','PT','RO','SE','SI','SK'
 ];
 
-function initChartBuilderControls() {
-    const metricSelect = document.getElementById('cbMetricSelect');
-    const includeEu = document.getElementById('cbIncludeEU');
-    const search = document.getElementById('cbCountrySearch');
-    const buildBtn = document.getElementById('cbBuildBtn');
+// Country names + flag helper (shared by gas + electricity chart builders)
+const CB_COUNTRY_NAMES = {
+    AT:'Austria', BE:'Belgium', BG:'Bulgaria', CH:'Switzerland', CY:'Cyprus',
+    CZ:'Czechia', DE:'Germany', DK:'Denmark', EE:'Estonia', ES:'Spain',
+    FI:'Finland', FR:'France', GB:'United Kingdom', GR:'Greece', HR:'Croatia',
+    HU:'Hungary', IE:'Ireland', IT:'Italy', LT:'Lithuania', LU:'Luxembourg',
+    LV:'Latvia', MT:'Malta', NL:'Netherlands', NO:'Norway', PL:'Poland',
+    PT:'Portugal', RO:'Romania', SE:'Sweden', SI:'Slovenia', SK:'Slovakia',
+    UK:'United Kingdom', EL:'Greece',
+    EU:'European Union', EU27:'European Union (27)',
+};
 
-    if (metricSelect && !metricSelect.dataset.bound) {
-        metricSelect.dataset.bound = '1';
-        metricSelect.value = cbMetric;
-        metricSelect.addEventListener('change', () => {
-            cbMetric = String(metricSelect.value || 'renewable');
-            loadChartBuilder();
-        });
+function cbCountryFlag(isoCode) {
+    const code = (isoCode === 'UK' ? 'GB' : isoCode === 'EL' ? 'GR' : isoCode).toUpperCase();
+    if (code.length !== 2) return '';
+    try {
+        return String.fromCodePoint(...[...code].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+    } catch (_) { return ''; }
+}
+
+function cbElecMetricTitle(metric) {
+    return { renewable: 'Renewable', generation: 'Generation', demand: 'Demand', prices: 'Prices' }[metric] || metric;
+}
+
+// Returns the display label for a series (used in sidebar, chart tooltip, and export legend).
+function cbSeriesLabel(s) {
+    let metricLabel;
+    if (s.metric === 'generation' && s.psrFilter) {
+        metricLabel = ELEC_TYPE_GROUPS.find(g => g.key === s.psrFilter)?.label ?? s.psrFilter;
+    } else {
+        metricLabel = cbElecMetricTitle(s.metric);
     }
-    if (includeEu && !includeEu.dataset.bound) {
-        includeEu.dataset.bound = '1';
-        includeEu.checked = !!cbIncludeEU;
-        includeEu.addEventListener('change', () => {
-            cbIncludeEU = !!includeEu.checked;
-            loadChartBuilder();
+    return `${s.country} · ${metricLabel}`;
+}
+
+function initChartBuilderControls() {
+    const search = document.getElementById('cbCountrySearch');
+
+    const genTypeSection = document.getElementById('cbGenTypeSection');
+    const syncGenTypeSection = () => {
+        if (!genTypeSection) return;
+        genTypeSection.hidden = (cbComposerMetric !== 'generation');
+    };
+
+    // Metric cards — set composer metric (what the next country click will use)
+    const metricCards = document.querySelectorAll('#chartBuilderEmTab [data-elec-metric]');
+    metricCards.forEach(card => {
+        if (card.dataset.bound) return;
+        card.dataset.bound = '1';
+        card.addEventListener('click', () => {
+            const m = card.getAttribute('data-elec-metric');
+            cbComposerMetric = m;
+            metricCards.forEach(c => c.classList.toggle('active', c === card));
+            syncGenTypeSection();
+            track('elec_cb_metric', { metric: m });
+            // Re-render grid to show which countries already have this metric selected
+            renderCbCountryGrid();
         });
-    }
+    });
+    metricCards.forEach(c => c.classList.toggle('active', c.getAttribute('data-elec-metric') === cbComposerMetric));
+    syncGenTypeSection();
+
+    // Generation type pills
+    const genPills = document.querySelectorAll('#cbGenTypeSection [data-gen-filter]');
+    genPills.forEach(pill => {
+        if (pill.dataset.bound) return;
+        pill.dataset.bound = '1';
+        pill.addEventListener('click', () => {
+            const filterVal = pill.getAttribute('data-gen-filter');
+            cbComposerGenFilter = filterVal || null;
+            genPills.forEach(p => p.classList.toggle('active', p === pill));
+            renderCbCountryGrid();
+        });
+    });
+
     if (search && !search.dataset.bound) {
         search.dataset.bound = '1';
         search.addEventListener('input', () => renderCbCountryGrid());
     }
-    if (buildBtn && !buildBtn.dataset.bound) {
-        buildBtn.dataset.bound = '1';
-        buildBtn.addEventListener('click', () => loadChartBuilder());
+
+    const clearBtn = document.getElementById('cbClearBtn');
+    if (clearBtn && !clearBtn.dataset.bound) {
+        clearBtn.dataset.bound = '1';
+        clearBtn.addEventListener('click', () => {
+            cbSelected = [];
+            cbRecolorAndRenderSelected();
+            renderCbCountryGrid();
+            loadChartBuilder();
+        });
     }
 
     const bindRange = (id, range) => {
@@ -2586,6 +2657,7 @@ function initChartBuilderControls() {
         btn.dataset.bound = '1';
         btn.addEventListener('click', () => {
             cbRange = range;
+            track('elec_cb_range', { range });
             updateCbRangeButtons();
             loadChartBuilder();
         });
@@ -2597,6 +2669,19 @@ function initChartBuilderControls() {
     bindRange('cbRange1yBtn', '1y');
     bindRange('cbRange5yBtn', '5y');
 
+    // Default series on first load
+    if (!cbSelected.length) {
+        cbSelected = ['DE', 'FR', 'ES'].map((country, idx) => ({
+            id: `${country}:${cbComposerMetric}:total:${idx}`,
+            country,
+            metric: cbComposerMetric,
+            psrFilter: null,
+            color: cbColor(idx),
+            visible: true,
+        }));
+    }
+
+    cbRecolorAndRenderSelected();
     renderCbCountryGrid();
     updateCbRangeButtons();
 }
@@ -2620,27 +2705,60 @@ function updateCbRangeButtons() {
 function renderCbCountryGrid() {
     const grid = document.getElementById('cbCountriesGrid');
     const search = document.getElementById('cbCountrySearch');
+    const pickedEl = document.getElementById('cbPickedCount');
     if (!grid) return;
+
     const q = String(search?.value || '').trim().toUpperCase();
-    const list = CB_COUNTRIES.filter(c => !q || c.includes(q));
+    const list = CB_COUNTRIES
+        .filter(c => !q || c.includes(q) || (CB_COUNTRY_NAMES[c] || '').toUpperCase().includes(q))
+        .sort((a, b) => a.localeCompare(b));
+
+    // A country card is "active" when it has a series matching the current composer state.
+    // For generation, psrFilter is also part of the key.
+    const seriesKey = (country, metric, psrFilter) =>
+        `${country}:${metric}:${psrFilter ?? 'total'}`;
+    const activeSet = new Set(cbSelected.map(s => seriesKey(s.country, s.metric, s.psrFilter)));
+    const composerFilter = cbComposerMetric === 'generation' ? cbComposerGenFilter : null;
+    const maxReached = cbSelected.length >= 6;
+
+    if (pickedEl) pickedEl.textContent = `${cbSelected.length} / 6`;
+
     grid.innerHTML = list.map(c => {
-        const active = cbSelectedCountries.includes(c);
+        const isActive = activeSet.has(seriesKey(c, cbComposerMetric, composerFilter));
+        const isDisabled = !isActive && maxReached;
+        const name = CB_COUNTRY_NAMES[c] || '';
         return `
-            <button class="btn-secondary ${active ? 'active' : ''}" data-cb-country="${c}" style="padding:8px 10px; width:100%; text-align:center;">
-                ${c}
+            <button class="cb-country-card ${isActive ? 'active' : ''}" data-cb-country="${escapeHtml(c)}" ${isDisabled ? 'disabled' : ''} title="${escapeHtml(name || c)}">
+                <span class="cb-country-meat">
+                    <span class="cb-country-code">${escapeHtml(c)}</span>
+                    <span class="cb-country-name">${escapeHtml(name)}</span>
+                </span>
             </button>
         `;
     }).join('');
+
     grid.querySelectorAll('button[data-cb-country]').forEach(btn => {
         btn.addEventListener('click', () => {
             const c = String(btn.getAttribute('data-cb-country') || '');
             if (!c) return;
-            if (cbSelectedCountries.includes(c)) {
-                cbSelectedCountries = cbSelectedCountries.filter(x => x !== c);
+            const psrFilter = cbComposerMetric === 'generation' ? cbComposerGenFilter : null;
+            const key = seriesKey(c, cbComposerMetric, psrFilter);
+            const existsIdx = cbSelected.findIndex(s => seriesKey(s.country, s.metric, s.psrFilter) === key);
+            if (existsIdx >= 0) {
+                cbSelected.splice(existsIdx, 1);
             } else {
-                if (cbSelectedCountries.length >= 6) return;
-                cbSelectedCountries = [...cbSelectedCountries, c];
+                if (cbSelected.length >= 6) return;
+                cbSelected.push({
+                    id: `${c}:${cbComposerMetric}:${psrFilter ?? 'total'}:${Date.now()}`,
+                    country: c,
+                    metric: cbComposerMetric,
+                    psrFilter: psrFilter,
+                    color: cbColor(cbSelected.length),
+                    visible: true,
+                });
+                track('elec_cb_series', { country: c, metric: cbComposerMetric, filter: psrFilter ?? 'total' });
             }
+            cbRecolorAndRenderSelected();
             renderCbCountryGrid();
             loadChartBuilder();
         });
@@ -2673,10 +2791,10 @@ function cbRollupCountry(points, country, mode = 'sum') {
         .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
 }
 
-async function cbFetchRenewableRaw(range) {
+async function cbFetchRenewableRaw(range, needEU = false) {
     const since = cbRangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const useDaily = range === '6m' || range === '1y';
+    const useDaily = range === 'month' || range === '6m' || range === '1y';
     const table = useWeekly ? 'energy_mix_weekly' : useDaily ? 'energy_mix_daily' : 'energy_mix_snapshots';
     const rows = await gasFetchAllPaged(() =>
         supabase
@@ -2691,7 +2809,7 @@ async function cbFetchRenewableRaw(range) {
         .map(r => ({ ts: r.ts, zone: String(r.zone_id).toUpperCase(), y: Number(r.renewable_percent) }));
 
     let euSeries = [];
-    if (cbIncludeEU) {
+    if (needEU) {
         const euTable = useWeekly ? 'energy_eu_weekly_mv' : useDaily ? 'energy_eu_daily_mv' : 'energy_eu_15m_mv';
         const euRows = await gasFetchAllPaged(() =>
             supabase
@@ -2707,11 +2825,11 @@ async function cbFetchRenewableRaw(range) {
     return { points, euSeries, mode: 'avg', unit: '%', title: 'Renewable share', fmt: (v) => `${Number(v).toFixed(1)}%` };
 }
 
-async function cbFetchDemandRaw(range) {
+async function cbFetchDemandRaw(range, needEU = false) {
     const since = cbRangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const useDaily = range === '6m' || range === '1y';
-    const raw = !(useWeekly || useDaily);
+    const useDaily = range === 'month' || range === '6m' || range === '1y';
+    const raw = !(useWeekly || useDaily); // day, week only
     const table = raw ? 'electricity_load_snapshots' : (useWeekly ? 'electricity_load_weekly_mwh' : 'electricity_load_daily_mwh');
     const valueCol = raw ? 'load_mw' : 'consumption_mwh';
     const rows = await gasFetchAllPaged(() =>
@@ -2726,7 +2844,7 @@ async function cbFetchDemandRaw(range) {
         .filter(r => r.ts && r.zone_id && Number.isFinite(Number(r[valueCol])))
         .map(r => ({ ts: r.ts, zone: String(r.zone_id).toUpperCase(), y: Number(r[valueCol]) }));
     let euSeries = [];
-    if (cbIncludeEU) {
+    if (needEU) {
         if (raw) {
             const byTs = new Map();
             for (const p of points) byTs.set(p.ts, (byTs.get(p.ts) || 0) + Number(p.y));
@@ -2750,25 +2868,28 @@ async function cbFetchDemandRaw(range) {
     return { points, euSeries, mode: 'sum', unit: raw ? 'MW' : 'GWh', title: 'Demand total', fmt };
 }
 
-async function cbFetchPriceRaw(range) {
+async function cbFetchPriceRaw(range, needEU = false) {
     const since = cbRangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const useDaily = range === '6m' || range === '1y';
+    const useDaily = range === 'month' || range === '6m' || range === '1y';
+    const raw = !(useWeekly || useDaily);
     const table = useWeekly ? 'electricity_price_weekly' : useDaily ? 'electricity_price_daily' : 'electricity_day_ahead_prices';
-    const rows = await gasFetchAllPaged(() =>
-        supabase
+    // Only the raw snapshots table has a `source` column; the aggregated tables do not.
+    const query = () => {
+        const q = supabase
             .from(table)
             .select('ts, zone_id, price_eur_per_mwh')
-            .eq('source', 'entsoe')
             .gte('ts', since)
-            .order('ts', { ascending: true })
-    );
+            .order('ts', { ascending: true });
+        return raw ? q.eq('source', 'entsoe') : q;
+    };
+    const rows = await gasFetchAllPaged(query);
     const points = rows
         .filter(r => r.ts && r.zone_id && Number.isFinite(Number(r.price_eur_per_mwh)))
         .map(r => ({ ts: r.ts, zone: String(r.zone_id).toUpperCase(), y: Number(r.price_eur_per_mwh) }));
 
     let euSeries = [];
-    if (cbIncludeEU) {
+    if (needEU) {
         const euTable = useWeekly ? 'electricity_eu_price_weekly_mv' : useDaily ? 'electricity_eu_price_daily_mv' : 'electricity_eu_price_hourly_mv';
         const euRows = await gasFetchAllPaged(() =>
             supabase
@@ -2784,20 +2905,34 @@ async function cbFetchPriceRaw(range) {
     return { points, euSeries, mode: 'avg', unit: '€/MWh', title: 'Day-ahead price', fmt: fmtEurPerMwh };
 }
 
-async function cbFetchGenerationRaw(range) {
+async function cbFetchGenerationRaw(range, needEU = false, psrFilter = null, zoneFilter = null) {
     const since = cbRangeToSinceIso(range);
     const useWeekly = range === '5y';
-    const raw = range === 'day' || range === 'week' || range === 'month';
+    const raw = range === 'day' || range === 'week'; // day + week use raw snapshots for intraday
     const table = useWeekly ? 'electricity_generation_weekly_mwh' : raw ? 'electricity_generation_snapshots' : 'electricity_generation_daily_mwh';
     const valueCol = raw ? 'mw' : 'production_mwh';
-    const rows = await gasFetchAllPaged(() =>
-        supabase
+
+    // Resolve psr_type codes for the filter (null = total = no filter needed).
+    const psrTypes = psrFilter
+        ? (ELEC_TYPE_GROUPS.find(g => g.key === psrFilter)?.types ?? null)
+        : null;
+
+    // When EU is selected we need all zones to sum EU total accurately.
+    // Otherwise, restrict to only the zones that appear in selected series — big speedup.
+    const useZoneFilter = !needEU && zoneFilter && zoneFilter.length > 0;
+
+    const rows = await gasFetchAllPagedParallel(() => {
+        let q = supabase
             .from(table)
-            .select(`ts, zone_id, ${valueCol}`)
+            .select(`ts, zone_id, psr_type, ${valueCol}`)
             .eq('source', 'entsoe')
             .gte('ts', since)
-            .order('ts', { ascending: true })
-    );
+            .order('ts', { ascending: true });
+        if (psrTypes) q = q.in('psr_type', psrTypes);
+        if (useZoneFilter) q = q.in('zone_id', zoneFilter);
+        return q;
+    }, 1000, 600_000, 8);
+
     // Sum across psr_type rows into a zone total at each timestamp.
     const byTsZone = new Map();
     for (const r of rows) {
@@ -2814,20 +2949,22 @@ async function cbFetchGenerationRaw(range) {
     }).sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
     let euSeries = [];
-    if (cbIncludeEU) {
+    if (needEU) {
         if (raw) {
             const byTs = new Map();
             for (const p of points) byTs.set(p.ts, (byTs.get(p.ts) || 0) + Number(p.y));
             euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
         } else {
             const euTable = useWeekly ? 'electricity_eu_generation_weekly_mwh' : 'electricity_eu_generation_daily_mwh';
-            const euRows = await gasFetchAllPaged(() =>
-                supabase
+            const euRows = await gasFetchAllPaged(() => {
+                let q = supabase
                     .from(euTable)
-                    .select('ts, production_mwh')
+                    .select('ts, production_mwh, psr_type')
                     .gte('ts', since)
-                    .order('ts', { ascending: true })
-            );
+                    .order('ts', { ascending: true });
+                if (psrTypes) q = q.in('psr_type', psrTypes);
+                return q;
+            }, 1000, 600_000);
             // Sum psr_type into EU total.
             const byTs = new Map();
             for (const r of euRows) {
@@ -2837,7 +2974,8 @@ async function cbFetchGenerationRaw(range) {
             euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
         }
     }
-    return { points, euSeries, mode: 'sum', unit: raw ? 'MW' : 'GWh', title: 'Generation total', fmt: raw ? fmtMwShort : fmtGWh };
+    const typeLabel = psrFilter ? (ELEC_TYPE_GROUPS.find(g => g.key === psrFilter)?.label ?? psrFilter) : 'total';
+    return { points, euSeries, mode: 'sum', unit: raw ? 'MW' : 'GWh', title: `Generation ${typeLabel}`, fmt: raw ? fmtMwShort : fmtGWh };
 }
 
 function cbColor(i) {
@@ -2850,8 +2988,83 @@ function cbColor(i) {
 function cbFormatLabel(ts, range) {
     const d = new Date(ts);
     if (Number.isNaN(d.getTime())) return String(ts);
-    if (range === 'day' || range === 'week' || range === 'month') return d.toLocaleString();
-    return d.toLocaleDateString();
+    if (range === 'day' || range === 'week') return d.toLocaleString(); // intraday: show date + time
+    return d.toLocaleDateString();  // daily/weekly aggregates: date only, no 2 AM artifact
+}
+
+function cbRecolorAndRenderSelected() {
+    cbSelected = cbSelected.slice(0, 6).map((s, idx) => ({ ...s, color: cbColor(idx) }));
+    const listEl = document.getElementById('cbSeriesList');
+    const countEl = document.getElementById('cbSeriesCount');
+    const pickedEl = document.getElementById('cbPickedCount');
+    if (countEl) countEl.textContent = String(cbSelected.length);
+    if (pickedEl) pickedEl.textContent = `${cbSelected.length} / 6`;
+    if (!listEl) return;
+
+    if (!cbSelected.length) {
+        listEl.innerHTML = '<div class="cb-empty-series">Pick a metric + zone below to add series.</div>';
+        return;
+    }
+
+    listEl.innerHTML = cbSelected.map((s) => {
+        const hiddenClass = s.visible ? '' : 'is-hidden';
+        const fullLabel = cbSeriesLabel(s);
+        const [countryPart, metricPart] = fullLabel.split(' · ');
+        const eyeIcon = s.visible
+            ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="1.5" fill="currentColor"/></svg>'
+            : '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1L11 11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M2.5 4.5C1.8 5 1.3 5.5 1 6c1.2 2 3.2 3.5 5 3.5 1 0 2-.4 2.8-1M4 2.7C4.6 2.3 5.3 2 6 2c1.8 0 3.8 1.5 5 3.5-.3.5-.7 1-1.2 1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+        return `
+            <div class="cb-series-row ${hiddenClass}" data-cb-series-id="${escapeHtml(s.id)}">
+                <div class="cb-swatch" style="background:${s.color};"><div class="cb-swatch-inner"></div></div>
+                <div class="cb-series-label">
+                    <div class="cb-series-code">${escapeHtml(countryPart ?? s.country)}</div>
+                    <div class="cb-series-meta">${escapeHtml(metricPart ?? '')}</div>
+                </div>
+                <div class="cb-series-actions">
+                    <button type="button" class="cb-icon-btn cb-series-eye" title="${s.visible ? 'Hide' : 'Show'}">${eyeIcon}</button>
+                    <button type="button" class="cb-icon-btn cb-icon-btn-danger cb-series-remove" title="Remove">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    listEl.querySelectorAll('.cb-series-row').forEach((row) => {
+        const sid = row.getAttribute('data-cb-series-id');
+        const series = cbSelected.find(s => s.id === sid);
+        if (!series) return;
+
+        const eyeBtn = row.querySelector('.cb-series-eye');
+        if (eyeBtn) {
+            eyeBtn.addEventListener('click', () => {
+                series.visible = !series.visible;
+                cbSyncChartVisibility();
+                cbRecolorAndRenderSelected();
+            });
+        }
+
+        const removeBtn = row.querySelector('.cb-series-remove');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                cbSelected = cbSelected.filter(s => s.id !== sid);
+                cbRecolorAndRenderSelected();
+                renderCbCountryGrid();
+                loadChartBuilder();
+            });
+        }
+    });
+}
+
+function cbSyncChartVisibility() {
+    if (!chartBuilderChart) return;
+    for (const ds of chartBuilderChart.data.datasets || []) {
+        const sid = ds._cbSeriesId;
+        if (!sid) continue;
+        const series = cbSelected.find(s => s.id === sid);
+        ds.hidden = series ? !series.visible : true;
+    }
+    chartBuilderChart.update('none');
 }
 
 async function loadChartBuilder() {
@@ -2861,59 +3074,102 @@ async function loadChartBuilder() {
     if (!canvas || !supabase) return;
     const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
     try {
-        const metric = cbMetric;
-        const selected = cbSelectedCountries.slice(0, 6);
-        if (!selected.length && !cbIncludeEU) {
-            setStatus('Pick at least one country or enable EU.');
+        const selected = cbSelected.slice(0, 6);
+        if (!selected.length) {
+            setStatus('Pick at least one zone to start.');
+            if (titleEl) titleEl.textContent = 'Select zones to build a chart';
             return;
         }
-        setStatus(`Loading ${metric} (${cbRange})…`);
-        let fetched;
-        if (metric === 'demand') fetched = await cbFetchDemandRaw(cbRange);
-        else if (metric === 'generation') fetched = await cbFetchGenerationRaw(cbRange);
-        else if (metric === 'prices') fetched = await cbFetchPriceRaw(cbRange);
-        else fetched = await cbFetchRenewableRaw(cbRange);
+        setStatus(`Loading ${selected.length} series…`);
 
-        const { points, euSeries, mode, unit, title, fmt } = fetched;
+        // Fetch each unique metric+psrFilter combination once — avoids duplicate API calls.
+        // Pass needEU=true only when 'EU' is among the selected series.
+        const needEU = selected.some(s => s.country === 'EU');
+
+        // For generation, pre-compute only the zones that are actually needed.
+        // This filters server-side instead of fetching all ~50 zones — critical for intraday speed.
+        const genZones = [...new Set(
+            selected
+                .filter(s => s.metric === 'generation' && s.country !== 'EU')
+                .flatMap(s => cbCandidateZonesForCountry(s.country))
+        )];
+
+        // Build unique fetch keys: "metric:psrFilter|total"
+        const fetchKeys = [...new Set(selected.map(s => `${s.metric}:${s.psrFilter ?? 'total'}`))];
+
+        const fetchedByKey = new Map();
+        await Promise.all(fetchKeys.map(async (fkey) => {
+            const [metric, filterStr] = fkey.split(':');
+            const psrFilter = filterStr === 'total' ? null : filterStr;
+            let fetched;
+            if (metric === 'demand') fetched = await cbFetchDemandRaw(cbRange, needEU);
+            else if (metric === 'generation') fetched = await cbFetchGenerationRaw(cbRange, needEU, psrFilter, genZones);
+            else if (metric === 'prices') fetched = await cbFetchPriceRaw(cbRange, needEU);
+            else fetched = await cbFetchRenewableRaw(cbRange, needEU);
+            fetchedByKey.set(fkey, fetched);
+        }));
+
+        // Determine Y-axis assignment: first unit → left 'y', second unit → right 'y1'
+        const allUnits = [...new Set([...fetchedByKey.values()].map(f => f?.unit).filter(Boolean))];
+        const unitToAxis = new Map([[allUnits[0], 'y']]);
+        if (allUnits[1]) unitToAxis.set(allUnits[1], 'y1');
+
         const datasets = [];
-        selected.forEach((country, i) => {
-            const series = cbRollupCountry(points, country, mode);
-            if (!series.length) return;
-            datasets.push({
-                label: country,
-                data: series.map(p => p.y),
-                _ts: series.map(p => p.ts),
-                borderColor: cbColor(i),
-                backgroundColor: cbColor(i) + '22',
-                fill: false,
-                pointRadius: 0,
-                tension: 0.2,
-                borderWidth: 2,
-                spanGaps: true,
-            });
+
+        // Build one dataset per series. EU uses euSeries from the fetch; others use cbRollupCountry.
+        selected.forEach((s) => {
+            const fkey = `${s.metric}:${s.psrFilter ?? 'total'}`;
+            const f = fetchedByKey.get(fkey);
+            if (!f) return;
+            const yId = unitToAxis.get(f.unit) || 'y';
+
+            if (s.country === 'EU') {
+                const euData = f.euSeries || [];
+                if (!euData.length) return;
+                datasets.push({
+                    label: cbSeriesLabel(s),
+                    data: euData.map(p => p.y),
+                    _ts: euData.map(p => p.ts),
+                    _fmt: f.fmt,
+                    borderColor: s.color,
+                    backgroundColor: s.color + '22',
+                    fill: false,
+                    pointRadius: 0,
+                    tension: 0.2,
+                    borderWidth: 2,
+                    spanGaps: true,
+                    hidden: !s.visible,
+                    yAxisID: yId,
+                    _cbSeriesId: s.id,
+                });
+            } else {
+                const series = cbRollupCountry(f.points, s.country, f.mode);
+                if (!series.length) return;
+                datasets.push({
+                    label: cbSeriesLabel(s),
+                    data: series.map(p => p.y),
+                    _ts: series.map(p => p.ts),
+                    _fmt: f.fmt,
+                    borderColor: s.color,
+                    backgroundColor: s.color + '22',
+                    fill: false,
+                    pointRadius: 0,
+                    tension: 0.2,
+                    borderWidth: 2,
+                    spanGaps: true,
+                    hidden: !s.visible,
+                    yAxisID: yId,
+                    _cbSeriesId: s.id,
+                });
+            }
         });
-        if (cbIncludeEU && euSeries?.length) {
-            datasets.unshift({
-                label: 'EU',
-                data: euSeries.map(p => p.y),
-                _ts: euSeries.map(p => p.ts),
-                borderColor: '#111827',
-                backgroundColor: 'rgba(17,24,39,0.08)',
-                borderDash: [6, 4],
-                fill: false,
-                pointRadius: 0,
-                tension: 0.15,
-                borderWidth: 2.5,
-                spanGaps: true,
-            });
-        }
+
         if (!datasets.length) {
             setStatus('No data for selected countries/range.');
-            if (titleEl) titleEl.textContent = `No data — ${title}`;
             return;
         }
 
-        // Union timestamps and align series.
+        // Union timestamps and align all series to the same x-axis
         const tsSet = new Set();
         datasets.forEach(ds => ds._ts.forEach(ts => tsSet.add(ts)));
         const tsList = [...tsSet].sort((a, b) => new Date(a) - new Date(b));
@@ -2930,6 +3186,32 @@ async function loadChartBuilder() {
         if (existing) existing.destroy();
         if (chartBuilderChart) { try { chartBuilderChart.destroy(); } catch (_) {} chartBuilderChart = null; }
 
+        // Build per-axis scale config
+        const makeYScale = (unit, position, drawGrid) => {
+            const isPercent = unit === '%';
+            const fmtFn = (() => {
+                const fkey = fetchKeys.find(k => fetchedByKey.get(k)?.unit === unit);
+                return fkey ? fetchedByKey.get(fkey).fmt : (v) => String(v);
+            })();
+            return {
+                position,
+                grid: { drawOnChartArea: drawGrid },
+                beginAtZero: isPercent,
+                suggestedMin: isPercent ? 0 : undefined,
+                suggestedMax: isPercent ? 100 : undefined,
+                ticks: { callback: (v) => fmtFn(Number(v)) },
+                title: { display: true, text: unit },
+            };
+        };
+
+        const scales = {
+            x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
+            y: makeYScale(allUnits[0] || '%', 'left', true),
+        };
+        if (allUnits[1]) {
+            scales.y1 = makeYScale(allUnits[1], 'right', false);
+        }
+
         chartBuilderChart = new Chart(ctx, {
             type: 'line',
             data: { labels, datasets },
@@ -2938,27 +3220,26 @@ async function loadChartBuilder() {
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: (item) => `${item.dataset.label}: ${fmt(Number(item.raw))}`,
+                            label: (item) => {
+                                const v = item.raw;
+                                const fmt = item.dataset._fmt || ((x) => String(x));
+                                if (v == null || !Number.isFinite(Number(v))) return `${item.dataset.label}: —`;
+                                return `${item.dataset.label}: ${fmt(Number(v))}`;
+                            },
                         },
                     },
                 },
-                scales: {
-                    x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
-                    y: {
-                        beginAtZero: metric === 'renewable',
-                        suggestedMin: metric === 'renewable' ? 0 : undefined,
-                        suggestedMax: metric === 'renewable' ? 100 : undefined,
-                        ticks: { callback: (v) => fmt(Number(v)) },
-                        title: { display: true, text: unit },
-                    },
-                },
+                scales,
             },
         });
 
-        if (titleEl) titleEl.textContent = `${title} — ${selected.join(', ')}${cbIncludeEU ? ' + EU' : ''}`;
+        if (titleEl) {
+            const seriesLabels = selected.map(s => cbSeriesLabel(s));
+            titleEl.textContent = seriesLabels.length <= 4 ? seriesLabels.join(', ') : `${seriesLabels.length} series`;
+        }
         setStatus(`Rendered ${datasets.length} series.`);
     } catch (err) {
         console.error('Chart builder failed:', err);
@@ -2968,7 +3249,9 @@ async function loadChartBuilder() {
 
 function insertChartBuilderSectionForGasPage() {
     const gasPage = document.getElementById('gasMeterPage');
-    if (!gasPage || document.getElementById('chartBuilderMirrorSection')) return;
+    // If the gas meter already has its own native "Demand" chart builder tab,
+    // don't inject the mirror/CTA block anymore.
+    if (!gasPage || document.getElementById('chartBuilderMirrorSection') || document.getElementById('gasDemandEmTab')) return;
     const target = gasPage.querySelector('.section');
     if (!target || !target.parentNode) return;
 
@@ -4283,30 +4566,130 @@ function showChartInfo(chartId) {
 // Grabs the canvas (which already has the E3G watermark drawn by the
 // plugin) and triggers a PNG download.
 const CHART_EXPORT_NAMES = {
-    energyEuChart:      'e3g-eu-renewable-share.png',
-    energyFranceChart:  'e3g-zone-renewable-share.png',
-    elecEuChart:        'e3g-eu-electricity-generation.png',
-    elecZoneChart:      'e3g-zone-electricity-generation.png',
-    loadEuChart:        'e3g-eu-electricity-demand.png',
-    loadZoneChart:      'e3g-zone-electricity-demand.png',
-    gasEuChart:         'e3g-eu-gas-demand.png',
-    gasCountryChart:    'e3g-country-gas-demand.png',
+    energyEuChart:               'e3g-eu-renewable-share.png',
+    energyFranceChart:           'e3g-zone-renewable-share.png',
+    elecEuChart:                 'e3g-eu-electricity-generation.png',
+    elecZoneChart:               'e3g-zone-electricity-generation.png',
+    loadEuChart:                 'e3g-eu-electricity-demand.png',
+    loadZoneChart:               'e3g-zone-electricity-demand.png',
+    gasEuChart:                  'e3g-eu-gas-demand.png',
+    gasCountryChart:             'e3g-country-gas-demand.png',
+    chartBuilderCanvas:          'e3g-elec-chart-builder.png',
+    gasDemandChartBuilderCanvas: 'e3g-gas-chart-builder.png',
 };
+// Returns [{ color, label }] for chart-builder canvases, [] for others.
+function getExportLegendItems(canvasId) {
+    if (canvasId === 'chartBuilderCanvas') {
+        return cbSelected
+            .filter(s => s.visible !== false)
+            .map(s => ({ color: s.color, label: cbSeriesLabel(s) }));
+    }
+    if (canvasId === 'gasDemandChartBuilderCanvas') {
+        return gasDemandCbSelected
+            .filter(s => s.visible !== false)
+            .map(s => ({ color: s.color, label: `${s.displayCode} · ${gasCbMetricTitle(s.metric || 'total')}` }));
+    }
+    return [];
+}
+
 function exportChart(canvasId) {
     const srcCanvas = document.getElementById(canvasId);
     if (!srcCanvas) return;
     const filename = CHART_EXPORT_NAMES[canvasId] || `${canvasId}.png`;
+    track('chart_export', { chart: canvasId });
+
+    const legendItems = getExportLegendItems(canvasId);
+
+    // Legend footer metrics
+    const LEGEND_PAD_TOP = 14;
+    const LEGEND_PAD_BOTTOM = 14;
+    const LEGEND_PAD_X = 24;
+    const SWATCH_SIZE = 12;
+    const SWATCH_R = 3;
+    const FONT_SIZE = 13;
+    const ITEM_GAP = 28;  // horizontal gap between items
+    const SWATCH_TEXT_GAP = 8;
+
+    // Measure legend items to figure out row layout
+    const tempCtx = document.createElement('canvas').getContext('2d');
+    tempCtx.font = `500 ${FONT_SIZE}px "Inter", system-ui, sans-serif`;
+    const itemWidths = legendItems.map(item =>
+        SWATCH_SIZE + SWATCH_TEXT_GAP + tempCtx.measureText(item.label).width
+    );
+
+    // Pack items into rows that fit srcCanvas.width
+    const maxRowW = srcCanvas.width - LEGEND_PAD_X * 2;
+    const rows = [];
+    let currentRow = [];
+    let currentRowW = 0;
+    for (let i = 0; i < legendItems.length; i++) {
+        const w = itemWidths[i];
+        const needed = currentRow.length === 0 ? w : ITEM_GAP + w;
+        if (currentRow.length > 0 && currentRowW + needed > maxRowW) {
+            rows.push(currentRow);
+            currentRow = [i];
+            currentRowW = w;
+        } else {
+            currentRow.push(i);
+            currentRowW += needed;
+        }
+    }
+    if (currentRow.length) rows.push(currentRow);
+
+    const ROW_H = FONT_SIZE + 10;
+    const legendH = legendItems.length > 0
+        ? LEGEND_PAD_TOP + rows.length * ROW_H + LEGEND_PAD_BOTTOM
+        : 0;
 
     const out = document.createElement('canvas');
     out.width  = srcCanvas.width;
-    out.height = srcCanvas.height;
+    out.height = srcCanvas.height + legendH;
     const ctx = out.getContext('2d');
 
-    // White background (srcCanvas already has it from e3gChartBg plugin,
-    // but explicit here guarantees a clean white PNG regardless).
+    // White background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, out.width, out.height);
     ctx.drawImage(srcCanvas, 0, 0);
+
+    // Draw legend footer
+    if (legendH > 0) {
+        // Separator line
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, srcCanvas.height);
+        ctx.lineTo(out.width, srcCanvas.height);
+        ctx.stroke();
+
+        ctx.font = `500 ${FONT_SIZE}px "Inter", system-ui, sans-serif`;
+        ctx.textBaseline = 'middle';
+
+        rows.forEach((row, rowIdx) => {
+            const rowY = srcCanvas.height + LEGEND_PAD_TOP + rowIdx * ROW_H + ROW_H / 2;
+            // Centre the row
+            const rowW = row.reduce((sum, idx, pos) => {
+                return sum + (pos === 0 ? 0 : ITEM_GAP) + itemWidths[idx];
+            }, 0);
+            let x = (out.width - rowW) / 2;
+            row.forEach((itemIdx, pos) => {
+                if (pos > 0) x += ITEM_GAP;
+                const item = legendItems[itemIdx];
+                // Swatch rounded rect
+                ctx.fillStyle = item.color;
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                    ctx.roundRect(x, rowY - SWATCH_SIZE / 2, SWATCH_SIZE, SWATCH_SIZE, SWATCH_R);
+                } else {
+                    ctx.rect(x, rowY - SWATCH_SIZE / 2, SWATCH_SIZE, SWATCH_SIZE);
+                }
+                ctx.fill();
+                // Label
+                ctx.fillStyle = '#374151';
+                ctx.fillText(item.label, x + SWATCH_SIZE + SWATCH_TEXT_GAP, rowY);
+                x += itemWidths[itemIdx];
+            });
+        });
+    }
 
     const doDownload = () => {
         const link = document.createElement('a');
@@ -4352,6 +4735,20 @@ let gasCountryRange = '1y';
 let gasSelectedCountry = null;
 let gasEuChart = null;
 let gasCountryChart = null;
+let gasDemandCbChart = null;
+let gasDemandCbRange = 'month';
+let gasDemandCbChartType = 'line'; // 'line' | 'area'
+let gasDemandCbSelected = []; // [{ id, dbCode, displayCode, metric, color, visible }]
+let gasDemandCbComposerMetric = 'total'; // metric active in the composer
+let gasDemandCbHasBuilt = false;
+let gasDemandCbCandidates = []; // populated in initGasDemandChartBuilderUI
+
+function gasCbDisplayCode(dbCode) {
+    // Geo map uses canonical ISO codes; our gas DB uses "UK" and sometimes "GR".
+    if (dbCode === 'UK') return 'GB';
+    if (dbCode === 'GR') return 'EL';
+    return dbCode;
+}
 
 // In-memory cache so range buttons (1y / 2y / 5y) flip instantly instead of re-hitting the API.
 // We always fetch a 5-year slice once and then filter it client-side per selected range.
@@ -4487,7 +4884,7 @@ function updateGasRangeButtonActive() {
     });
 }
 
-async function gasFetchAllPaged(builder, pageSize = 1000) {
+async function gasFetchAllPaged(builder, pageSize = 1000, maxRows = 200_000) {
     // Supabase caps row returns per request; page via .range().
     const out = [];
     let from = 0;
@@ -4499,7 +4896,37 @@ async function gasFetchAllPaged(builder, pageSize = 1000) {
         out.push(...rows);
         if (rows.length < pageSize) break;
         from += pageSize;
-        if (from > 200_000) break;
+        if (from > maxRows) break;
+    }
+    return out;
+}
+
+// Parallel variant: fires `concurrency` pages at once instead of one at a time.
+// Dramatically faster for large datasets (e.g. generation intraday) where many
+// pages are needed. Falls back cleanly when the dataset ends mid-batch.
+async function gasFetchAllPagedParallel(builder, pageSize = 1000, maxRows = 600_000, concurrency = 8) {
+    const out = [];
+    let from = 0;
+    while (from <= maxRows) {
+        const offsets = [];
+        for (let i = 0; i < concurrency; i++) {
+            const off = from + i * pageSize;
+            if (off > maxRows) break;
+            offsets.push(off);
+        }
+        const results = await Promise.all(offsets.map(off =>
+            builder().range(off, off + pageSize - 1).then(({ data, error }) => {
+                if (error) throw new Error(error.message);
+                return Array.isArray(data) ? data : [];
+            })
+        ));
+        let done = false;
+        for (const rows of results) {
+            out.push(...rows);
+            if (rows.length < pageSize) { done = true; break; }
+        }
+        if (done) break;
+        from += concurrency * pageSize;
     }
     return out;
 }
@@ -4562,6 +4989,8 @@ async function loadGasMeterPage() {
     if (supabase && !gasCacheFresh(gasEuAllRows)) {
         gasFetchEuAll().catch(err => console.warn('EU cache prewarm failed:', err));
     }
+
+    initGasDemandChartBuilderUI();
 
     try {
         setStatus('Fetching latest snapshot…');
@@ -4752,6 +5181,484 @@ async function loadGasMeterPage() {
         console.error('Gas meter load failed:', err);
         tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--error-color); padding: 24px;">Failed to load: ${escapeHtml(err.message || String(err))}</td></tr>`;
         setStatus('Failed to load.');
+    }
+}
+
+function gasCbRangeStartISO(range) {
+    const d = new Date();
+    if (range === 'day') d.setUTCDate(d.getUTCDate() - 1);
+    else if (range === 'week') d.setUTCDate(d.getUTCDate() - 7);
+    else if (range === 'month') d.setUTCDate(d.getUTCDate() - 30);
+    else if (range === '6m') d.setUTCMonth(d.getUTCMonth() - 6);
+    else if (range === '1y') d.setUTCFullYear(d.getUTCFullYear() - 1);
+    else if (range === '5y') d.setUTCFullYear(d.getUTCFullYear() - 5);
+    else d.setUTCDate(d.getUTCDate() - 30);
+    return d.toISOString().slice(0, 10);
+}
+
+function gasCbMetricTitle(metricId) {
+    if (metricId === 'power') return 'Power';
+    if (metricId === 'household') return 'Household';
+    if (metricId === 'industry') return 'Industry';
+    return 'Total demand';
+}
+
+function gasCbMetricGwhUnit() {
+    return 'GWh/day';
+}
+
+function gasCbMetricValueMwh(row, metricId) {
+    if (!row) return null;
+    if (metricId === 'total') {
+        if (row.total_mwh != null) return Number(row.total_mwh);
+        const pw = row.power_mwh == null ? 0 : Number(row.power_mwh);
+        const hh = row.household_mwh == null ? 0 : Number(row.household_mwh);
+        const ind = row.industry_mwh == null ? 0 : Number(row.industry_mwh);
+        return pw + hh + ind;
+    }
+    const col = metricId + '_mwh';
+    if (!(col in row)) return null;
+    return row[col] == null ? null : Number(row[col]);
+}
+
+function gasDemandCbRecolorAndRenderSelected() {
+    gasDemandCbSelected = gasDemandCbSelected
+        .slice(0, 6)
+        .map((s, idx) => ({ ...s, color: cbColor(idx) }));
+    const listEl = document.getElementById('gasCbSeriesList');
+    const countEl = document.getElementById('gasCbSeriesCount');
+    const pickedEl = document.getElementById('gasCbPickedCount');
+    if (countEl) countEl.textContent = String(gasDemandCbSelected.length);
+    if (pickedEl) pickedEl.textContent = `${gasDemandCbSelected.length} / 6`;
+    if (!listEl) return;
+
+    if (!gasDemandCbSelected.length) {
+        listEl.innerHTML = '<div class="cb-empty-series">Pick countries below to add series.</div>';
+        return;
+    }
+
+    listEl.innerHTML = gasDemandCbSelected.map((s) => {
+        const hiddenClass = s.visible ? '' : 'is-hidden';
+        const metricLabel = gasCbMetricTitle(s.metric || 'total');
+        const eyeIcon = s.visible
+            ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><ellipse cx="6" cy="6" rx="5" ry="3.5" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="1.5" fill="currentColor"/></svg>'
+            : '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1L11 11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M2.5 4.5C1.8 5 1.3 5.5 1 6c1.2 2 3.2 3.5 5 3.5 1 0 2-.4 2.8-1M4 2.7C4.6 2.3 5.3 2 6 2c1.8 0 3.8 1.5 5 3.5-.3.5-.7 1-1.2 1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+        return `
+            <div class="cb-series-row ${hiddenClass}" data-gas-series-id="${escapeHtml(s.id)}">
+                <div class="cb-swatch" style="background:${s.color};"><div class="cb-swatch-inner"></div></div>
+                <div class="cb-series-label">
+                    <div class="cb-series-code">${escapeHtml(s.displayCode)}</div>
+                    <div class="cb-series-meta">${escapeHtml(metricLabel)}</div>
+                </div>
+                <div class="cb-series-actions">
+                    <button type="button" class="cb-icon-btn cb-series-eye" title="${s.visible ? 'Hide' : 'Show'}">${eyeIcon}</button>
+                    <button type="button" class="cb-icon-btn cb-icon-btn-danger cb-series-remove" title="Remove">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    listEl.querySelectorAll('.cb-series-row').forEach((row) => {
+        const sid = row.getAttribute('data-gas-series-id');
+        const series = gasDemandCbSelected.find(s => s.id === sid);
+        if (!series) return;
+
+        const eyeBtn = row.querySelector('.cb-series-eye');
+        if (eyeBtn) {
+            eyeBtn.addEventListener('click', () => {
+                series.visible = !series.visible;
+                gasDemandCbSyncChartVisibility();
+                gasDemandCbRecolorAndRenderSelected();
+            });
+        }
+
+        const removeBtn = row.querySelector('.cb-series-remove');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                gasDemandCbSelected = gasDemandCbSelected.filter(s => s.id !== sid);
+                gasDemandCbHasBuilt = false;
+                gasDemandCbRecolorAndRenderSelected();
+                gasDemandCbRenderCountriesGrid();
+                loadGasDemandChartBuilderChart();
+            });
+        }
+    });
+}
+
+function gasDemandCbSyncChartVisibility() {
+    if (!gasDemandCbChart) return;
+    for (const ds of gasDemandCbChart.data.datasets || []) {
+        const sid = ds._gasSeriesId;
+        if (!sid) continue;
+        const series = gasDemandCbSelected.find(s => s.id === sid);
+        ds.hidden = series ? !series.visible : true;
+    }
+    gasDemandCbChart.update('none');
+}
+
+function gasDemandCbRenderCountriesGrid() {
+    const searchEl = document.getElementById('gasCbCountrySearch');
+    const gridEl = document.getElementById('gasCbCountriesGrid');
+    const pickedEl = document.getElementById('gasCbPickedCount');
+    if (!gridEl) return;
+
+    const q = (searchEl?.value || '').trim().toUpperCase();
+    const candidates = (gasDemandCbCandidates || []).filter((c) => {
+        if (!q) return true;
+        const disp = gasCbDisplayCode(c).toUpperCase();
+        const name = (CB_COUNTRY_NAMES[disp] || CB_COUNTRY_NAMES[c] || '').toUpperCase();
+        return disp.includes(q) || String(c).toUpperCase().includes(q) || name.includes(q);
+    }).sort((a, b) => gasCbDisplayCode(a).localeCompare(gasCbDisplayCode(b)));
+
+    // A country card is "active" when it has a series with the current composer metric
+    const activeKey = (dbCode) => `${dbCode}:${gasDemandCbComposerMetric}`;
+    const activeSet = new Set(gasDemandCbSelected.map(s => `${s.dbCode}:${s.metric}`));
+    const maxReached = gasDemandCbSelected.length >= 6;
+
+    if (pickedEl) pickedEl.textContent = `${gasDemandCbSelected.length} / 6`;
+
+    gridEl.innerHTML = candidates.map((dbCode) => {
+        const displayCode = gasCbDisplayCode(dbCode);
+        const isActive = activeSet.has(activeKey(dbCode));
+        const isDisabled = !isActive && maxReached;
+        const name = CB_COUNTRY_NAMES[displayCode] || CB_COUNTRY_NAMES[dbCode] || '';
+        return `
+            <button type="button"
+                    class="cb-country-card ${isActive ? 'active' : ''}"
+                    data-gas-db-code="${escapeHtml(dbCode)}"
+                    ${isDisabled ? 'disabled' : ''}
+                    title="${escapeHtml(name || displayCode)}">
+                <span class="cb-country-meat">
+                    <span class="cb-country-code">${escapeHtml(displayCode)}</span>
+                    <span class="cb-country-name">${escapeHtml(name)}</span>
+                </span>
+            </button>
+        `;
+    }).join('');
+
+    gridEl.querySelectorAll('.cb-country-card').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const dbCode = btn.getAttribute('data-gas-db-code');
+            if (!dbCode) return;
+            const key = `${dbCode}:${gasDemandCbComposerMetric}`;
+            const existsIdx = gasDemandCbSelected.findIndex(s => `${s.dbCode}:${s.metric}` === key);
+            if (existsIdx >= 0) {
+                gasDemandCbSelected.splice(existsIdx, 1);
+                gasDemandCbHasBuilt = false;
+            } else {
+                if (gasDemandCbSelected.length >= 6) return;
+                const displayCode = gasCbDisplayCode(dbCode);
+                gasDemandCbSelected.push({
+                    id: `${dbCode}:${gasDemandCbComposerMetric}:${Date.now()}`,
+                    dbCode,
+                    displayCode,
+                    metric: gasDemandCbComposerMetric,
+                    color: cbColor(gasDemandCbSelected.length),
+                    visible: true,
+                });
+                gasDemandCbHasBuilt = false;
+                track('gas_cb_series', { country: displayCode, metric: gasDemandCbComposerMetric });
+            }
+
+            gasDemandCbRecolorAndRenderSelected();
+            gasDemandCbRenderCountriesGrid();
+            loadGasDemandChartBuilderChart();
+        });
+    });
+}
+
+function initGasDemandChartBuilderUI() {
+    const demandPane = document.getElementById('gasDemandEmTab');
+    if (!demandPane) return;
+
+    // Avoid duplicating event listeners if the gas page is visited multiple times.
+    const alreadyBound = demandPane.dataset.gasCbInitDone === '1';
+    demandPane.dataset.gasCbInitDone = '1';
+
+    // Reset builder state on each entry to the gas page.
+    gasDemandCbHasBuilt = false;
+    if (gasDemandCbChart) {
+        try { gasDemandCbChart.destroy(); } catch (_) {}
+        gasDemandCbChart = null;
+    }
+
+    // Tabs
+    const overviewBtn = document.getElementById('gasOverviewTabBtn');
+    const demandBtn = document.getElementById('gasDemandTabBtn');
+    const overviewPane = document.getElementById('gasOverviewEmTab');
+    const demandPaneEl = document.getElementById('gasDemandEmTab');
+    if (!alreadyBound && overviewBtn && demandBtn && overviewPane && demandPaneEl) {
+        const setActive = (which) => {
+            const isDemand = which === 'demand';
+            overviewBtn.classList.toggle('active', !isDemand);
+            demandBtn.classList.toggle('active', isDemand);
+            overviewBtn.setAttribute('aria-selected', String(!isDemand));
+            demandBtn.setAttribute('aria-selected', String(isDemand));
+            overviewPane.classList.toggle('active', !isDemand);
+            demandPaneEl.classList.toggle('active', isDemand);
+
+            if (isDemand) {
+                // Build once when the user first lands on the tab.
+                if (!gasDemandCbHasBuilt) loadGasDemandChartBuilderChart();
+            }
+        };
+
+        overviewBtn.addEventListener('click', () => setActive('overview'));
+        demandBtn.addEventListener('click', () => setActive('demand'));
+    }
+
+    // Candidate countries (max 6 selected)
+    gasDemandCbCandidates = ['EU27', ...new Set([...GAS_EU27, 'UK'])];
+
+    // Default selection: a "useful" starting point (total demand for 4 countries)
+    gasDemandCbSelected = ['DE', 'FR', 'ES', 'UK']
+        .filter((c) => gasDemandCbCandidates.includes(c))
+        .map((dbCode, idx) => ({
+            id: `${dbCode}:total:0`,
+            dbCode,
+            displayCode: gasCbDisplayCode(dbCode),
+            metric: 'total',
+            color: cbColor(idx),
+            visible: true,
+        }));
+
+    // Range buttons
+    const rangeBtns = [
+        ['day', 'gasCbRangeDayBtn'],
+        ['week', 'gasCbRangeWeekBtn'],
+        ['month', 'gasCbRangeMonthBtn'],
+        ['6m', 'gasCbRange6mBtn'],
+        ['1y', 'gasCbRange1yBtn'],
+        ['5y', 'gasCbRange5yBtn'],
+    ];
+    if (!alreadyBound) {
+        rangeBtns.forEach(([range, id]) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('click', () => {
+                gasDemandCbRange = range;
+                track('gas_cb_range', { range });
+                rangeBtns.forEach(([_, otherId]) => {
+                    const other = document.getElementById(otherId);
+                    if (!other) return;
+                    other.classList.toggle('active', otherId === id);
+                });
+                loadGasDemandChartBuilderChart();
+            });
+        });
+    }
+
+    // Metric cards — set the composer metric (what gets added on next country click)
+    const metricCards = document.querySelectorAll('#gasDemandEmTab [data-gas-metric]');
+    if (!alreadyBound) {
+        metricCards.forEach(card => {
+            card.addEventListener('click', () => {
+                const m = card.getAttribute('data-gas-metric');
+                gasDemandCbComposerMetric = m;
+                const metricEl = document.getElementById('gasCbMetricSelect');
+                if (metricEl) metricEl.value = m;
+                metricCards.forEach(c => c.classList.toggle('active', c === card));
+                // Re-render country grid to reflect which countries have this metric active
+                gasDemandCbRenderCountriesGrid();
+            });
+        });
+    }
+    // Sync active metric card on init
+    metricCards.forEach(c => c.classList.toggle('active', c.getAttribute('data-gas-metric') === gasDemandCbComposerMetric));
+
+    // Chart type buttons
+    const lineBtn = document.getElementById('gasCbChartTypeLineBtn');
+    const areaBtn = document.getElementById('gasCbChartTypeAreaBtn');
+    if (!alreadyBound && lineBtn && areaBtn) {
+        lineBtn.addEventListener('click', () => {
+            gasDemandCbChartType = 'line';
+            lineBtn.classList.add('active');
+            areaBtn.classList.remove('active');
+            gasDemandCbHasBuilt = false;
+            loadGasDemandChartBuilderChart();
+        });
+        areaBtn.addEventListener('click', () => {
+            gasDemandCbChartType = 'area';
+            areaBtn.classList.add('active');
+            lineBtn.classList.remove('active');
+            gasDemandCbHasBuilt = false;
+            loadGasDemandChartBuilderChart();
+        });
+    }
+
+    // Build button
+    const buildBtn = document.getElementById('gasCbBuildBtn');
+    if (!alreadyBound && buildBtn) {
+        buildBtn.addEventListener('click', () => {
+            gasDemandCbHasBuilt = false;
+            loadGasDemandChartBuilderChart();
+        });
+    }
+
+    // Clear button
+    const clearBtn = document.getElementById('gasCbClearBtn');
+    if (!alreadyBound && clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            gasDemandCbSelected = [];
+            gasDemandCbHasBuilt = false;
+            gasDemandCbRecolorAndRenderSelected();
+            gasDemandCbRenderCountriesGrid();
+            loadGasDemandChartBuilderChart();
+        });
+    }
+
+    // Country search
+    const searchEl = document.getElementById('gasCbCountrySearch');
+    if (!alreadyBound && searchEl) {
+        searchEl.addEventListener('input', () => gasDemandCbRenderCountriesGrid());
+    }
+
+    gasDemandCbRecolorAndRenderSelected();
+    gasDemandCbRenderCountriesGrid();
+}
+
+async function loadGasDemandChartBuilderChart() {
+    const statusEl = document.getElementById('gasCbStatus');
+    const canvas = document.getElementById('gasDemandChartBuilderCanvas');
+    const titleEl = document.getElementById('gasCbChartTitle');
+    if (!canvas || !supabase) return;
+
+    const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
+
+    try {
+        const selected = gasDemandCbSelected.slice(0, 6);
+        const range = gasDemandCbRange;
+        const chartType = gasDemandCbChartType;
+
+        if (!selected.length) {
+            setStatus('Pick at least one country to start.');
+            if (titleEl) titleEl.textContent = 'Demand chart builder';
+            return;
+        }
+
+        setStatus(`Loading ${selected.length} series…`);
+        const since = gasCbRangeStartISO(range);
+        const eu27Set = new Set(GAS_EU27);
+
+        // Fetch per-series rows. EU27 is handled specially: sum all EU27 country rows.
+        const seriesMaps = new Map(); // `${dbCode}:${metric}` -> Map(day -> gwh)
+        const dateSet = new Set();
+        await Promise.all(selected.map(async (s) => {
+            const key = `${s.dbCode}:${s.metric}`;
+            const map = new Map();
+
+            if (s.dbCode === 'EU27') {
+                const allRows = await gasFetchEuAll();
+                for (const r of allRows || []) {
+                    if (!eu27Set.has(r.country_code)) continue;
+                    const day = String(r.gas_day || '').slice(0, 10);
+                    if (!day || day < since) continue;
+                    const mwh = gasCbMetricValueMwh(r, s.metric);
+                    if (mwh == null || !Number.isFinite(Number(mwh))) continue;
+                    map.set(day, (map.get(day) || 0) + Number(mwh) / 1000);
+                    dateSet.add(day);
+                }
+            } else {
+                const rows = await gasFetchCountryAll(s.dbCode);
+                for (const r of rows || []) {
+                    const day = String(r.gas_day || '').slice(0, 10);
+                    if (!day || day < since) continue;
+                    const mwh = gasCbMetricValueMwh(r, s.metric);
+                    if (mwh == null || !Number.isFinite(Number(mwh))) continue;
+                    const gwh = Number(mwh) / 1000;
+                    if (!Number.isFinite(gwh)) continue;
+                    map.set(day, gwh);
+                    dateSet.add(day);
+                }
+            }
+
+            seriesMaps.set(key, map);
+        }));
+
+        const dates = [...dateSet].sort();
+        if (!dates.length) {
+            setStatus('No data for this range / metric.');
+            if (titleEl) titleEl.textContent = `Gas demand — ${range}`;
+            return;
+        }
+
+        const fmtDay = (day) => `${day.slice(5, 7)}/${day.slice(8, 10)}`;
+        const labels = dates.map(fmtDay);
+        const datasets = [];
+
+        selected.forEach((s, i) => {
+            const key = `${s.dbCode}:${s.metric}`;
+            const map = seriesMaps.get(key) || new Map();
+            const data = dates.map(d => map.has(d) ? map.get(d) : null);
+            const color = s.color || cbColor(i);
+            datasets.push({
+                label: `${gasCbDisplayCode(s.dbCode)} · ${gasCbMetricTitle(s.metric)}`,
+                data,
+                borderColor: color,
+                backgroundColor: chartType === 'area' ? (color + '22') : 'transparent',
+                fill: chartType === 'area',
+                pointRadius: 0,
+                tension: 0.25,
+                borderWidth: 2.2,
+                spanGaps: true,
+                hidden: !s.visible,
+                _gasSeriesId: s.id,
+            });
+        });
+
+        if (gasDemandCbChart) {
+            try { gasDemandCbChart.destroy(); } catch (_) {}
+            gasDemandCbChart = null;
+        }
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        gasDemandCbChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => {
+                                const v = item.raw;
+                                if (v == null || !Number.isFinite(Number(v))) return `${item.dataset.label}: —`;
+                                return `${item.dataset.label}: ${Number(v).toFixed(1)} GWh`;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 10 }, grid: { display: false } },
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'GWh' },
+                        ticks: { callback: (v) => `${Number(v).toFixed(0)}` },
+                    },
+                },
+            },
+        });
+
+        if (titleEl) {
+            const uniqueMetrics = [...new Set(selected.map(s => s.metric))];
+            const metricLabel = uniqueMetrics.length === 1 ? gasCbMetricTitle(uniqueMetrics[0]) : 'Mixed metrics';
+            const codes = [...new Set(selected.map(s => gasCbDisplayCode(s.dbCode)))];
+            const selTxt = codes.length > 5 ? `${codes.length} countries` : codes.join(', ');
+            titleEl.textContent = `${metricLabel} — ${selTxt} · ${range}`;
+        }
+
+        setStatus(`Rendered ${datasets.length} series.`);
+        gasDemandCbHasBuilt = true;
+    } catch (err) {
+        console.error('Gas demand chart builder failed:', err);
+        setStatus(`Failed: ${err.message || String(err)}`);
     }
 }
 
