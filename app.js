@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navigateToPage(saved.page);
             }
         } else {
-            await loadDashboard();
+            navigateToPage('home');
         }
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -265,11 +265,20 @@ function teardownEnergyRealtimeSubscription() {
     energyRealtimeChannel = null;
 }
 
+// ── Sidebar collapse helpers ──────────────────────────────────────
+function setSidebarCollapsed(collapsed) {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+}
+
 // Setup navigation handlers
 function setupNavigation() {
-    // Sidebar toggle
+    // Sidebar toggle (manual)
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-        document.getElementById('sidebar').classList.toggle('active');
+        setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+    });
+    // Reveal tab (shown on left edge when collapsed)
+    document.getElementById('sidebarReveal')?.addEventListener('click', () => {
+        setSidebarCollapsed(false);
     });
     
     // Page navigation
@@ -447,18 +456,29 @@ function navigateToPage(page, countryId = null) {
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 
+    // Expand the sidebar when navigating away from chart builders
+    if (page !== 'energy-meter' && page !== 'gas-meter') {
+        setSidebarCollapsed(false);
+    }
+
     // Layout mode: center info pages (Contact / About / Terms)
     const pageContent = document.querySelector('.page-content');
     if (pageContent) {
         const isInfo = page === 'contact' || page === 'about' || page === 'terms';
         pageContent.classList.toggle('info-page-layout', isInfo);
     }
-    
+
     // Update navigation
     document.querySelectorAll('.nav-item, .country-nav-item').forEach(item => {
         item.classList.remove('active');
     });
-    
+
+    if (page === 'home') {
+        document.getElementById('homePage')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'EU Energy Team Data Platform';
+        return;
+    }
+
     if (page === 'dashboard') {
         document.getElementById('dashboardPage').classList.add('active');
         document.querySelector('[data-page="dashboard"]').classList.add('active');
@@ -1693,6 +1713,8 @@ function setupElectricityMeterTabs() {
 
 function switchElectricityMeterTab(target) {
     saveElecMeterTab(target || 'renewable');
+    // Collapse sidebar for chart builder; restore for all other tabs
+    if (target !== 'chart-builder') setSidebarCollapsed(false);
     const buttons = document.querySelectorAll('#energyMeterPage .em-tab-btn');
     buttons.forEach(b => {
         b.classList.toggle('active', b.getAttribute('data-em-tab') === target);
@@ -1722,6 +1744,7 @@ function switchElectricityMeterTab(target) {
         loadDemandTabData();
     } else if (target === 'chart-builder') {
         document.getElementById('chartBuilderEmTab')?.classList.add('active');
+        setSidebarCollapsed(true);
         if (!chartBuilderTabInited) {
             chartBuilderTabInited = true;
             initChartBuilderControls();
@@ -5405,8 +5428,8 @@ function initGasDemandChartBuilderUI() {
             }
         };
 
-        overviewBtn.addEventListener('click', () => setActive('overview'));
-        demandBtn.addEventListener('click', () => setActive('demand'));
+        overviewBtn.addEventListener('click', () => { setSidebarCollapsed(false); setActive('overview'); });
+        demandBtn.addEventListener('click', () => { setSidebarCollapsed(true); setActive('demand'); });
     }
 
     // Candidate countries (max 6 selected)

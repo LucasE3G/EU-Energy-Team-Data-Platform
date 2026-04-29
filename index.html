@@ -9,7 +9,7 @@
 <body>
     <!-- Sidebar Navigation -->
     <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
+        <div class="sidebar-header sidebar-header-link" data-page="home" role="button" tabindex="0" title="Go to home">
             <div class="logo-container">
                 <img src="https://rvxukmupuzxbrwicowyn.supabase.co/storage/v1/object/public/logo/logo.png" alt="E3G Logo" class="e3g-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                 <div class="e3g-logo-text" style="display: none; color: #C5B772; font-size: 32px; font-weight: bold;">E3G</div>
@@ -43,6 +43,9 @@
         </nav>
     </aside>
 
+    <!-- Sidebar reveal tab (visible only when sidebar is collapsed) -->
+    <button id="sidebarReveal" title="Show sidebar" aria-label="Show sidebar">◂</button>
+
     <!-- Main Content Area -->
     <main class="main-content">
         <!-- Top Bar -->
@@ -63,8 +66,67 @@
 
         <!-- Page Content -->
         <div class="page-content">
+            <!-- Home Page -->
+            <div id="homePage" class="page active">
+                <div class="home-hero">
+                    <div class="home-hero-inner">
+                        <img src="https://rvxukmupuzxbrwicowyn.supabase.co/storage/v1/object/public/logo/logo.png" alt="E3G Logo" class="home-hero-logo" onerror="this.style.display='none';">
+                        <h1 class="home-hero-title">EU Energy Team<br>Data Platform</h1>
+                        <p class="home-hero-sub">Real-time electricity and gas data for Europe — built by E3G to support climate policy and research.</p>
+                    </div>
+                </div>
+
+                <div class="home-body">
+                    <!-- About E3G -->
+                    <section class="home-section">
+                        <h2 class="home-section-title">About E3G</h2>
+                        <p class="home-section-text">E3G is an independent, non-profit climate change think tank. We work to accelerate the global transition to a safe climate by translating climate science and economics into policy, politics, and practice. Our EU Energy Team produces analysis and data tools to support the European Green Deal, the energy transition, and climate diplomacy across EU member states.</p>
+                        <a href="https://www.e3g.org" target="_blank" rel="noopener" class="home-link-btn">Visit e3g.org →</a>
+                    </section>
+
+                    <!-- About the platform -->
+                    <section class="home-section">
+                        <h2 class="home-section-title">About this platform</h2>
+                        <p class="home-section-text">This platform aggregates and visualises near real-time energy data for EU member states and the UK, drawing on official sources including ENTSO-E, ENTSOG, and Eurostat. It is designed for policy analysts, researchers, and advocates who need fast, reliable access to energy system data without the friction of raw data portals.</p>
+                    </section>
+
+                    <!-- Feature cards -->
+                    <div class="home-cards">
+                        <div class="home-card" data-page="energy-meter" role="button" tabindex="0">
+                            <div class="home-card-icon">⚡</div>
+                            <h3 class="home-card-title">EU Electricity Meter</h3>
+                            <p class="home-card-desc">Track renewable share, electricity generation by source, demand, and day-ahead prices across all European bidding zones. Includes a multi-series chart builder for custom comparisons.</p>
+                            <span class="home-card-cta">Open →</span>
+                        </div>
+                        <div class="home-card" data-page="gas-meter" role="button" tabindex="0">
+                            <div class="home-card-icon">🔥</div>
+                            <h3 class="home-card-title">EU Gas Meter</h3>
+                            <p class="home-card-desc">Monitor daily natural gas demand across EU27 countries, broken down by sector — power generation, households, and industry. Compare countries and time periods with the chart builder.</p>
+                            <span class="home-card-cta">Open →</span>
+                        </div>
+                        <div class="home-card" data-page="dashboard" role="button" tabindex="0">
+                            <div class="home-card-icon">🏗️</div>
+                            <h3 class="home-card-title">National Renovation Plans</h3>
+                            <p class="home-card-desc">Explore national building renovation policies across EU member states — measures, targets, stakeholder mapping, and country-level data tables.</p>
+                            <span class="home-card-cta">Open →</span>
+                        </div>
+                    </div>
+
+                    <!-- Data sources -->
+                    <section class="home-section home-section-sources">
+                        <h2 class="home-section-title">Data sources</h2>
+                        <div class="home-sources-grid">
+                            <div class="home-source"><span class="home-source-name">ENTSO-E</span><span class="home-source-desc">European Network of Transmission System Operators for Electricity — generation, demand, prices</span></div>
+                            <div class="home-source"><span class="home-source-name">ENTSOG</span><span class="home-source-desc">European Network of Transmission System Operators for Gas — daily gas flow and demand</span></div>
+                            <div class="home-source"><span class="home-source-name">Bruegel</span><span class="home-source-desc">Gas demand calibration methodology</span></div>
+                            <div class="home-source"><span class="home-source-name">Eurostat</span><span class="home-source-desc">Country-level energy statistics and structural data</span></div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
             <!-- Dashboard Page -->
-            <div id="dashboardPage" class="page active">
+            <div id="dashboardPage" class="page" >
                 <div class="page-header">
                     <h1>National renovation building plans</h1>
                     <p class="page-subtitle">Comprehensive data visualization platform for policy and sector experts</p>
