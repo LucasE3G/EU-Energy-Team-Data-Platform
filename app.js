@@ -382,7 +382,7 @@ function saveElecMeterRanges() {
 function readElecMeterTab() {
     try {
         const raw = (localStorage.getItem(ELEC_METER_TAB_KEY) || '').trim();
-        const ok = new Set(['renewable', 'electricity', 'prices', 'demand']);
+        const ok = new Set(['renewable', 'electricity', 'prices', 'demand', 'chart-builder']);
         if (raw && ok.has(raw)) return raw;
     } catch (_) { /* ignore */ }
     return null;
@@ -1645,6 +1645,14 @@ let priceLatestRows = []; // latest avg price per zone (last 24h)
 let priceSelectedZone = null;
 let priceMapWindow = '24h'; // '24h' | '30d'
 
+// Chart builder tab (multi-country, total metrics)
+let chartBuilderTabInited = false;
+let chartBuilderChart = null;
+let cbMetric = 'renewable'; // 'renewable' | 'generation' | 'demand' | 'prices'
+let cbRange = 'day'; // 'day' | 'week' | 'month' | '6m' | '1y' | '5y'
+let cbIncludeEU = true;
+let cbSelectedCountries = ['DE', 'FR', 'ES'];
+
 function fmtMwShort(mw) {
     const n = Number(mw);
     if (!Number.isFinite(n)) return '-';
@@ -1702,6 +1710,13 @@ function switchElectricityMeterTab(target) {
             initLoadTabControls();
         }
         loadDemandTabData();
+    } else if (target === 'chart-builder') {
+        document.getElementById('chartBuilderEmTab')?.classList.add('active');
+        if (!chartBuilderTabInited) {
+            chartBuilderTabInited = true;
+            initChartBuilderControls();
+        }
+        loadChartBuilder();
     } else {
         document.getElementById('renewableEmTab')?.classList.add('active');
     }
@@ -2523,6 +2538,462 @@ function priceRangeToSinceIso(range) {
         range === '1y' ? 365 :
         range === '5y' ? 365 * 5 : 365;
     return new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function cbRangeToSinceIso(range) {
+    return rangeToSinceIso(range);
+}
+
+const CB_COUNTRIES = [
+    'AT','BE','BG','CH','CY','CZ','DE','DK','EE','ES','FI','FR','GB','GR','HR','HU','IE','IT',
+    'LT','LU','LV','MT','NL','NO','PL','PT','RO','SE','SI','SK'
+];
+
+function initChartBuilderControls() {
+    const metricSelect = document.getElementById('cbMetricSelect');
+    const includeEu = document.getElementById('cbIncludeEU');
+    const search = document.getElementById('cbCountrySearch');
+    const buildBtn = document.getElementById('cbBuildBtn');
+
+    if (metricSelect && !metricSelect.dataset.bound) {
+        metricSelect.dataset.bound = '1';
+        metricSelect.value = cbMetric;
+        metricSelect.addEventListener('change', () => {
+            cbMetric = String(metricSelect.value || 'renewable');
+            loadChartBuilder();
+        });
+    }
+    if (includeEu && !includeEu.dataset.bound) {
+        includeEu.dataset.bound = '1';
+        includeEu.checked = !!cbIncludeEU;
+        includeEu.addEventListener('change', () => {
+            cbIncludeEU = !!includeEu.checked;
+            loadChartBuilder();
+        });
+    }
+    if (search && !search.dataset.bound) {
+        search.dataset.bound = '1';
+        search.addEventListener('input', () => renderCbCountryGrid());
+    }
+    if (buildBtn && !buildBtn.dataset.bound) {
+        buildBtn.dataset.bound = '1';
+        buildBtn.addEventListener('click', () => loadChartBuilder());
+    }
+
+    const bindRange = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            cbRange = range;
+            updateCbRangeButtons();
+            loadChartBuilder();
+        });
+    };
+    bindRange('cbRangeDayBtn', 'day');
+    bindRange('cbRangeWeekBtn', 'week');
+    bindRange('cbRangeMonthBtn', 'month');
+    bindRange('cbRange6mBtn', '6m');
+    bindRange('cbRange1yBtn', '1y');
+    bindRange('cbRange5yBtn', '5y');
+
+    renderCbCountryGrid();
+    updateCbRangeButtons();
+}
+
+function updateCbRangeButtons() {
+    const map = {
+        day: 'cbRangeDayBtn',
+        week: 'cbRangeWeekBtn',
+        month: 'cbRangeMonthBtn',
+        '6m': 'cbRange6mBtn',
+        '1y': 'cbRange1yBtn',
+        '5y': 'cbRange5yBtn',
+    };
+    Object.entries(map).forEach(([range, id]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', cbRange === range);
+    });
+}
+
+function renderCbCountryGrid() {
+    const grid = document.getElementById('cbCountriesGrid');
+    const search = document.getElementById('cbCountrySearch');
+    if (!grid) return;
+    const q = String(search?.value || '').trim().toUpperCase();
+    const list = CB_COUNTRIES.filter(c => !q || c.includes(q));
+    grid.innerHTML = list.map(c => {
+        const active = cbSelectedCountries.includes(c);
+        return `
+            <button class="btn-secondary ${active ? 'active' : ''}" data-cb-country="${c}" style="padding:8px 10px; width:100%; text-align:center;">
+                ${c}
+            </button>
+        `;
+    }).join('');
+    grid.querySelectorAll('button[data-cb-country]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const c = String(btn.getAttribute('data-cb-country') || '');
+            if (!c) return;
+            if (cbSelectedCountries.includes(c)) {
+                cbSelectedCountries = cbSelectedCountries.filter(x => x !== c);
+            } else {
+                if (cbSelectedCountries.length >= 6) return;
+                cbSelectedCountries = [...cbSelectedCountries, c];
+            }
+            renderCbCountryGrid();
+            loadChartBuilder();
+        });
+    });
+}
+
+function cbCandidateZonesForCountry(country) {
+    const c = String(country || '').toUpperCase();
+    if (c === 'DK') return ['DK1', 'DK2'];
+    if (c === 'SE') return ['SE1', 'SE2', 'SE3', 'SE4'];
+    if (c === 'NO') return ['NO1', 'NO2', 'NO3', 'NO4', 'NO5'];
+    if (c === 'UK') return ['GB'];
+    return [c];
+}
+
+function cbRollupCountry(points, country, mode = 'sum') {
+    const candidates = cbCandidateZonesForCountry(country);
+    const byTs = new Map();
+    for (const p of points) {
+        const z = String(p.zone || '').toUpperCase();
+        if (!candidates.includes(z)) continue;
+        const prev = byTs.get(p.ts) || { sum: 0, n: 0 };
+        prev.sum += Number(p.y) || 0;
+        prev.n += 1;
+        byTs.set(p.ts, prev);
+    }
+    return [...byTs.entries()]
+        .map(([ts, v]) => ({ ts, y: mode === 'avg' ? (v.n ? v.sum / v.n : null) : v.sum }))
+        .filter(p => Number.isFinite(Number(p.y)))
+        .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+}
+
+async function cbFetchRenewableRaw(range) {
+    const since = cbRangeToSinceIso(range);
+    const useWeekly = range === '5y';
+    const useDaily = range === '6m' || range === '1y';
+    const table = useWeekly ? 'energy_mix_weekly' : useDaily ? 'energy_mix_daily' : 'energy_mix_snapshots';
+    const rows = await gasFetchAllPaged(() =>
+        supabase
+            .from(table)
+            .select('ts, zone_id, renewable_percent')
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: true })
+    );
+    const points = rows
+        .filter(r => r.ts && r.zone_id && Number.isFinite(Number(r.renewable_percent)))
+        .map(r => ({ ts: r.ts, zone: String(r.zone_id).toUpperCase(), y: Number(r.renewable_percent) }));
+
+    let euSeries = [];
+    if (cbIncludeEU) {
+        const euTable = useWeekly ? 'energy_eu_weekly_mv' : useDaily ? 'energy_eu_daily_mv' : 'energy_eu_15m_mv';
+        const euRows = await gasFetchAllPaged(() =>
+            supabase
+                .from(euTable)
+                .select('ts, renewable_percent')
+                .gte('ts', since)
+                .order('ts', { ascending: true })
+        );
+        euSeries = euRows
+            .filter(r => r.ts && Number.isFinite(Number(r.renewable_percent)))
+            .map(r => ({ ts: r.ts, y: Number(r.renewable_percent) }));
+    }
+    return { points, euSeries, mode: 'avg', unit: '%', title: 'Renewable share', fmt: (v) => `${Number(v).toFixed(1)}%` };
+}
+
+async function cbFetchDemandRaw(range) {
+    const since = cbRangeToSinceIso(range);
+    const useWeekly = range === '5y';
+    const useDaily = range === '6m' || range === '1y';
+    const raw = !(useWeekly || useDaily);
+    const table = raw ? 'electricity_load_snapshots' : (useWeekly ? 'electricity_load_weekly_mwh' : 'electricity_load_daily_mwh');
+    const valueCol = raw ? 'load_mw' : 'consumption_mwh';
+    const rows = await gasFetchAllPaged(() =>
+        supabase
+            .from(table)
+            .select(`ts, zone_id, ${valueCol}`)
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: true })
+    );
+    const points = rows
+        .filter(r => r.ts && r.zone_id && Number.isFinite(Number(r[valueCol])))
+        .map(r => ({ ts: r.ts, zone: String(r.zone_id).toUpperCase(), y: Number(r[valueCol]) }));
+    let euSeries = [];
+    if (cbIncludeEU) {
+        if (raw) {
+            const byTs = new Map();
+            for (const p of points) byTs.set(p.ts, (byTs.get(p.ts) || 0) + Number(p.y));
+            euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+        } else {
+            const euTable = useWeekly ? 'electricity_eu_load_weekly_mwh' : 'electricity_eu_load_daily_mwh';
+            const euCol = 'consumption_mwh';
+            const euRows = await gasFetchAllPaged(() =>
+                supabase
+                    .from(euTable)
+                    .select(`ts, ${euCol}`)
+                    .gte('ts', since)
+                    .order('ts', { ascending: true })
+            );
+            euSeries = euRows
+                .filter(r => r.ts && Number.isFinite(Number(r[euCol])))
+                .map(r => ({ ts: r.ts, y: Number(r[euCol]) }));
+        }
+    }
+    const fmt = raw ? fmtMwShort : fmtGWh;
+    return { points, euSeries, mode: 'sum', unit: raw ? 'MW' : 'GWh', title: 'Demand total', fmt };
+}
+
+async function cbFetchPriceRaw(range) {
+    const since = cbRangeToSinceIso(range);
+    const useWeekly = range === '5y';
+    const useDaily = range === '6m' || range === '1y';
+    const table = useWeekly ? 'electricity_price_weekly' : useDaily ? 'electricity_price_daily' : 'electricity_day_ahead_prices';
+    const rows = await gasFetchAllPaged(() =>
+        supabase
+            .from(table)
+            .select('ts, zone_id, price_eur_per_mwh')
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: true })
+    );
+    const points = rows
+        .filter(r => r.ts && r.zone_id && Number.isFinite(Number(r.price_eur_per_mwh)))
+        .map(r => ({ ts: r.ts, zone: String(r.zone_id).toUpperCase(), y: Number(r.price_eur_per_mwh) }));
+
+    let euSeries = [];
+    if (cbIncludeEU) {
+        const euTable = useWeekly ? 'electricity_eu_price_weekly_mv' : useDaily ? 'electricity_eu_price_daily_mv' : 'electricity_eu_price_hourly_mv';
+        const euRows = await gasFetchAllPaged(() =>
+            supabase
+                .from(euTable)
+                .select('ts, price_eur_per_mwh')
+                .gte('ts', since)
+                .order('ts', { ascending: true })
+        );
+        euSeries = euRows
+            .filter(r => r.ts && Number.isFinite(Number(r.price_eur_per_mwh)))
+            .map(r => ({ ts: r.ts, y: Number(r.price_eur_per_mwh) }));
+    }
+    return { points, euSeries, mode: 'avg', unit: '€/MWh', title: 'Day-ahead price', fmt: fmtEurPerMwh };
+}
+
+async function cbFetchGenerationRaw(range) {
+    const since = cbRangeToSinceIso(range);
+    const useWeekly = range === '5y';
+    const raw = range === 'day' || range === 'week' || range === 'month';
+    const table = useWeekly ? 'electricity_generation_weekly_mwh' : raw ? 'electricity_generation_snapshots' : 'electricity_generation_daily_mwh';
+    const valueCol = raw ? 'mw' : 'production_mwh';
+    const rows = await gasFetchAllPaged(() =>
+        supabase
+            .from(table)
+            .select(`ts, zone_id, ${valueCol}`)
+            .eq('source', 'entsoe')
+            .gte('ts', since)
+            .order('ts', { ascending: true })
+    );
+    // Sum across psr_type rows into a zone total at each timestamp.
+    const byTsZone = new Map();
+    for (const r of rows) {
+        const ts = r.ts;
+        const zone = String(r.zone_id || '').toUpperCase();
+        const y = Number(r[valueCol]);
+        if (!ts || !zone || !Number.isFinite(y)) continue;
+        const key = `${ts}|${zone}`;
+        byTsZone.set(key, (byTsZone.get(key) || 0) + y);
+    }
+    const points = [...byTsZone.entries()].map(([k, y]) => {
+        const [ts, zone] = k.split('|');
+        return { ts, zone, y };
+    }).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+    let euSeries = [];
+    if (cbIncludeEU) {
+        if (raw) {
+            const byTs = new Map();
+            for (const p of points) byTs.set(p.ts, (byTs.get(p.ts) || 0) + Number(p.y));
+            euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+        } else {
+            const euTable = useWeekly ? 'electricity_eu_generation_weekly_mwh' : 'electricity_eu_generation_daily_mwh';
+            const euRows = await gasFetchAllPaged(() =>
+                supabase
+                    .from(euTable)
+                    .select('ts, production_mwh')
+                    .gte('ts', since)
+                    .order('ts', { ascending: true })
+            );
+            // Sum psr_type into EU total.
+            const byTs = new Map();
+            for (const r of euRows) {
+                if (!r.ts || !Number.isFinite(Number(r.production_mwh))) continue;
+                byTs.set(r.ts, (byTs.get(r.ts) || 0) + Number(r.production_mwh));
+            }
+            euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+        }
+    }
+    return { points, euSeries, mode: 'sum', unit: raw ? 'MW' : 'GWh', title: 'Generation total', fmt: raw ? fmtMwShort : fmtGWh };
+}
+
+function cbColor(i) {
+    const palette = [
+        '#2563eb', '#dc2626', '#059669', '#7c3aed', '#ea580c', '#0891b2', '#be185d', '#65a30d',
+    ];
+    return palette[i % palette.length];
+}
+
+function cbFormatLabel(ts, range) {
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return String(ts);
+    if (range === 'day' || range === 'week' || range === 'month') return d.toLocaleString();
+    return d.toLocaleDateString();
+}
+
+async function loadChartBuilder() {
+    const statusEl = document.getElementById('cbStatus');
+    const titleEl = document.getElementById('cbChartTitle');
+    const canvas = document.getElementById('chartBuilderCanvas');
+    if (!canvas || !supabase) return;
+    const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
+    try {
+        const metric = cbMetric;
+        const selected = cbSelectedCountries.slice(0, 6);
+        if (!selected.length && !cbIncludeEU) {
+            setStatus('Pick at least one country or enable EU.');
+            return;
+        }
+        setStatus(`Loading ${metric} (${cbRange})…`);
+        let fetched;
+        if (metric === 'demand') fetched = await cbFetchDemandRaw(cbRange);
+        else if (metric === 'generation') fetched = await cbFetchGenerationRaw(cbRange);
+        else if (metric === 'prices') fetched = await cbFetchPriceRaw(cbRange);
+        else fetched = await cbFetchRenewableRaw(cbRange);
+
+        const { points, euSeries, mode, unit, title, fmt } = fetched;
+        const datasets = [];
+        selected.forEach((country, i) => {
+            const series = cbRollupCountry(points, country, mode);
+            if (!series.length) return;
+            datasets.push({
+                label: country,
+                data: series.map(p => p.y),
+                _ts: series.map(p => p.ts),
+                borderColor: cbColor(i),
+                backgroundColor: cbColor(i) + '22',
+                fill: false,
+                pointRadius: 0,
+                tension: 0.2,
+                borderWidth: 2,
+                spanGaps: true,
+            });
+        });
+        if (cbIncludeEU && euSeries?.length) {
+            datasets.unshift({
+                label: 'EU',
+                data: euSeries.map(p => p.y),
+                _ts: euSeries.map(p => p.ts),
+                borderColor: '#111827',
+                backgroundColor: 'rgba(17,24,39,0.08)',
+                borderDash: [6, 4],
+                fill: false,
+                pointRadius: 0,
+                tension: 0.15,
+                borderWidth: 2.5,
+                spanGaps: true,
+            });
+        }
+        if (!datasets.length) {
+            setStatus('No data for selected countries/range.');
+            if (titleEl) titleEl.textContent = `No data — ${title}`;
+            return;
+        }
+
+        // Union timestamps and align series.
+        const tsSet = new Set();
+        datasets.forEach(ds => ds._ts.forEach(ts => tsSet.add(ts)));
+        const tsList = [...tsSet].sort((a, b) => new Date(a) - new Date(b));
+        const labels = tsList.map(ts => cbFormatLabel(ts, cbRange));
+        datasets.forEach(ds => {
+            const map = new Map(ds._ts.map((ts, idx) => [ts, ds.data[idx]]));
+            ds.data = tsList.map(ts => map.has(ts) ? map.get(ts) : null);
+            delete ds._ts;
+        });
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const existing = Chart.getChart(canvas);
+        if (existing) existing.destroy();
+        if (chartBuilderChart) { try { chartBuilderChart.destroy(); } catch (_) {} chartBuilderChart = null; }
+
+        chartBuilderChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => `${item.dataset.label}: ${fmt(Number(item.raw))}`,
+                        },
+                    },
+                },
+                scales: {
+                    x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 12 }, grid: { display: false } },
+                    y: {
+                        beginAtZero: metric === 'renewable',
+                        suggestedMin: metric === 'renewable' ? 0 : undefined,
+                        suggestedMax: metric === 'renewable' ? 100 : undefined,
+                        ticks: { callback: (v) => fmt(Number(v)) },
+                        title: { display: true, text: unit },
+                    },
+                },
+            },
+        });
+
+        if (titleEl) titleEl.textContent = `${title} — ${selected.join(', ')}${cbIncludeEU ? ' + EU' : ''}`;
+        setStatus(`Rendered ${datasets.length} series.`);
+    } catch (err) {
+        console.error('Chart builder failed:', err);
+        setStatus(`Failed: ${err.message || String(err)}`);
+    }
+}
+
+function insertChartBuilderSectionForGasPage() {
+    const gasPage = document.getElementById('gasMeterPage');
+    if (!gasPage || document.getElementById('chartBuilderMirrorSection')) return;
+    const target = gasPage.querySelector('.section');
+    if (!target || !target.parentNode) return;
+
+    const section = document.createElement('div');
+    section.className = 'section';
+    section.id = 'chartBuilderMirrorSection';
+    section.innerHTML = `
+        <div class="section-header">
+            <h2 class="section-title">Chart builder</h2>
+            <div class="section-actions">
+                <button class="btn-secondary" id="cbOpenInElectricityBtn">Open in Electricity Meter</button>
+            </div>
+        </div>
+        <p style="color: var(--text-secondary); margin-bottom: 0;">
+            Build custom multi-country comparisons (renewables, generation total, demand total, day-ahead prices) in the Electricity Meter “Chart Builder” tab.
+        </p>
+    `;
+    target.parentNode.insertBefore(section, target);
+    const openBtn = document.getElementById('cbOpenInElectricityBtn');
+    if (openBtn) {
+        openBtn.addEventListener('click', () => {
+            navigateToPage('energy-meter');
+            switchElectricityMeterTab('chart-builder');
+        });
+    }
 }
 
 async function loadPriceTabData(forceRefresh = false) {
@@ -4034,6 +4505,7 @@ async function gasFetchAllPaged(builder, pageSize = 1000) {
 }
 
 async function loadGasMeterPage() {
+    insertChartBuilderSectionForGasPage();
     const statusEl = document.getElementById('gasMeterStatus');
     const tbody = document.getElementById('gasMeterTableBody');
     const refreshBtn = document.getElementById('gasRefreshBtn');

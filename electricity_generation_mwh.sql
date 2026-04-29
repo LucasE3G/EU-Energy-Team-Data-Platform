@@ -78,6 +78,13 @@ group by psr_type, ts;
 create unique index on public.electricity_eu_generation_weekly_mwh (psr_type, ts);
 create index on public.electricity_eu_generation_weekly_mwh (ts desc);
 
+-- ── Grants for public dashboard reads (views/MVs don't have RLS policies) ─────
+grant select on public.electricity_eu_generation_15m_mv to anon;
+grant select on public.electricity_generation_daily_mwh to anon;
+grant select on public.electricity_generation_weekly_mwh to anon;
+grant select on public.electricity_eu_generation_daily_mwh to anon;
+grant select on public.electricity_eu_generation_weekly_mwh to anon;
+
 -- ── Refresh ───────────────────────────────────────────────────────────────────
 -- refresh materialized view concurrently public.electricity_eu_generation_15m_mv;
 -- refresh materialized view concurrently public.electricity_generation_daily_mwh;

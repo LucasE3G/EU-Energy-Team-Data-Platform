@@ -281,6 +281,7 @@
                     <button class="em-tab-btn" data-em-tab="electricity">Generation</button>
                     <button class="em-tab-btn" data-em-tab="prices">Prices</button>
                     <button class="em-tab-btn" data-em-tab="demand">Demand</button>
+                    <button class="em-tab-btn" data-em-tab="chart-builder">Chart Builder</button>
                 </div>
 
                 <!-- Renewable energy tab -->
@@ -718,6 +719,67 @@
                                     <tr><td colspan="4" style="text-align:center; color: var(--text-secondary); padding: 24px;">Loading...</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Chart Builder tab -->
+                <div id="chartBuilderEmTab" class="em-tab-pane">
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Custom multi-country chart builder</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="cbBuildBtn">Build chart</button>
+                            </div>
+                        </div>
+                        <div id="cbStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+
+                        <div style="display:flex; gap: 16px; flex-wrap: wrap; align-items:flex-start;">
+                            <div style="min-width: 260px; flex: 0 0 auto;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">Metric</div>
+                                <select id="cbMetricSelect" class="filter-select" style="width:100%; margin-bottom: 16px;">
+                                    <option value="renewable">Renewable share (%)</option>
+                                    <option value="generation">Generation total</option>
+                                    <option value="demand">Demand total</option>
+                                    <option value="prices">Day-ahead price (€/MWh)</option>
+                                </select>
+
+                                <div style="font-weight: 600; margin-bottom: 8px;">Range</div>
+                                <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 16px;">
+                                    <button class="btn-secondary active" id="cbRangeDayBtn">Day</button>
+                                    <button class="btn-secondary" id="cbRangeWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="cbRangeMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="cbRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="cbRange1yBtn">1y</button>
+                                    <button class="btn-secondary" id="cbRange5yBtn">5y</button>
+                                </div>
+
+                                <label style="display:flex; align-items:center; gap:10px; margin-bottom: 12px; cursor:pointer;">
+                                    <input type="checkbox" id="cbIncludeEU" checked />
+                                    Include EU aggregate line
+                                </label>
+
+                                <div style="color: var(--text-secondary); font-size: 12px;">
+                                    Day/Week uses raw snapshots for intraday resolution.
+                                </div>
+                            </div>
+
+                            <div style="flex:1; min-width: 360px;">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:12px; margin-bottom:8px;">
+                                    <div style="font-weight: 600;">Countries</div>
+                                    <div style="color: var(--text-secondary); font-size: 12px;">Max 6 selections</div>
+                                </div>
+                                <input type="text" id="cbCountrySearch" class="search-input" placeholder="Search (e.g. DE, IT, DK)..." style="width:100%; margin-bottom: 12px;">
+                                <div id="cbCountriesGrid" style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: 10px; background: rgba(255,255,255,0.7);"></div>
+                            </div>
+                        </div>
+
+                        <div class="chart-card" style="margin-top: 16px;">
+                            <h3 id="cbChartTitle">Build a chart to start</h3>
+                            <div class="chart-container" style="height: 420px;">
+                                <canvas id="chartBuilderCanvas"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>
