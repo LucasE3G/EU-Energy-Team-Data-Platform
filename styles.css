@@ -1149,7 +1149,7 @@ body.sidebar-collapsed #sidebarReveal {
     display: grid;
     grid-template-columns: 320px 1fr;
     gap: 0;
-    align-items: start;
+    align-items: stretch;
     border: 1px solid var(--border-color);
     border-radius: 16px;
     overflow: hidden;
