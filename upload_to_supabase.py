@@ -29,22 +29,30 @@ BASE_DIR = Path("data")
 
 # Country mapping
 COUNTRIES = {
+    "Austria data": "AUT",
     "Belgium data": "BEL",
     "Bulgaria data": "BGR",
     "Croatia data": "HRV",
+    "Cyprus data": "CYP",
+    "Denmark data": "DNK",
     "Finland data": "FIN",
     "Lithuania data": "LTU",
+    "Netherlands data": "NLD",
     "Romania data": "ROU",
     "Slovenia data": "SVN",
     "Spain data": "ESP"
 }
 
 COUNTRY_NAMES = {
+    "AUT": "Austria",
     "BEL": "Belgium",
     "BGR": "Bulgaria",
     "HRV": "Croatia",
+    "CYP": "Cyprus",
+    "DNK": "Denmark",
     "FIN": "Finland",
     "LTU": "Lithuania",
+    "NLD": "Netherlands",
     "ROU": "Romania",
     "SVN": "Slovenia",
     "ESP": "Spain"

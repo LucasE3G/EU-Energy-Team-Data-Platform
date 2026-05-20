@@ -23,11 +23,15 @@ BASE_DIR = Path("data")
 MEASURES_DIR = BASE_DIR / "measures"
 
 COUNTRIES = {
+    "austria": "AUT",
     "belgium": "BEL",
     "bulgaria": "BGR",
     "croatia": "HRV",
+    "cyprus": "CYP",
+    "denmark": "DNK",
     "finland": "FIN",
     "lithuania": "LTU",
+    "netherlands": "NLD",
     "romania": "ROU",
     "slovenia": "SVN",
     "spain": "ESP"
