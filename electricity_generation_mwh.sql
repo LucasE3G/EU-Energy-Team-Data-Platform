@@ -10,14 +10,27 @@ drop materialized view if exists public.electricity_generation_weekly_mwh;
 drop materialized view if exists public.electricity_generation_daily_mwh;
 drop materialized view if exists public.electricity_eu_generation_15m_mv;
 
--- ── EU 15-min aggregate by type (for "day" range charts) ─────────────────────
+-- ── EU hourly aggregate by type (for "day"/"week" range charts) ──────────────
+-- Two-step: avg(mw) per zone per hour first, then sum across zones.
+-- Direct per-timestamp SUM causes spikes because ENTSO-E zones use mixed
+-- resolutions (15min/30min/1h): hourly zones are absent from 15-min bins,
+-- making those bins look like near-zero readings.
 create materialized view public.electricity_eu_generation_15m_mv as
+with zone_hour as (
+  select
+    date_trunc('hour', ts) as ts,
+    zone_id,
+    psr_type,
+    avg(mw) as avg_mw
+  from public.electricity_generation_snapshots
+  where source = 'entsoe' and mw >= 0
+  group by 1, 2, 3
+)
 select
-  date_bin(interval '15 minutes', ts, '2000-01-01'::timestamptz) as ts,
+  ts,
   psr_type,
-  sum(mw)::double precision as mw
-from public.electricity_generation_snapshots
-where source = 'entsoe'
+  sum(avg_mw)::double precision as mw
+from zone_hour
 group by 1, 2;
 
 create unique index on public.electricity_eu_generation_15m_mv (ts, psr_type);

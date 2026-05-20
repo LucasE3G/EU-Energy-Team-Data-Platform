@@ -2974,8 +2974,23 @@ async function cbFetchGenerationRaw(range, needEU = false, psrFilter = null, zon
     let euSeries = [];
     if (needEU) {
         if (raw) {
+            // Query the EU hourly MV (avg per zone → sum across zones) to avoid spikes.
+            // Direct per-timestamp sum of raw snapshots causes spikes because ENTSO-E
+            // zones report at mixed resolutions — hourly zones are absent from 15-min bins.
+            const euMvRows = await gasFetchAllPaged(() => {
+                let q = supabase
+                    .from('electricity_eu_generation_15m_mv')
+                    .select('ts, psr_type, mw')
+                    .gte('ts', since)
+                    .order('ts', { ascending: true });
+                if (psrTypes) q = q.in('psr_type', psrTypes);
+                return q;
+            }, 1000, 100_000);
             const byTs = new Map();
-            for (const p of points) byTs.set(p.ts, (byTs.get(p.ts) || 0) + Number(p.y));
+            for (const r of euMvRows) {
+                if (!r.ts || !Number.isFinite(Number(r.mw))) continue;
+                byTs.set(r.ts, (byTs.get(r.ts) || 0) + Number(r.mw));
+            }
             euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
         } else {
             const euTable = useWeekly ? 'electricity_eu_generation_weekly_mwh' : 'electricity_eu_generation_daily_mwh';
@@ -2988,7 +3003,6 @@ async function cbFetchGenerationRaw(range, needEU = false, psrFilter = null, zon
                 if (psrTypes) q = q.in('psr_type', psrTypes);
                 return q;
             }, 1000, 600_000);
-            // Sum psr_type into EU total.
             const byTs = new Map();
             for (const r of euRows) {
                 if (!r.ts || !Number.isFinite(Number(r.production_mwh))) continue;
@@ -2998,6 +3012,7 @@ async function cbFetchGenerationRaw(range, needEU = false, psrFilter = null, zon
         }
     }
     const typeLabel = psrFilter ? (ELEC_TYPE_GROUPS.find(g => g.key === psrFilter)?.label ?? psrFilter) : 'total';
+    // EU raw uses the hourly MV so the unit is still MW (instantaneous avg over each hour).
     return { points, euSeries, mode: 'sum', unit: raw ? 'MW' : 'GWh', title: `Generation ${typeLabel}`, fmt: raw ? fmtMwShort : fmtGWh };
 }
 
@@ -5089,6 +5104,28 @@ async function loadGasMeterPage() {
         document.getElementById('gasEuTotal').textContent = `${(euTotalMwh / 1000).toFixed(0)}`;
         document.getElementById('gasPowerShare').textContent = euTotalMwh > 0 ? `${(100 * euPowerMwh / euTotalMwh).toFixed(1)}%` : '-';
 
+        // TTF price stat card — fetch latest 2 rows to show price + day-over-day change.
+        fetchTtfPrices((() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 7); return d.toISOString().slice(0, 10); })())
+            .then(ttf => {
+                const el = document.getElementById('gasTtfPrice');
+                if (!el) return;
+                if (!ttf.length) { el.textContent = 'N/A'; return; }
+                const latest = ttf.at(-1);
+                const prev = ttf.at(-2);
+                const price = Number(latest.close_eur_per_mwh).toFixed(2);
+                if (prev) {
+                    const chg = Number(latest.close_eur_per_mwh) - Number(prev.close_eur_per_mwh);
+                    const arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '—';
+                    const color = chg > 0 ? '#dc2626' : chg < 0 ? '#059669' : 'inherit';
+                    el.innerHTML = `€${price} <span style="font-size:0.75em;color:${color}">${arrow} ${Math.abs(chg).toFixed(2)}</span>`;
+                } else {
+                    el.textContent = `€${price}`;
+                }
+            }).catch(() => {
+                const el = document.getElementById('gasTtfPrice');
+                if (el) el.textContent = 'N/A';
+            });
+
         tbody.innerHTML = rows.map(r => {
             const c = r.country_code || '-';
             return `
@@ -5685,6 +5722,17 @@ async function loadGasDemandChartBuilderChart() {
     }
 }
 
+async function fetchTtfPrices(fromDate) {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('gas_price_ttf_daily')
+        .select('ts, close_eur_per_mwh')
+        .gte('ts', fromDate)
+        .order('ts', { ascending: true });
+    if (error) { console.warn('TTF price fetch failed:', error.message); return []; }
+    return (data || []).filter(r => r.ts && r.close_eur_per_mwh != null);
+}
+
 async function loadGasEuAggregateChart(range) {
     const statusEl = document.getElementById('gasEuStatus');
     const canvas = document.getElementById('gasEuChart');
@@ -5696,7 +5744,11 @@ async function loadGasEuAggregateChart(range) {
         const cachedReady = gasCacheFresh(gasEuAllRows);
         setStatus(cachedReady ? `Rendering EU27 (${range})…` : `Loading EU27 aggregate (${range})…`);
         const fromDate = gasRangeStartISO(range);
-        const all = await gasFetchEuAll();
+
+        const [all, ttfRows] = await Promise.all([
+            gasFetchEuAll(),
+            fetchTtfPrices(fromDate),
+        ]);
         const rows = all.filter(r => String(r.gas_day).slice(0, 10) >= fromDate);
 
         const by = new Map();
@@ -5713,6 +5765,11 @@ async function loadGasEuAggregateChart(range) {
         const household = days.map(d => by.get(d).anyData ? by.get(d).household / 1000 : null);
         const industry = days.map(d => by.get(d).anyData ? by.get(d).industry / 1000 : null);
 
+        // Align TTF prices to the demand day labels (gas markets skip weekends).
+        const ttfByDay = new Map(ttfRows.map(r => [String(r.ts).slice(0, 10), Number(r.close_eur_per_mwh)]));
+        const ttfPrices = days.map(d => ttfByDay.get(d) ?? null);
+        const hasTtf = ttfRows.length > 0;
+
         if (titleEl) titleEl.textContent = `EU27 — Gas demand by sector (GWh/day) · ${days[0] || ''} → ${days.at(-1) || ''}`;
 
         if (gasEuChart) { try { gasEuChart.destroy(); } catch (_) {} }
@@ -5721,9 +5778,10 @@ async function loadGasEuAggregateChart(range) {
             data: {
                 labels: days,
                 datasets: [
-                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
-                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
-                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
+                    { label: 'Power',     data: power,     backgroundColor: GAS_SECTOR_COLORS.power     + 'cc', borderColor: GAS_SECTOR_COLORS.power,     fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
+                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
+                    { label: 'Industry',  data: industry,  backgroundColor: GAS_SECTOR_COLORS.industry  + 'cc', borderColor: GAS_SECTOR_COLORS.industry,  fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
+                    ...(hasTtf ? [{ label: 'TTF price', data: ttfPrices, borderColor: '#f59e0b', backgroundColor: 'transparent', fill: false, pointRadius: 0, tension: 0.25, borderWidth: 2, spanGaps: true, yAxisID: 'y1', order: -1 }] : []),
                 ],
             },
             options: {
@@ -5737,9 +5795,10 @@ async function loadGasEuAggregateChart(range) {
                         callbacks: {
                             label: (ctx) => {
                                 if (ctx.raw == null) return null;
+                                if (ctx.dataset.yAxisID === 'y1') return `TTF: ${Number(ctx.raw).toFixed(2)} €/MWh`;
                                 const idx = ctx.dataIndex;
-                                const total = (ctx.chart?.data?.datasets || []).reduce(
-                                    (s, ds) => s + (Number(ds.data?.[idx]) || 0), 0);
+                                const demandDatasets = ctx.chart?.data?.datasets?.filter(ds => ds.yAxisID !== 'y1') || [];
+                                const total = demandDatasets.reduce((s, ds) => s + (Number(ds.data?.[idx]) || 0), 0);
                                 const val = Number(ctx.raw);
                                 const pct = total > 0 ? (val / total * 100) : null;
                                 return pct != null
@@ -5747,9 +5806,9 @@ async function loadGasEuAggregateChart(range) {
                                     : `${ctx.dataset.label}: ${val.toFixed(0)} GWh`;
                             },
                             footer: (items) => {
-                                const vals = items.filter(i => i.raw != null).map(i => Number(i.raw));
-                                if (!vals.length) return 'No data for this day';
-                                return `Total: ${vals.reduce((s, v) => s + v, 0).toFixed(0)} GWh`;
+                                const demandVals = items.filter(i => i.raw != null && i.dataset.yAxisID !== 'y1').map(i => Number(i.raw));
+                                if (!demandVals.length) return 'No data for this day';
+                                return `Total: ${demandVals.reduce((s, v) => s + v, 0).toFixed(0)} GWh`;
                             },
                         },
                     },
@@ -5757,6 +5816,7 @@ async function loadGasEuAggregateChart(range) {
                 scales: {
                     x: { ticks: { maxTicksLimit: 10 } },
                     y: { stacked: true, title: { display: true, text: 'GWh / day' }, beginAtZero: true },
+                    ...(hasTtf ? { y1: { position: 'right', title: { display: true, text: '€/MWh' }, grid: { drawOnChartArea: false }, ticks: { callback: v => `€${v}` } } } : {}),
                 },
             },
         });
