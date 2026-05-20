@@ -5781,7 +5781,7 @@ async function loadGasEuAggregateChart(range) {
                     { label: 'Power',     data: power,     backgroundColor: GAS_SECTOR_COLORS.power     + 'cc', borderColor: GAS_SECTOR_COLORS.power,     fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
                     { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
                     { label: 'Industry',  data: industry,  backgroundColor: GAS_SECTOR_COLORS.industry  + 'cc', borderColor: GAS_SECTOR_COLORS.industry,  fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
-                    ...(hasTtf ? [{ label: 'TTF price', data: ttfPrices, borderColor: '#f59e0b', backgroundColor: 'transparent', fill: false, pointRadius: 0, tension: 0.25, borderWidth: 2, spanGaps: true, yAxisID: 'y1', order: -1 }] : []),
+                    ...(hasTtf ? [{ label: 'TTF price', data: ttfPrices, borderColor: '#dc2626', backgroundColor: 'transparent', fill: false, pointRadius: 0, tension: 0.25, borderWidth: 2, spanGaps: true, yAxisID: 'y1', order: -1 }] : []),
                 ],
             },
             options: {
@@ -5839,13 +5839,21 @@ async function loadGasCountryChart(country, range) {
         const cachedReady = gasCacheFresh(gasCountryAllRows.get(country));
         setStatus(cachedReady ? `Rendering ${country} (${range})…` : `Loading ${country} (${range})…`);
         const fromDate = gasRangeStartISO(range);
-        const all = await gasFetchCountryAll(country);
+
+        const [all, ttfRows] = await Promise.all([
+            gasFetchCountryAll(country),
+            fetchTtfPrices(fromDate),
+        ]);
         const rows = all.filter(r => String(r.gas_day).slice(0, 10) >= fromDate);
         const toGwh = (v) => (v == null ? null : Number(v) / 1000);
         const days = rows.map(r => String(r.gas_day).slice(0, 10));
         const power = rows.map(r => toGwh(r.power_mwh));
         const household = rows.map(r => toGwh(r.household_mwh));
         const industry = rows.map(r => toGwh(r.industry_mwh));
+
+        const ttfByDay = new Map(ttfRows.map(r => [String(r.ts).slice(0, 10), Number(r.close_eur_per_mwh)]));
+        const ttfPrices = days.map(d => ttfByDay.get(d) ?? null);
+        const hasTtf = ttfRows.length > 0;
 
         if (titleEl) titleEl.textContent = `${country} — Gas demand by sector (GWh/day) · ${days[0] || ''} → ${days.at(-1) || ''}`;
 
@@ -5855,9 +5863,10 @@ async function loadGasCountryChart(country, range) {
             data: {
                 labels: days,
                 datasets: [
-                    { label: 'Power', data: power, backgroundColor: GAS_SECTOR_COLORS.power + 'cc', borderColor: GAS_SECTOR_COLORS.power, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
-                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
-                    { label: 'Industry', data: industry, backgroundColor: GAS_SECTOR_COLORS.industry + 'cc', borderColor: GAS_SECTOR_COLORS.industry, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false },
+                    { label: 'Power',     data: power,     backgroundColor: GAS_SECTOR_COLORS.power     + 'cc', borderColor: GAS_SECTOR_COLORS.power,     fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
+                    { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
+                    { label: 'Industry',  data: industry,  backgroundColor: GAS_SECTOR_COLORS.industry  + 'cc', borderColor: GAS_SECTOR_COLORS.industry,  fill: true, pointRadius: 0, tension: 0.25, borderWidth: 1, stack: 'sec', spanGaps: false, yAxisID: 'y' },
+                    ...(hasTtf ? [{ label: 'TTF price', data: ttfPrices, borderColor: '#dc2626', backgroundColor: 'transparent', fill: false, pointRadius: 0, tension: 0.25, borderWidth: 2, spanGaps: true, yAxisID: 'y1', order: -1 }] : []),
                 ],
             },
             options: {
@@ -5871,9 +5880,10 @@ async function loadGasCountryChart(country, range) {
                         callbacks: {
                             label: (ctx) => {
                                 if (ctx.raw == null) return null;
+                                if (ctx.dataset.yAxisID === 'y1') return `TTF: ${Number(ctx.raw).toFixed(2)} €/MWh`;
                                 const idx = ctx.dataIndex;
-                                const total = (ctx.chart?.data?.datasets || []).reduce(
-                                    (s, ds) => s + (Number(ds.data?.[idx]) || 0), 0);
+                                const demandDatasets = ctx.chart?.data?.datasets?.filter(ds => ds.yAxisID !== 'y1') || [];
+                                const total = demandDatasets.reduce((s, ds) => s + (Number(ds.data?.[idx]) || 0), 0);
                                 const val = Number(ctx.raw);
                                 const pct = total > 0 ? (val / total * 100) : null;
                                 return pct != null
@@ -5881,9 +5891,9 @@ async function loadGasCountryChart(country, range) {
                                     : `${ctx.dataset.label}: ${val.toFixed(1)} GWh`;
                             },
                             footer: (items) => {
-                                const vals = items.filter(i => i.raw != null).map(i => Number(i.raw));
-                                if (!vals.length) return 'No data for this day';
-                                return `Total: ${vals.reduce((s, v) => s + v, 0).toFixed(1)} GWh`;
+                                const demandVals = items.filter(i => i.raw != null && i.dataset.yAxisID !== 'y1').map(i => Number(i.raw));
+                                if (!demandVals.length) return 'No data for this day';
+                                return `Total: ${demandVals.reduce((s, v) => s + v, 0).toFixed(1)} GWh`;
                             },
                         },
                     },
@@ -5891,6 +5901,7 @@ async function loadGasCountryChart(country, range) {
                 scales: {
                     x: { ticks: { maxTicksLimit: 10 } },
                     y: { stacked: true, title: { display: true, text: 'GWh / day' }, beginAtZero: true },
+                    ...(hasTtf ? { y1: { position: 'right', title: { display: true, text: '€/MWh' }, grid: { drawOnChartArea: false }, ticks: { callback: v => `€${v}` } } } : {}),
                 },
             },
         });
