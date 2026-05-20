@@ -5724,13 +5724,14 @@ async function loadGasDemandChartBuilderChart() {
 
 async function fetchTtfPrices(fromDate) {
     if (!supabase) return [];
-    const { data, error } = await supabase
-        .from('gas_price_ttf_daily')
-        .select('ts, close_eur_per_mwh')
-        .gte('ts', fromDate)
-        .order('ts', { ascending: true });
-    if (error) { console.warn('TTF price fetch failed:', error.message); return []; }
-    return (data || []).filter(r => r.ts && r.close_eur_per_mwh != null);
+    const rows = await gasFetchAllPaged(() =>
+        supabase
+            .from('gas_price_ttf_daily')
+            .select('ts, close_eur_per_mwh')
+            .gte('ts', fromDate)
+            .order('ts', { ascending: true })
+    ).catch(err => { console.warn('TTF price fetch failed:', err.message); return []; });
+    return rows.filter(r => r.ts && r.close_eur_per_mwh != null);
 }
 
 async function loadGasEuAggregateChart(range) {
