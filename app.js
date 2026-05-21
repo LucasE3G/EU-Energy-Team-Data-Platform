@@ -2902,16 +2902,14 @@ async function loadCarbonCountryMap() {
     try {
         if (!supabase) return;
         setStatus('Loading country generation data…');
-        // 30-min window + hard row cap to prevent statement timeout
-        const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        // No time filter — rely on ORDER BY ts DESC + LIMIT so the planner uses the index and avoids a timeout
         const { data: snapRows, error: snapErr } = await supabase
             .from('electricity_generation_snapshots')
             .select('ts, zone_id, psr_type, mw')
             .eq('source', 'entsoe')
             .neq('zone_id', 'EU')
-            .gte('ts', since)
             .order('ts', { ascending: false })
-            .limit(8000);
+            .limit(3000);
         if (snapErr) throw new Error(snapErr.message);
 
         if (!snapRows?.length) { setStatus('No zone generation data available.'); return; }
@@ -3615,7 +3613,7 @@ async function initStorageCountryGrid() {
     bindRange('storageCountryRange5yBtn', '5y');
     updateStorageCountryRangeBtnActive();
 
-    // Fetch latest fill_pct per country for tile coloring
+    // Fetch latest fill_pct per country
     let latestFill = {};
     try {
         const latestDate = await supabase
@@ -3629,44 +3627,128 @@ async function initStorageCountryGrid() {
                 .from('gas_storage_country_daily')
                 .select('country, full_pct')
                 .eq('gas_day', ld);
-            if (data) data.forEach(r => { latestFill[r.country] = r.full_pct; });
+            if (data) data.forEach(r => { latestFill[r.country] = Number(r.full_pct); });
         }
     } catch (_) {}
 
-    gridEl.innerHTML = `<div class="energy-map-legend" style="margin-bottom:8px;">
-        <span>Empty</span>
-        <div class="energy-map-legend-bar" style="background: linear-gradient(to right, #ef4444, #f59e0b, #10b981);"></div>
-        <span>Full</span>
-    </div><div class="energy-map-grid">` +
+    await renderStorageGeoMap(gridEl, latestFill).catch(e => {
+        console.warn('Storage geo map failed, using tiles:', e);
+        renderStorageTileGrid(gridEl, latestFill);
+    });
+}
+
+async function renderStorageGeoMap(container, latestFill) {
+    const countryGeo = await fetchEuropeCountriesGeoJsonOnce();
+    const width = 1400, height = 860, padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+
+    const selArr = [...storageCountriesSelected];
+    const selLabel = selArr.length === 0 ? '—' : selArr.length === 1 ? selArr[0] : `${selArr.length} countries`;
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Gas storage fill level</div>
+                    <div class="energy-map-subtitle">Latest fill level — click to chart (multi-select)</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(selLabel)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span>Empty</span>
+                <div class="energy-map-legend-bar" style="background: linear-gradient(to right, #ef4444, #f59e0b, #10b981);"></div>
+                <span>Full</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gas storage map"></svg>
+            </div>
+        </div>`;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    function toggleCountry(iso2) {
+        if (storageCountriesSelected.has(iso2)) {
+            storageCountriesSelected.delete(iso2);
+        } else {
+            storageCountriesSelected.add(iso2);
+        }
+        const chartCard = document.getElementById('storageCountryChartCard');
+        if (storageCountriesSelected.size) {
+            chartCard?.style.setProperty('display', '');
+            loadStorageCountryChart([...storageCountriesSelected], storageCountryRange);
+        } else {
+            chartCard?.style.setProperty('display', 'none');
+        }
+        renderStorageGeoMap(container, latestFill).catch(() => {});
+    }
+
+    const countryFeatures = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    for (const f of countryFeatures) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2 || iso2 === 'RU' || iso2 === 'BY') continue;
+        const dataKey = iso2GeoToDataKey(iso2);
+        const val = latestFill[dataKey];
+        const hasData = Number.isFinite(val);
+        const fill = hasData ? mixColorRedToGreen(val) : 'rgba(148,163,184,0.18)';
+        const geom = f.geometry;
+        if (!geom) continue;
+        const paths = [];
+        if (geom.type === 'Polygon') {
+            paths.push(polygonToPath(geom.coordinates[0], width, height, bounds, padding));
+        } else if (geom.type === 'MultiPolygon') {
+            for (const poly of geom.coordinates) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', paths.join(' '));
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-iso2', dataKey);
+        if (hasData) path.style.cursor = 'pointer';
+        if (storageCountriesSelected.has(dataKey)) path.classList.add('is-selected');
+        path.addEventListener('mouseenter', () => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${dataKey} — ${hasData ? val.toFixed(1) + '%' : 'no data'}`;
+        });
+        path.addEventListener('mousemove', e => { tooltip.style.left = `${e.clientX}px`; tooltip.style.top = `${e.clientY}px`; });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        if (hasData) path.addEventListener('click', () => toggleCountry(dataKey));
+        svg.appendChild(path);
+    }
+}
+
+function renderStorageTileGrid(container, latestFill) {
+    container.innerHTML = `<div class="energy-map-grid">` +
     GAS_STORAGE_COUNTRIES.map(c => {
         const pct = latestFill[c];
         const bg = Number.isFinite(pct) ? mixColorRedToGreen(pct) : 'rgba(148,163,184,0.25)';
         const textColor = Number.isFinite(pct) ? textColorForBg(pct) : 'rgba(15,23,42,0.8)';
-        const val = Number.isFinite(pct) ? `${pct.toFixed(0)}%` : '—';
-        return `<div class="energy-map-tile" data-storage-country="${escapeHtml(c)}" style="background:${bg}; color:${textColor}">
+        return `<div class="energy-map-tile ${storageCountriesSelected.has(c) ? 'active' : ''}" data-storage-country="${escapeHtml(c)}" style="background:${bg}; color:${textColor}">
             <div class="energy-map-tile-code">${escapeHtml(c)}</div>
-            <div class="energy-map-tile-value">${val}</div>
+            <div class="energy-map-tile-value">${Number.isFinite(pct) ? pct.toFixed(0) + '%' : '—'}</div>
         </div>`;
     }).join('') + `</div>`;
-
-    gridEl.querySelectorAll('.energy-map-tile[data-storage-country]').forEach(el => {
+    container.querySelectorAll('.energy-map-tile[data-storage-country]').forEach(el => {
         el.addEventListener('click', () => {
             const c = el.getAttribute('data-storage-country');
             if (!c) return;
-            if (storageCountriesSelected.has(c)) {
-                storageCountriesSelected.delete(c);
-                el.classList.remove('active');
-            } else {
-                storageCountriesSelected.add(c);
-                el.classList.add('active');
-            }
+            if (storageCountriesSelected.has(c)) { storageCountriesSelected.delete(c); el.classList.remove('active'); }
+            else { storageCountriesSelected.add(c); el.classList.add('active'); }
             const chartCard = document.getElementById('storageCountryChartCard');
-            if (storageCountriesSelected.size) {
-                chartCard?.style.setProperty('display', '');
-                loadStorageCountryChart([...storageCountriesSelected], storageCountryRange);
-            } else {
-                chartCard?.style.setProperty('display', 'none');
-            }
+            if (storageCountriesSelected.size) { chartCard?.style.setProperty('display', ''); loadStorageCountryChart([...storageCountriesSelected], storageCountryRange); }
+            else { chartCard?.style.setProperty('display', 'none'); }
         });
     });
 }
