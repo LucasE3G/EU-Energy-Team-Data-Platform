@@ -70,9 +70,12 @@ async function fetchAgsiPage(
 }
 
 async function fetchAllAgsi(apiKey: string, from: string, to: string): Promise<AgsiRecord[]> {
-  const size = 300;
+  // Use a large page size (3000) to cover up to ~8 years in one request and avoid
+  // sequential round-trips that can push the function past the wall-clock timeout.
+  const size = 3000;
   const first = await fetchAgsiPage(apiKey, from, to, 1, size);
   const records: AgsiRecord[] = [...first.data];
+  // Fetch additional pages only if needed (very large date ranges)
   for (let p = 2; p <= first.lastPage; p++) {
     const { data } = await fetchAgsiPage(apiKey, from, to, p, size);
     records.push(...data);
