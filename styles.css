@@ -1067,6 +1067,7 @@ body.sidebar-collapsed #sidebarReveal {
 /* Electricity meter tabs (scoped to avoid colliding with country-page .tab-btn) */
 #energyMeterPage .em-tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     border-bottom: 2px solid var(--border-color);
     margin: 0 0 24px 0;

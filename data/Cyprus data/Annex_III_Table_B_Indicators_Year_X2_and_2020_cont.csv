@@ -1,0 +1,71 @@
+﻿No. of | indicator,NBRP Indicator heading,NBRP Indicators,Data (targets) | 2030,2040,2050,Units,NBRP Indicator | (Mandatory/Mia v),Comments
+1,,,,,,,,All building to be destroyed at any depth in the period (2020/2030-2031/2040-2041/2050)
+,Targets for number of renovated buildings per type,,8.016,4.275,3.654,n° of buildings,Mandatory,
+,,residential buildings,7.801,3.993,3.500,n° of buildings,Mandatory,
+,,out of which the '43% worst performing residential buildings non- residential buildings,5.180,3.118,1.750,n° of buildings,Mandatory,
+,,,215,282,154,n° of buildings,Mandatory,
+,TOTAL,out of which worst performing non-residential buildings,215,282,154,n° of buildings,Mandatory,Should be consistent with buildings found to be destroyed pursuant to Article 9(1)
+,,estimated average renovation depth for the entire building stock,34%,39%,34%,%,Mandatory,Average energy savings to be achieved by all buildings to be achieved at any depth
+,,estimated average renovation depth for the residental building stock,34%,40%,34%,%,Mandatory,Average energy savings to be achieved by all buildings to be achieved at any depth
+,,estimated average renovation depth for the non-residental building stock,25%,25%,25%,%,Mandatory,Average energy savings to be achieved by all buildings to be achieved at any depth
+,Light,residential buildings non-residential buildings,5.618 215,2.500 282,2.500 154,n° of buildings n° of buildings,Miav Miav,
+,(< 30% energy savings),total,5.834,2.782,2.654,n° of buildings,Miav,
+,,residential buildings,,,,n° of buildings,Miav,
+,Medium (30%<energy savings<60%),non-residential buildings,,,,n° of buildings,Miav,
+,,total,0,0,0,n° of buildings,Miav,
+,,residential buildings,2.183,1.493,1.000,n° of buildings,Miav,
+,Deep (energy savings >60%),non-residential buildings,,,,n° of buildings,Miav,
+,,total,2.183,1.493,1.000,n° of buildings,Miav,
+,,,,,,,,All floor area to be preserved at any depth in the period (2020/2030-2031/2040-2041/2050)
+,Targets for annual floor area raised,,1.547.123,825.145,705.167,m²,Mandatory,
+,,residential buildings,1.505.589,770.632,675.500,m²,Mandatory,Estimated area per building: 193 m 2 based on area of new building permits in 2015-2022
+,,out of which the '43% worst performing residential buildings non-residential buildings,999.719,601.757,337.750,m²,Mandatory,
+,TOTAL,,61.547,80.781,43.962,m²,Mandatory,"Estimated area per non-residential building: 286 m 2, based on area of new building permitted in 2012 2023"
+,,out of which worst performing non-residential residential buildings,61.547,80.781,43.962,m²,Mandatory,Should be consistent with buildings found to be destroyed pursuant to Article 9(1)
+2,,,,,,m²,Miav,
+,Light (3%<energy savings<30%),non-residential buildings,,,,m²,Miav,
+,,total,0,0,0,m²,Miav,
+,,residential buildings,,,,m²,Miav,
+,Medium (30%<energy savings<60%),non-residential buildings,,,,m²,Miav,
+,,total,0,0,0,m²,Miav,
+,,residential buildings,,,,m²,Miav,
+,Deep (energy savings >60%),non-residential buildings,,,,m²,Miav,
+,,total,0,0,0,m²,Miav,
+,,,,,,,,This data is necessary to estimate other indicators (e.g energy use and GHG emissions per m²)
+,Targets of floor area per building type (m²),,102.806.523,107.946.850,113.344.192,m² Miav,,
+3,Residential buildings,,100.683.333,105.717.500,111.003.375,m²,Miav,Assuming a 5% increase in floor area due to some economic growth (but also some saturation in the number and area of buildings)
+,Non-residential buildings,,2.123.190,2.229.350,2.340.817,m²,Miav,
+,Targets for annual renovation rates,,,,,%,Mandatory,Annual average renovation rate in the period (2020/2030-2031/2040-2041/2050)
+,,residential buildings,"1,56%","0,80%","0,70%",%,Mandatory,Renovation rate is defined in % of the share of the expanded floor area
+,,out of which the '43% worst performing residential buildings non- residential buildings,"1,04%","0,62%","0,35%",%,Mandatory,
+,,,"3,05%","4,00%","2,18%",%,Mandatory,
+,TOTAL,out of which worst performing non-residential residential buildings,"3,05%","4,00%","2,18%",%,Mandatory,
+,,,,,,%,Miav,
+,,non-residential buildings,,,,%,Miav,
+4,Light (< 30% energy savings),total,,,,%,Miav,
+,,residential buildings,,,,%,Miav,
+,Medium (30%<energy savings<60%),non-residential buildings,,,,%,Miav,
+,,total,,,,%,Miav,
+,,residential buildings,,,,%,Miav,
+,Deep (energy savings >60%),non-residential buildings,,,,%,Miav,
+,,total,,,,%,Miav,
+,Targets for expected primary annual energy,consumption per building type,1.757,1.903,1.892,ktoe,Mandatory,Total PE consumption of the building stock
+,,single-family houses of different types (a),,,,ktoe,Miav,
+,,apartment blocks or multi-family buildings (b1),,,,ktoe,Miav,
+,Residential buildings,residential building units in apartment blocks or multi-family buildings (b2),,,,ktoe,Miav,
+,,Total Residential = R = (a) + (b1) or (a) + (b2),1.130,1.261,1.234,ktoe,Mandatory,Formula in cells D/E/F 73 may be accepted
+,,offices (c),,,,ktoe,Miav,
+5,,educational buildings (d),,,,ktoe,Miav,
+,,hospitals (e),,,,ktoe,Miav,
+,,hotels and restaurants (f),,,,ktoe,Miav,
+,Non-residential buildings,sports facilities (g),,,,ktoe,Miav,
+,,wholesale and retail trade services buildings (h),,,,ktoe,Miav,
+,,Other type (describe if any) (i),,,,ktoe,Miav,
+,,Total Non Residential = NR,626,642,658,ktoe,Mandatory,
+,Targets for expected primary annual energy,consumption per end use (EPBD uses as per Annex I),0,0,0,ktoe,Mandatory,Cell D/E/F82 should match D/E/F69
+,,Space heating,,,,ktoe,Mandatory,
+,,Space cooling,,,,ktoe,Mandatory,
+6,,Domestic hot water,,,,ktoe,Mandatory,
+,,Ventilation,,,,ktoe,Mandatory,
+,,Built-in Lighting,,,,ktoe,Mandatory,
+,,Other technical building systems,,,,ktoe,Mandatory,

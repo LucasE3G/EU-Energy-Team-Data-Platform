@@ -1,0 +1,3 @@
+building_type,energy_demand_threshold_kWh_m2_y,operational_GHG_emissions_threshold_kgCO2eq_m2_y
+Building type 1 - Residential (Housing dormitories hotels and the like),<27.0,
+Building type 2 - Non-residential (All buildings not building type 1),<33.0,

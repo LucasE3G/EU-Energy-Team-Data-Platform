@@ -1,0 +1,11 @@
+﻿,Year of construction,Space heating (kWh / m² /time),Space cooling (kWh / m² / time),Hot water (kWh / m² / time),Lighting (kWh / m² / time)
+Hotels,Before 2006,65,268,40,55
+,After 2006,45,183,28,50
+Private offices,Before 2006,87,203,5,45
+,After 2006,59,138,4,40
+Retail outlets (shops),Before 2006,41,194,5,105
+,After 2006,28,132,4,95
+Supermarkets and department stores,Before 2006,33,470,1,105
+,After 2006,23,321,1,95
+Restaurants,Before 2006,142,285,214,85
+,After 2006,97,194,146,80

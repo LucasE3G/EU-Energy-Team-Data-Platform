@@ -1,0 +1,70 @@
+﻿No. of | indicator,NBRP Indicator heading,NBRP Indicators,Data (targets) | 2030,2040,2050,Units,NBRP Indicator | (Mandatory/Mia v),Comments
+,Targets for expected final annual energy consumption per building type,,668,667,700,ktoe,Mandatory,
+,,single-family houses of different types (a),,,,ktoe,Miav,
+,,apartment blocks or multi-family buildings (b1),,,,ktoe,Miav,
+,Residential buildings,residential building units in apartment blocks or multi-family buildings (b2),,,,ktoe,Miav,
+,,Total Residential = R = (a) + (b1) or (a) + (b2),388,371,399,ktoe,Mandatory,Baseon on NECP of December 2024
+,,offices (c),,,,ktoe,Miav,
+5,,educational buildings (d),,,,ktoe,Miav,
+,,hospitals (e),,,,ktoe,Miav,
+,,hotels and restaurants (f),,,,ktoe,Miav,
+,Non-residential buildings,sports facilities (g),,,,ktoe,Miav,
+,,wholesale and retail trade services buildings (h),,,,ktoe,Miav,
+,,Other type (describe if any) (i),,,,ktoe,Miav,
+,,Total Non Residential = NR,280,295,301,ktoe,Mandatory,Baseon on NECP of December 2024
+,Targets for expected final annual energy consumption per end use (EPBD uses as per Annex I),,668,667,700,ktoe,Mandatory,Cell D/E/F102 should match D/E/F89
+,,Space heating,287,286,300,ktoe,Mandatory,Based on Eurostat data for households: https://doi.org/10.2908/NRG_D_HHQ and implied that the shares of end uses remain constant in the future.
+,,Space cooling,109,109,114,ktoe,Mandatory,
+6,,Domestic hot water,207,206,217,ktoe,Mandatory,
+,,Ventilation,17,17,17,ktoe,Mandatory,
+,,Built-in Lighting,33,33,35,ktoe,Mandatory,
+,,Other technical building systems,16,16,17,ktoe,Mandatory,
+,Target for expected primary energy savings per building type,,516,663,652,ktoe,Mandatory,Computed value
+7,,Residential,556,686,659,ktoe,Mandatory,Computed value
+,,Non-residential,-39,-23,-8,ktoe,Mandatory,Computed value
+,Target for expected final energy savings per building type,,39,38,71,ktoe,Mandatory,Computed value
+8,,Residential,52,35,62,ktoe,Mandatory,Computed value
+,,Non-residential,-12,3,9,ktoe,Mandatory,Computed value
+,Numerical targets for the deployment of solar energy in buildings,,,,,,,
+,,Solar termal,,,,MW,Miav,
+,,Solar PV,455,855,1.115,MW,Miav,According Scenario with Additional Measures (WAM) in NECP
+,MW started,Total,455,855,1.115,MW,Miav,
+,,Share of residential buildings,92%,95%,97%,%,Mandatory,Estimation
+9,,Share of non-residential buildings occupied,50%,60%,75%,%,Mandatory,Estimation
+,,Solar termal,1.256,1.535,2.861,GWh,Miav,According Scenario with Additional Measures (WAM) in NECP
+,,Solar PV,737,1.385,1.806,GWh,Miav,According Scenario with Additional Measures (WAM) in NECP
+,GWh generated,Total,1.993,2.920,4.667,GWh,Miav,
+,,Share of residential buildings,92%,95%,97%,%,Mandatory,Based on NECP projections
+,,Share of non-residential buildings occupied,50%,60%,75%,%,Mandatory,
+,Targets for expected annual operational greenhouse gas emissions per building type,,2,1,0,MtCO₂eq,Mandatory,Direct + indirect emissions for the entire building stock
+,,single-family houses of different types (a),,,,MtCO₂eq,Miav,
+,,apartment blocks or multi-family buildings (b1),,,,MtCO₂eq,Miav,
+,Residential buildings,residential building units in apartment blocks or multi-family buildings (b2),,,,MtCO₂eq,Miav,
+,,Total Residential = R = (a) + (b1) or (a) + (b2),"0,83","0,38","0,09",MtCO₂eq,Mandatory,Based on NECP projections for both direct and indirect emissions
+,Non-residential buildings,offices (c),,,,MtCO₂eq,Miav,
+10,,educational buildings (d),,,,MtCO₂eq MtCO₂eq MtCO₂eq MtCO₂eq MtCO₂eq MtCO₂eq,Miav,
+,,hospitals (e),,,,,Miav,
+,,hotels and restaurants (f),,,,,Miav,
+,,sports facilities (g) wholesale and retail trade services buildings (h),,,,,Miav Miav,
+,,Other type (describe if any) (i),,,,,Miav,
+,,Total Non Residential = NR,"0,74","0,29","0,05",MtCO₂eq,Mandatory,Based on NECP projections for both direct and indirect emissions
+,Targets for expected operational greenhouse gas emissions per building type per m²,,"15,2","6,2","1,2",kgCO₂eq/m²,Mandatory,Direct + indirect emissions per m²
+11,,Total Residential,"8,3","3,6","0,8",kgCO₂eq/m²,Mandatory,
+,,Total Non Residential,"346,2","129,5","21,4",kgCO₂eq/m²,Mandatory,
+,Target for expected operational greenhouse,gas emissions reduction in %,-48%,-79%,-96%,%,Mandatory,
+12,,residential,-40%,-73%,-94%,%,Mandatory,
+,,non-residential,-55%,-83%,-97%,%,Mandatory,
+,Expected primary energy factors per energ,carrier,,,,,,MS could report here any foreseen/expected of PEF
+,,Gas,,,,n.a,Mandatory,Table can be accepted to national context
+,,Electricity grid,"1,64","1,35","1,42",n.a,Mandatory,
+,,Oil,"1,1","1,1","1,1",n.a,Mandatory,
+,,GPL,"1,1","1,1","1,1",n.a,Mandatory,
+,,Coal,,,,n.a,Mandatory,
+,,Solid Biomass,,,,n.a,Mandatory,
+,Non-renewable (fPnren),Liquid Biomass,,,,n.a,Mandatory,
+,,Solar PV,,,,n.a,Mandatory,
+,,Solar thermal,,,,n.a,Mandatory,
+,,Wind,,,,n.a,Mandatory,
+,,Hydropower,,,,n.a,Mandatory,
+,,District heating/cooling (could be a national average),,,,n.a,Mandatory,
+,,Other (please specify),,,,n.a,Miav,

@@ -1,0 +1,23 @@
+﻿Type of building f Sol = 100,EFH ■■■,MFH ■■■■■■■■■■■■■ ■■■■■■ ■■■!■■■■,GWB ■■■■■■■■■■■■■ ■ ■ ■■■■■ ■ ■■■■■■■■■,NWG (DLG) ■ ■■■■■■! ■■■■■■■ ■■■!■■■
+L (m),"10,37","17,21","31,07","25,74"
+B (m),"10,00","12,00","12,00","15,00"
+n G (---),2,3,5,"4,00"
+h G (m),"3,00","3,00","3,00",4
+ℓ c (m),"1,38","1,98","2,74","2,98"
+GFA (m ²),"207,4","619,6","1.863,9","1,544.3 m ²"
+"A DA,gross (m ²)","103,7","206,5","372,8",386.1 m ²
+"A DA,netto (m ²)","41,5","82,6","149,1",154.4 m ²
+Plant size,,,,
+Solar bidding,,,,
+systems power (kWp),"1,5","3,1","6,8","5,2"
+Solar bidding,,,,
+systems size (m ²),"9,0","18,8","40,8","31,2"
+Net area consumption,,,,
+(%),22,23,27,20
+Investment income,,,,
+Plant yield (kWh/a),"1.732,0","3.599,2","7.810,5","5.975,7"
+Plant yield specific,,,,
+fish (kWh/m ²a),"8,4","5,8","4,2","3,9"
+What coverage can be achieved for RHEV?,,,,
+Coverage LW-WP /,,,,
+SW WP (%),91,80,86,83

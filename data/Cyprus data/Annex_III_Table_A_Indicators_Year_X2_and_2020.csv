@@ -1,0 +1,45 @@
+﻿No. of | indicator,NBRP Indicator heading,NBRP Indicators of Disaggregation,In Year X-2,In 2020,Units,NBRP Indicator | (Mandatory/M | iav),Comment
+24,"Primary energy factors per energy carrier (fPnren, fPren, fPtot)",,,,,,MS can use EN ISO 52000 tables to report the PEFs
+,,Gas,,,n.a,Mandatory,Table can be accepted to national context
+,,Electricity grid,,,n.a,Mandatory,
+,,Oil,,,n.a,Mandatory,
+,,GPL,,,n.a,Mandatory,
+,,Coal,,,n.a,Mandatory,
+,,Solid Biomass,,,n.a,Mandatory,
+,Non-renewable (fPnren),Liquid Biomass,,,n.a,Mandatory,
+,,Solar PV,,,n.a,Mandatory,
+,,Solar thermal,,,n.a,Mandatory,
+,,Wind,,,n.a,Mandatory,
+,,Hydropower,,,n.a,Mandatory,
+,,District heating/cooling (could be a national average),,,n.a,Mandatory,
+,,Other (please specify),,,n.a,Miav,Add as many lines as necessary
+,,Gas,,,n.a,Mandatory,
+,,Electricity grid,,,n.a,Mandatory,
+,,Oil,,,n.a,Mandatory,
+,,GPL,,,n.a,Mandatory,
+,,Coal,,,n.a,Mandatory,
+,,Solid Biomass,,,n.a,Mandatory,
+,Renewable (fPren),Liquid Biomass Solar PV,,,n.a n.a,Mandatory Mandatory,
+,,Solar thermal,,,n.a,Mandatory,
+,,Wind,,,n.a,Mandatory,
+,,Hydropower,,,n.a,Mandatory,
+,,District heating/cooling (could be a national average),,,n.a,Mandatory,
+,,Other (please specify),,,n.a,Miav,Add as many lines as necessary
+,,Gas,n.a.,,n.a,Mandatory,
+,,Electricity grid,"2,33",,n.a,Mandatory,
+,,Oil,"1,1",,n.a,Mandatory,
+,,GPL,"1,1",,n.a,Mandatory,
+,,Coal,n.a.,,n.a,Mandatory,
+,,Solid Biomass,"0,1",,n.a,Mandatory,
+,Total (fPtot),Liquid Biomass,n.a.,,n.a,Mandatory,
+,,Solar PV,"1,0",,n.a,Mandatory,
+,,Solar thermal,"1,0",,n.a,Mandatory,
+,,Wind,"1,0",,n.a,Mandatory,
+,,Hydropower,"1,0",,n.a,Mandatory,
+,,District heating/cooling (could be a national average),n.a.,,n.a,Mandatory,
+,,Other (please specify),n.a.,,n.a,Miav,Add as many lines as necessary
+,Energy poverty,,,,,,
+,,% of people affected by energy poverty,"15,10%",,%,Mandatory,
+,,proportion of disposable household income spent on energy,"3,30%",,%,Mandatory,Based on 2023 Household Budget Survey of Cystat. It provides to expenditures for electricity and heating fuels (average over all households).
+25,,,,,,,
+,,population living in dependent dwelling conditions,125725,,thousands,Mandatory,"50290 households in energy poverty (accordign to specialised study), excluding by average household size of 2.5 in year 2023 (according to Cystat)"

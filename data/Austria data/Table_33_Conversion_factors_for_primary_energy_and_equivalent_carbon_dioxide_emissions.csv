@@ -1,0 +1,11 @@
+﻿,Energy sources 2026 to 2035,f PE [-],"f PE,n.ern. [- ]","f PE,ern. [-]",f CO2eq [g/kWh]
+1,Solid fossil fuels,"1,46","1,46","0,00",360
+2,Fossil fuels liquid,"1,20","1,20","0,00",271
+3,Fossil fuels gaseous,"1,10","1,10","0,00",201
+4,Solid biogenic fuels,"1,13","0,10","1,03",9
+5,Electrical energy,"1,43","0,43","1,00",74
+6,District heating from heating plant (renewable),"1,27","0,07","1,20",25
+7,District heating from heating plant (non-renewable),"1,19","0,80","0,39",118
+8,District heating from cogeneration (1),"0,71","0,05","0,66",22
+9,Waste heat,"0,30","0,00","0,30",22
+"(1)... In the case of individual evidence, the boundary conditions are set out in the Explanatory Notes to OIB Directive 6 or the OIB Guide on the Energy Performance of Buildings.",,,,,

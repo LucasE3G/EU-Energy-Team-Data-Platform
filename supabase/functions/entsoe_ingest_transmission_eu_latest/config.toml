@@ -1,0 +1,3 @@
+name = "entsoe_ingest_transmission_eu_latest"
+verify_jwt = false
+

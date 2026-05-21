@@ -1,0 +1,13 @@
+﻿,Year of construction,Space heating (kWh / m² / time),Space cooling (kWh / m² / time),Hot water (kWh / m² / time)
+Detached house,Before 1981,54,72,23
+,1981 - 2006,40,54,18
+,After 2006,36,50,15
+Double-family houses and houses in continuous construction,Before 1981,59,58,23
+,1981 - 2006,43,44,18
+,After 2006,39,40,15
+Apartments,Before 1981,45,105,23
+,1981 - 2006,33,84,18
+,After 2006,30,76,15
+Other types of dwellings,Before 1981,56,53,23
+,1981 - 2006,41,41,28
+,After 2006,37,38,15

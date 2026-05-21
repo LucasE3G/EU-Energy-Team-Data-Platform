@@ -344,6 +344,7 @@
                     <button class="em-tab-btn" data-em-tab="prices">Prices</button>
                     <button class="em-tab-btn" data-em-tab="demand">Demand</button>
                     <button class="em-tab-btn" data-em-tab="carbon">Carbon intensity</button>
+                    <button class="em-tab-btn" data-em-tab="price-gen">Price vs renewables</button>
                     <button class="em-tab-btn" data-em-tab="chart-builder">Chart Builder</button>
                 </div>
 
@@ -850,6 +851,112 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Carbon intensity by country -->
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Carbon intensity by country</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <span style="font-size:0.8rem; color:var(--text-secondary);">Click a country to chart</span>
+                            </div>
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 12px;">
+                            Latest carbon intensity per bidding zone (gCO₂eq/kWh). Green = low carbon, red = high carbon.
+                        </p>
+                        <div id="carbonCountryStatus" style="color: var(--text-secondary); margin-bottom: 8px;"></div>
+                        <div id="carbonCountryMap"></div>
+                    </div>
+
+                    <div class="section" id="carbonZoneSection" style="display:none;">
+                        <div class="section-header">
+                            <h2 class="section-title" id="carbonZoneSectionTitle">Country carbon intensity</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="carbonZoneRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="carbonZoneRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="carbonZoneRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="carbonZoneRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="carbonZoneRange1yBtn">1y</button>
+                                <button class="chart-export-btn" data-chart="carbonZoneChart" title="Download chart as PNG">↓</button>
+                            </div>
+                        </div>
+                        <div id="carbonZoneStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="carbonZoneChartTitle">Carbon intensity (gCO₂/kWh)</h3>
+                            <div class="chart-container">
+                                <canvas id="carbonZoneChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Country table -->
+                    <div class="section" id="carbonCountryTableSection" style="display:none;">
+                        <div class="section-header">
+                            <h2 class="section-title">Latest intensity per country</h2>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Zone</th>
+                                        <th>Intensity (gCO₂/kWh)</th>
+                                        <th>Low-carbon share</th>
+                                        <th>As of</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="carbonCountryTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Price vs renewables tab -->
+                <div id="priceGenEmTab" class="em-tab-pane">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">📊</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceGenCorrelation">-</div>
+                                <div class="stat-label">Price / renewable correlation</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">💶</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceGenAvgPrice">-</div>
+                                <div class="stat-label">Avg price (€/MWh)</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌿</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="priceGenAvgRenShare">-</div>
+                                <div class="stat-label">Avg renewable share</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Day-ahead price (€/MWh) vs renewable share (%)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="priceGenRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="priceGenRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="priceGenRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="priceGenRange1yBtn">1y</button>
+                                <button class="chart-export-btn" data-chart="priceGenScatterChart" title="Download chart as PNG">↓</button>
+                            </div>
+                        </div>
+                        <div id="priceGenStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 12px;">
+                            Each point is one hour (or one day for 6m/1y). Renewable = wind + solar + hydro. Negative correlation reflects the merit-order effect.
+                        </p>
+                        <div class="chart-card">
+                            <h3 id="priceGenChartTitle">EU — Price vs renewable share</h3>
+                            <div class="chart-container">
+                                <canvas id="priceGenScatterChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Chart Builder tab -->
@@ -1171,6 +1278,29 @@
                         Source: GIE AGSI+ (aggregated storage operators data). Updated daily ~19:30 CET.
                         <span id="storageApiKeyWarning" style="color: #f59e0b; display:none;"> ⚠ API key not configured — contact admin to enable live storage data.</span>
                     </p>
+
+                    <!-- Storage by country -->
+                    <div class="section" style="margin-top: 24px;">
+                        <div class="section-header">
+                            <h2 class="section-title">Storage by country</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="storageCountryRange3mBtn">3m</button>
+                                <button class="btn-secondary" id="storageCountryRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="storageCountryRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="storageCountryRange2yBtn">2y</button>
+                                <button class="btn-secondary" id="storageCountryRange5yBtn">5y</button>
+                                <button class="chart-export-btn" data-chart="storageCountryChart" title="Download chart as PNG">↓</button>
+                            </div>
+                        </div>
+                        <div id="storageCountryStatus" style="color: var(--text-secondary); margin-bottom: 8px;"></div>
+                        <div id="storageCountryGrid" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"></div>
+                        <div class="chart-card" id="storageCountryChartCard" style="display:none;">
+                            <h3 id="storageCountryChartTitle">Country — Gas storage fill level (%)</h3>
+                            <div class="chart-container">
+                                <canvas id="storageCountryChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="gasDemandEmTab" class="gas-subtab-pane">
