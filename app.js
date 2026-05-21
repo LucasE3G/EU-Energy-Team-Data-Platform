@@ -2902,24 +2902,33 @@ async function loadCarbonCountryMap() {
     try {
         if (!supabase) return;
         setStatus('Loading country generation data…');
-        // No time filter — rely on ORDER BY ts DESC + LIMIT so the planner uses the index and avoids a timeout
+        // Step 1: find the latest timestamp — single-row index seek, never times out
+        const { data: peekData, error: peekErr } = await supabase
+            .from('electricity_generation_snapshots')
+            .select('ts')
+            .eq('source', 'entsoe')
+            .order('ts', { ascending: false })
+            .limit(1);
+        if (peekErr) throw new Error(peekErr.message);
+        if (!peekData?.length) { setStatus('No zone generation data available.'); return; }
+        const latestTs = peekData[0].ts;
+
+        // Step 2: fetch every psr_type row at that exact timestamp — point lookup, very fast
         const { data: snapRows, error: snapErr } = await supabase
             .from('electricity_generation_snapshots')
             .select('ts, zone_id, psr_type, mw')
             .eq('source', 'entsoe')
+            .eq('ts', latestTs)
             .neq('zone_id', 'EU')
-            .order('ts', { ascending: false })
-            .limit(3000);
+            .limit(2000);
         if (snapErr) throw new Error(snapErr.message);
-
         if (!snapRows?.length) { setStatus('No zone generation data available.'); return; }
 
-        // For each zone, keep only its most-recent timestamp
+        // Each zone has one timestamp (latestTs), so latestByZone maps every zone → latestTs
         const latestByZone = new Map();
         for (const r of snapRows) {
             const z = String(r.zone_id || '').toUpperCase();
-            if (!z || z === 'EU') continue;
-            if (!latestByZone.has(z) || r.ts > latestByZone.get(z)) latestByZone.set(z, r.ts);
+            if (z && z !== 'EU') latestByZone.set(z, r.ts);
         }
 
         const zoneIntensity = new Map();
