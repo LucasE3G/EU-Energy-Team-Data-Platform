@@ -343,6 +343,7 @@
                     <button class="em-tab-btn" data-em-tab="electricity">Generation</button>
                     <button class="em-tab-btn" data-em-tab="prices">Prices</button>
                     <button class="em-tab-btn" data-em-tab="demand">Demand</button>
+                    <button class="em-tab-btn" data-em-tab="carbon">Carbon intensity</button>
                     <button class="em-tab-btn" data-em-tab="chart-builder">Chart Builder</button>
                 </div>
 
@@ -786,6 +787,71 @@
 
                 </div>
 
+                <!-- Carbon intensity tab -->
+                <div id="carbonEmTab" class="em-tab-pane">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🏭</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="carbonLatestIntensity">-</div>
+                                <div class="stat-label">Current EU intensity (gCO₂/kWh)</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📉</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="carbonAvgIntensity">-</div>
+                                <div class="stat-label">Period avg (gCO₂/kWh)</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🌿</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="carbonCleanShare">-</div>
+                                <div class="stat-label">Low-carbon share</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU carbon intensity of electricity (gCO₂/kWh)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="carbonRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="carbonRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="carbonRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="carbonRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="carbonRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="carbonRange5yBtn">5y</button>
+                                <button class="chart-export-btn" data-chart="carbonIntensityChart" title="Download chart as PNG">↓</button>
+                            </div>
+                        </div>
+                        <div id="carbonStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="carbonChartTitle">EU — Carbon intensity (gCO₂/kWh)</h3>
+                            <div class="chart-container">
+                                <canvas id="carbonIntensityChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Generation mix &amp; emission factors</h2>
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 12px;">
+                            Carbon intensity computed from ENTSO-E generation data using IPCC lifecycle emission factors (gCO₂eq/kWh):
+                            Coal 820 · Gas 490 · Oil 650 · Biomass 230 · Nuclear 12 · Hydro 24 · Wind 11 · Solar 45 · Other renewable 40 · Other 500.
+                        </p>
+                        <div class="chart-card">
+                            <h3>Generation mix (latest hour)</h3>
+                            <div class="chart-container" style="max-height: 260px;">
+                                <canvas id="carbonMixChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Chart Builder tab -->
                 <div id="chartBuilderEmTab" class="em-tab-pane">
                     <div class="cb-root">
@@ -871,6 +937,12 @@
                                     <button class="cb-range-tab" id="cbRange1yBtn">1y</button>
                                     <button class="cb-range-tab" id="cbRange5yBtn">5y</button>
                                 </div>
+                                <div class="cb-agg-tabs" title="Data aggregation level">
+                                    <button class="cb-agg-tab active" id="cbAggAutoBtn">Auto</button>
+                                    <button class="cb-agg-tab" id="cbAggIntradayBtn">Intraday</button>
+                                    <button class="cb-agg-tab" id="cbAggDailyBtn">Daily</button>
+                                    <button class="cb-agg-tab" id="cbAggWeeklyBtn">Weekly</button>
+                                </div>
                                 <button class="chart-export-btn" data-chart="chartBuilderCanvas" id="cbExportBtn" title="Download chart as PNG">↓</button>
                             </div>
                             <div id="cbStatus" class="cb-status"></div>
@@ -895,6 +967,9 @@
                 <div class="gas-subtabs" role="tablist" aria-label="Gas meter tabs">
                     <button type="button" class="gas-subtab-btn active" id="gasOverviewTabBtn" role="tab" aria-selected="true" data-gas-subtab="overview">
                         Demand
+                    </button>
+                    <button type="button" class="gas-subtab-btn" id="gasStorageTabBtn" role="tab" aria-selected="false" data-gas-subtab="storage">
+                        Storage
                     </button>
                     <button type="button" class="gas-subtab-btn" id="gasDemandTabBtn" role="tab" aria-selected="false" data-gas-subtab="demand">
                         Chart Builder
@@ -1024,6 +1099,78 @@
                         </table>
                     </div>
                 </div>
+                </div>
+
+                <!-- Gas storage tab -->
+                <div id="gasStorageEmTab" class="gas-subtab-pane">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🪣</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="storageLatestFill">-</div>
+                                <div class="stat-label">EU fill level</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📅</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="storageLatestDay">-</div>
+                                <div class="stat-label">Latest gas day</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📈</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="storageLatestTrend">-</div>
+                                <div class="stat-label">Day-over-day change</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">⚡</div>
+                            <div class="stat-content">
+                                <div class="stat-value" id="storageLatestTwh">-</div>
+                                <div class="stat-label">Gas in storage (TWh)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">EU gas storage fill level (%)</h2>
+                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
+                                <button class="btn-secondary" id="storageRange3mBtn">3m</button>
+                                <button class="btn-secondary" id="storageRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="storageRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="storageRange2yBtn">2y</button>
+                                <button class="btn-secondary" id="storageRange5yBtn">5y</button>
+                                <button class="chart-export-btn" data-chart="storageFillChart" title="Download chart as PNG">↓</button>
+                            </div>
+                        </div>
+                        <div id="storageStatus" style="color: var(--text-secondary); margin-bottom: 12px;"></div>
+                        <div class="chart-card">
+                            <h3 id="storageFillChartTitle">EU — Gas storage fill level (%)</h3>
+                            <div class="chart-container">
+                                <canvas id="storageFillChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Injection &amp; withdrawal (TWh/day)</h2>
+                        </div>
+                        <div class="chart-card">
+                            <h3 id="storageFlowChartTitle">EU — Gas injection &amp; withdrawal (TWh/day)</h3>
+                            <div class="chart-container">
+                                <canvas id="storageFlowChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 12px 0 0;">
+                        Source: GIE AGSI+ (aggregated storage operators data). Updated daily ~19:30 CET.
+                        <span id="storageApiKeyWarning" style="color: #f59e0b; display:none;"> ⚠ API key not configured — contact admin to enable live storage data.</span>
+                    </p>
                 </div>
 
                 <div id="gasDemandEmTab" class="gas-subtab-pane">

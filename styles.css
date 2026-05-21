@@ -1469,6 +1469,22 @@ body.sidebar-collapsed #sidebarReveal {
 
 .cb-range-tabs { display: flex; gap: 4px; }
 
+.cb-agg-tabs { display: flex; gap: 4px; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--border-color); }
+
+.cb-agg-tab {
+    padding: 6px 11px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 100ms ease;
+}
+.cb-agg-tab:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+.cb-agg-tab.active { background: #64748b; color: #fff; border-color: transparent; }
+
 .cb-range-tab {
     padding: 6px 12px;
     border-radius: 7px;

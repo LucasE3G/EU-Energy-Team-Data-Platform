@@ -1675,12 +1675,20 @@ let priceLatestRows = []; // latest avg price per zone (last 24h)
 let priceSelectedZone = null;
 let priceMapWindow = '24h'; // '24h' | '30d'
 
+// Carbon intensity tab
+let carbonTabInited = false;
+let carbonRange = 'week';
+let carbonChart = null;
+let carbonMixChart = null;
+let carbonChartLoadInFlight = null;
+
 // Chart builder tab (multi-series, per-series metric)
 let chartBuilderTabInited = false;
 let chartBuilderChart = null;
 let cbComposerMetric = 'renewable'; // metric applied to next country click
 let cbComposerGenFilter = null;     // psr_type group key when generation is active (null = total)
 let cbRange = 'day'; // 'day' | 'week' | 'month' | '6m' | '1y' | '5y'
+let cbAggMode = 'auto'; // 'auto' | 'intraday' | 'daily' | 'weekly'
 let cbSelected = []; // [{ id, country, metric, psrFilter, color, visible }]
 
 function fmtMwShort(mw) {
@@ -1742,6 +1750,13 @@ function switchElectricityMeterTab(target) {
             initLoadTabControls();
         }
         loadDemandTabData();
+    } else if (target === 'carbon') {
+        document.getElementById('carbonEmTab')?.classList.add('active');
+        if (!carbonTabInited) {
+            carbonTabInited = true;
+            initCarbonTabControls();
+        }
+        loadCarbonTabData();
     } else if (target === 'chart-builder') {
         document.getElementById('chartBuilderEmTab')?.classList.add('active');
         setSidebarCollapsed(true);
@@ -2358,23 +2373,18 @@ async function loadLoadEuChart(range) {
 
             let points;
             if (useRaw) {
-                // Online behaviour: sum per-zone snapshots by timestamp (15m-ish) for day/week.
-                const rawRows = await gasFetchAllPaged(() =>
+                // Query the hourly-aggregated MV (two-step: avg/zone/hour → sum) to avoid
+                // spikes from mixed 15-min/30-min/1-hour reporting resolutions across zones.
+                const mvRows = await gasFetchAllPaged(() =>
                     supabase
-                        .from('electricity_load_snapshots')
+                        .from('electricity_eu_load_15m_mv')
                         .select('ts, load_mw')
-                        .eq('source', 'entsoe')
                         .gte('ts', since)
                         .order('ts', { ascending: true })
-                );
-                const byTs = new Map();
-                for (const r of rawRows) {
-                    if (r.ts && Number.isFinite(Number(r.load_mw)) && Number(r.load_mw) > 0)
-                        byTs.set(r.ts, (byTs.get(r.ts) || 0) + Number(r.load_mw));
-                }
-                points = [...byTs.entries()]
-                    .sort((a, b) => a[0] < b[0] ? -1 : 1)
-                    .map(([ts, y]) => ({ ts, y }));
+                , 1000, 100_000);
+                points = mvRows
+                    .filter(r => r.ts && Number.isFinite(Number(r.load_mw)) && Number(r.load_mw) > 0)
+                    .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
             } else {
                 // Online behaviour: use precomputed energy (MWh) tables and display as GWh.
                 const table = useWeekly ? 'electricity_eu_load_weekly_mwh' : 'electricity_eu_load_daily_mwh';
@@ -2618,6 +2628,352 @@ function cbSeriesLabel(s) {
     return `${s.country} · ${metricLabel}`;
 }
 
+// ─── Carbon intensity tab ────────────────────────────────────────────────────
+
+// IPCC lifecycle median emission factors, gCO₂eq/kWh, keyed by ELEC_TYPE_GROUPS key.
+const CARBON_FACTORS = {
+    wind: 11, solar: 45, hydro: 24, nuclear: 12,
+    gas: 490, coal: 820, biomass: 230,
+    other_ren: 40, other_fossil: 650, other: 500,
+};
+
+function initCarbonTabControls() {
+    const bind = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            carbonRange = range;
+            updateCarbonRangeBtnActive();
+            loadCarbonChart(range);
+        });
+    };
+    bind('carbonRangeDayBtn', 'day');
+    bind('carbonRangeWeekBtn', 'week');
+    bind('carbonRangeMonthBtn', 'month');
+    bind('carbonRange6mBtn', '6m');
+    bind('carbonRange1yBtn', '1y');
+    bind('carbonRange5yBtn', '5y');
+}
+
+function updateCarbonRangeBtnActive() {
+    ['day', 'week', 'month', '6m', '1y', '5y'].forEach(r => {
+        const id = `carbonRange${r.charAt(0).toUpperCase() + r.slice(1)}Btn`;
+        document.getElementById(id)?.classList.toggle('active', r === carbonRange);
+    });
+}
+
+function loadCarbonTabData() {
+    updateCarbonRangeBtnActive();
+    loadCarbonChart(carbonRange);
+}
+
+// Compute carbon intensity (gCO₂/kWh) for each timestamp from generation rows.
+// rows: [{ ts, psr_type, mw }]  (MW average over each interval)
+function computeCarbonIntensity(rows) {
+    const byTs = new Map(); // ts → { totalMw, co2Mw }
+    for (const r of rows) {
+        if (!r.ts || !r.psr_type || !Number.isFinite(Number(r.mw))) continue;
+        const mw = Number(r.mw);
+        if (mw <= 0) continue;
+        let factor = null;
+        for (const g of ELEC_TYPE_GROUPS) {
+            if (g.types.includes(r.psr_type)) { factor = CARBON_FACTORS[g.key] ?? null; break; }
+        }
+        if (factor === null) continue;
+        const prev = byTs.get(r.ts) || { totalMw: 0, co2Mw: 0 };
+        byTs.set(r.ts, { totalMw: prev.totalMw + mw, co2Mw: prev.co2Mw + mw * factor });
+    }
+    return Array.from(byTs.entries())
+        .sort((a, b) => a[0] < b[0] ? -1 : 1)
+        .map(([ts, { totalMw, co2Mw }]) => ({
+            ts,
+            intensity: totalMw > 0 ? co2Mw / totalMw : null,
+        }))
+        .filter(p => p.intensity !== null);
+}
+
+async function loadCarbonChart(range) {
+    if (carbonChartLoadInFlight) return await carbonChartLoadInFlight;
+    carbonChartLoadInFlight = (async () => {
+        const statusEl = document.getElementById('carbonStatus');
+        const titleEl = document.getElementById('carbonChartTitle');
+        const canvas = document.getElementById('carbonIntensityChart');
+        if (!canvas) return;
+        const setStatus = msg => { if (statusEl) statusEl.textContent = msg || ''; };
+
+        try {
+            if (!supabase) throw new Error('Supabase client not initialized.');
+            const since = euRangeToSinceIso(range);
+            const useWeekly = range === '5y';
+            const useDaily = range === '6m' || range === '1y';
+            const useRaw = !useDaily && !useWeekly;
+
+            setStatus(`Loading carbon intensity (${range})…`);
+
+            let rows;
+            if (useRaw) {
+                rows = await gasFetchAllPaged(() =>
+                    supabase.from('electricity_eu_generation_15m_mv')
+                        .select('ts, psr_type, mw').gte('ts', since).order('ts', { ascending: true })
+                , 1000, 200_000);
+            } else {
+                const table = useWeekly ? 'electricity_eu_generation_weekly_mwh' : 'electricity_eu_generation_daily_mwh';
+                rows = await gasFetchAllPaged(() =>
+                    supabase.from(table)
+                        .select('ts, psr_type, production_mwh').gte('ts', since).order('ts', { ascending: true })
+                , 1000, 100_000);
+                rows = rows.map(r => ({ ...r, mw: r.production_mwh })); // factor calc works on any proportional quantity
+            }
+
+            const points = computeCarbonIntensity(rows);
+            if (!points.length) { setStatus('No data.'); return; }
+
+            const latestIntensity = points[points.length - 1].intensity;
+            const avgIntensity = points.reduce((s, p) => s + p.intensity, 0) / points.length;
+
+            // Low-carbon share from latest snapshot (nuclear + renewables)
+            const LOW_CARBON_PSR = new Set(['B14','B18','B19','B16','B10','B11','B12','B09','B13','B15','B01','B17']);
+            const latestTs = points[points.length - 1].ts;
+            const latestRows = rows.filter(r => r.ts === latestTs);
+            const totalMwLatest = latestRows.reduce((s, r) => s + (Number(r.mw) || 0), 0);
+            const cleanMwLatest = latestRows
+                .filter(r => LOW_CARBON_PSR.has(r.psr_type))
+                .reduce((s, r) => s + (Number(r.mw) || 0), 0);
+            const cleanPct = totalMwLatest > 0 ? (cleanMwLatest / totalMwLatest * 100) : null;
+
+            document.getElementById('carbonLatestIntensity').textContent = `${Math.round(latestIntensity)} gCO₂/kWh`;
+            document.getElementById('carbonAvgIntensity').textContent = `${Math.round(avgIntensity)} gCO₂/kWh`;
+            document.getElementById('carbonCleanShare').textContent = cleanPct !== null ? `${cleanPct.toFixed(1)}%` : '-';
+
+            const labels = points.map(p => {
+                const d = new Date(p.ts);
+                return Number.isNaN(d.getTime()) ? p.ts : (useRaw ? d.toLocaleString() : d.toLocaleDateString());
+            });
+            const intensityData = points.map(p => Math.round(p.intensity));
+
+            const ctx = canvas.getContext('2d');
+            if (carbonChart) { try { carbonChart.destroy(); } catch (_) {} carbonChart = null; }
+            carbonChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Carbon intensity (gCO₂/kWh)',
+                        data: intensityData,
+                        borderColor: '#78716c',
+                        backgroundColor: 'rgba(120,113,108,0.10)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                    }],
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, parsing: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { callback: v => `${v}` } },
+                    },
+                },
+            });
+            if (titleEl) titleEl.textContent = `EU — Carbon intensity (gCO₂/kWh) — ${range}`;
+            setStatus('');
+
+            // Generation mix donut for latest hour
+            loadCarbonMixChart(latestRows);
+        } catch (err) {
+            console.error('Carbon intensity chart failed:', err);
+            setStatus(`Failed: ${err.message || String(err)}`);
+        }
+    })();
+    try { return await carbonChartLoadInFlight; } finally { carbonChartLoadInFlight = null; }
+}
+
+function loadCarbonMixChart(latestRows) {
+    const mixCanvas = document.getElementById('carbonMixChart');
+    if (!mixCanvas) return;
+    const byGroup = Object.create(null);
+    for (const r of latestRows) {
+        const mw = Number(r.mw);
+        if (!Number.isFinite(mw) || mw <= 0) continue;
+        for (const g of ELEC_TYPE_GROUPS) {
+            if (g.types.includes(r.psr_type)) {
+                byGroup[g.key] = (byGroup[g.key] || 0) + mw;
+                break;
+            }
+        }
+    }
+    const groups = ELEC_TYPE_GROUPS.filter(g => byGroup[g.key] > 0);
+    if (carbonMixChart) { try { carbonMixChart.destroy(); } catch (_) {} carbonMixChart = null; }
+    carbonMixChart = new Chart(mixCanvas.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: groups.map(g => g.label),
+            datasets: [{ data: groups.map(g => Math.round(byGroup[g.key])), backgroundColor: groups.map(g => g.color), borderWidth: 1 }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } },
+        },
+    });
+}
+
+// ─── Gas storage tab ─────────────────────────────────────────────────────────
+
+let gasStorageTabInited = false;
+let gasStorageRange = '1y';
+let gasStorageFillChart = null;
+let gasStorageFlowChart = null;
+let gasStorageLoadInFlight = null;
+
+async function loadGasStorageTab() {
+    if (gasStorageLoadInFlight) return await gasStorageLoadInFlight;
+    gasStorageLoadInFlight = (async () => {
+        if (!gasStorageTabInited) {
+            gasStorageTabInited = true;
+            initGasStorageControls();
+        }
+        await loadGasStorageChart(gasStorageRange);
+    })();
+    try { return await gasStorageLoadInFlight; } finally { gasStorageLoadInFlight = null; }
+}
+
+function initGasStorageControls() {
+    const bind = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            gasStorageRange = range;
+            updateStorageRangeBtnActive();
+            loadGasStorageChart(range);
+        });
+    };
+    bind('storageRange3mBtn', '3m');
+    bind('storageRange6mBtn', '6m');
+    bind('storageRange1yBtn', '1y');
+    bind('storageRange2yBtn', '2y');
+    bind('storageRange5yBtn', '5y');
+}
+
+function updateStorageRangeBtnActive() {
+    ['3m', '6m', '1y', '2y', '5y'].forEach(r => {
+        const id = `storageRange${r.charAt(0).toUpperCase() + r.slice(1)}Btn`;
+        document.getElementById(id)?.classList.toggle('active', r === gasStorageRange);
+    });
+}
+
+function gasStorageRangeToSince(range) {
+    const d = new Date();
+    const map = { '3m': 90, '6m': 180, '1y': 365, '2y': 730, '5y': 1825 };
+    d.setDate(d.getDate() - (map[range] ?? 365));
+    return d.toISOString().slice(0, 10);
+}
+
+async function loadGasStorageChart(range) {
+    const statusEl = document.getElementById('storageStatus');
+    const fillTitleEl = document.getElementById('storageFillChartTitle');
+    const flowTitleEl = document.getElementById('storageFlowChartTitle');
+    const fillCanvas = document.getElementById('storageFillChart');
+    const flowCanvas = document.getElementById('storageFlowChart');
+    if (!fillCanvas || !flowCanvas) return;
+    const setStatus = msg => { if (statusEl) statusEl.textContent = msg || ''; };
+    updateStorageRangeBtnActive();
+
+    try {
+        if (!supabase) throw new Error('Supabase client not initialized.');
+        const since = gasStorageRangeToSince(range);
+        setStatus(`Loading gas storage (${range})…`);
+
+        const rows = await gasFetchAllPaged(() =>
+            supabase.from('gas_storage_eu_daily')
+                .select('gas_day, gas_in_storage_twh, full_pct, trend_pct, injection_twh, withdrawal_twh')
+                .gte('gas_day', since)
+                .order('gas_day', { ascending: true })
+        , 1000, 10_000);
+
+        if (!rows.length) {
+            setStatus('No storage data. Run gas_ingest_storage_eu to backfill, or check GIE_AGSI_API_KEY.');
+            document.getElementById('storageApiKeyWarning')?.style.setProperty('display', 'inline');
+            return;
+        }
+
+        const latest = rows[rows.length - 1];
+        document.getElementById('storageLatestFill').textContent =
+            latest.full_pct != null ? `${Number(latest.full_pct).toFixed(1)}%` : '-';
+        document.getElementById('storageLatestDay').textContent = latest.gas_day ?? '-';
+        const trend = latest.trend_pct;
+        if (document.getElementById('storageLatestTrend')) {
+            document.getElementById('storageLatestTrend').textContent =
+                trend != null ? `${trend > 0 ? '+' : ''}${Number(trend).toFixed(2)}%` : '-';
+        }
+        document.getElementById('storageLatestTwh').textContent =
+            latest.gas_in_storage_twh != null ? `${Number(latest.gas_in_storage_twh).toFixed(0)} TWh` : '-';
+
+        const labels = rows.map(r => r.gas_day);
+        const fillData = rows.map(r => r.full_pct != null ? Number(Number(r.full_pct).toFixed(2)) : null);
+        const injData = rows.map(r => r.injection_twh != null ? Number(Number(r.injection_twh).toFixed(3)) : null);
+        const wdData = rows.map(r => r.withdrawal_twh != null ? -Math.abs(Number(r.withdrawal_twh)) : null);
+
+        if (gasStorageFillChart) { try { gasStorageFillChart.destroy(); } catch (_) {} gasStorageFillChart = null; }
+        gasStorageFillChart = new Chart(fillCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Fill level (%)',
+                    data: fillData,
+                    borderColor: '#0ea5e9',
+                    backgroundColor: 'rgba(14,165,233,0.12)',
+                    fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
+                    y: { min: 0, max: 100, ticks: { callback: v => `${v}%` } },
+                },
+            },
+        });
+
+        if (gasStorageFlowChart) { try { gasStorageFlowChart.destroy(); } catch (_) {} gasStorageFlowChart = null; }
+        gasStorageFlowChart = new Chart(flowCanvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Injection (TWh/day)', data: injData, backgroundColor: 'rgba(34,197,94,0.7)', borderWidth: 0 },
+                    { label: 'Withdrawal (TWh/day)', data: wdData, backgroundColor: 'rgba(239,68,68,0.7)', borderWidth: 0 },
+                ],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                scales: {
+                    x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
+                    y: { ticks: { callback: v => `${v} TWh` } },
+                },
+            },
+        });
+
+        if (fillTitleEl) fillTitleEl.textContent = `EU — Gas storage fill level (%) — ${range}`;
+        if (flowTitleEl) flowTitleEl.textContent = `EU — Gas injection & withdrawal (TWh/day) — ${range}`;
+        setStatus('');
+    } catch (err) {
+        console.error('Gas storage chart failed:', err);
+        setStatus(`Failed: ${err.message || String(err)}`);
+    }
+}
+
+// ─── End new tabs ─────────────────────────────────────────────────────────────
+
 function initChartBuilderControls() {
     const search = document.getElementById('cbCountrySearch');
 
@@ -2692,6 +3048,21 @@ function initChartBuilderControls() {
     bindRange('cbRange1yBtn', '1y');
     bindRange('cbRange5yBtn', '5y');
 
+    const bindAgg = (id, mode) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            cbAggMode = mode;
+            updateCbAggButtons();
+            loadChartBuilder();
+        });
+    };
+    bindAgg('cbAggAutoBtn', 'auto');
+    bindAgg('cbAggIntradayBtn', 'intraday');
+    bindAgg('cbAggDailyBtn', 'daily');
+    bindAgg('cbAggWeeklyBtn', 'weekly');
+
     // Default series on first load
     if (!cbSelected.length) {
         cbSelected = ['DE', 'FR', 'ES'].map((country, idx) => ({
@@ -2707,6 +3078,7 @@ function initChartBuilderControls() {
     cbRecolorAndRenderSelected();
     renderCbCountryGrid();
     updateCbRangeButtons();
+    updateCbAggButtons();
 }
 
 function updateCbRangeButtons() {
@@ -2722,6 +3094,13 @@ function updateCbRangeButtons() {
         const el = document.getElementById(id);
         if (!el) return;
         el.classList.toggle('active', cbRange === range);
+    });
+}
+
+function updateCbAggButtons() {
+    const map = { auto: 'cbAggAutoBtn', intraday: 'cbAggIntradayBtn', daily: 'cbAggDailyBtn', weekly: 'cbAggWeeklyBtn' };
+    Object.entries(map).forEach(([mode, id]) => {
+        document.getElementById(id)?.classList.toggle('active', cbAggMode === mode);
     });
 }
 
@@ -2816,8 +3195,8 @@ function cbRollupCountry(points, country, mode = 'sum') {
 
 async function cbFetchRenewableRaw(range, needEU = false) {
     const since = cbRangeToSinceIso(range);
-    const useWeekly = range === '5y';
-    const useDaily = range === 'month' || range === '6m' || range === '1y';
+    const useWeekly = cbAggMode === 'weekly' || (cbAggMode === 'auto' && range === '5y');
+    const useDaily = !useWeekly && (cbAggMode === 'daily' || (cbAggMode === 'auto' && (range === 'month' || range === '6m' || range === '1y')));
     const table = useWeekly ? 'energy_mix_weekly' : useDaily ? 'energy_mix_daily' : 'energy_mix_snapshots';
     const rows = await gasFetchAllPaged(() =>
         supabase
@@ -2850,9 +3229,9 @@ async function cbFetchRenewableRaw(range, needEU = false) {
 
 async function cbFetchDemandRaw(range, needEU = false) {
     const since = cbRangeToSinceIso(range);
-    const useWeekly = range === '5y';
-    const useDaily = range === 'month' || range === '6m' || range === '1y';
-    const raw = !(useWeekly || useDaily); // day, week only
+    const useWeekly = cbAggMode === 'weekly' || (cbAggMode === 'auto' && range === '5y');
+    const useDaily = !useWeekly && (cbAggMode === 'daily' || (cbAggMode === 'auto' && (range === 'month' || range === '6m' || range === '1y')));
+    const raw = !(useWeekly || useDaily); // intraday or auto-day/week
     const table = raw ? 'electricity_load_snapshots' : (useWeekly ? 'electricity_load_weekly_mwh' : 'electricity_load_daily_mwh');
     const valueCol = raw ? 'load_mw' : 'consumption_mwh';
     const rows = await gasFetchAllPaged(() =>
@@ -2869,9 +3248,17 @@ async function cbFetchDemandRaw(range, needEU = false) {
     let euSeries = [];
     if (needEU) {
         if (raw) {
-            const byTs = new Map();
-            for (const p of points) byTs.set(p.ts, (byTs.get(p.ts) || 0) + Number(p.y));
-            euSeries = [...byTs.entries()].map(([ts, y]) => ({ ts, y })).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+            // Use the hourly-aggregated MV instead of summing raw zone snapshots.
+            const euMvRows = await gasFetchAllPaged(() =>
+                supabase
+                    .from('electricity_eu_load_15m_mv')
+                    .select('ts, load_mw')
+                    .gte('ts', since)
+                    .order('ts', { ascending: true })
+            , 1000, 100_000);
+            euSeries = euMvRows
+                .filter(r => r.ts && Number.isFinite(Number(r.load_mw)) && Number(r.load_mw) > 0)
+                .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
         } else {
             const euTable = useWeekly ? 'electricity_eu_load_weekly_mwh' : 'electricity_eu_load_daily_mwh';
             const euCol = 'consumption_mwh';
@@ -2893,8 +3280,8 @@ async function cbFetchDemandRaw(range, needEU = false) {
 
 async function cbFetchPriceRaw(range, needEU = false) {
     const since = cbRangeToSinceIso(range);
-    const useWeekly = range === '5y';
-    const useDaily = range === 'month' || range === '6m' || range === '1y';
+    const useWeekly = cbAggMode === 'weekly' || (cbAggMode === 'auto' && range === '5y');
+    const useDaily = !useWeekly && (cbAggMode === 'daily' || (cbAggMode === 'auto' && (range === 'month' || range === '6m' || range === '1y')));
     const raw = !(useWeekly || useDaily);
     const table = useWeekly ? 'electricity_price_weekly' : useDaily ? 'electricity_price_daily' : 'electricity_day_ahead_prices';
     // Only the raw snapshots table has a `source` column; the aggregated tables do not.
@@ -2930,8 +3317,8 @@ async function cbFetchPriceRaw(range, needEU = false) {
 
 async function cbFetchGenerationRaw(range, needEU = false, psrFilter = null, zoneFilter = null) {
     const since = cbRangeToSinceIso(range);
-    const useWeekly = range === '5y';
-    const raw = range === 'day' || range === 'week'; // day + week use raw snapshots for intraday
+    const useWeekly = cbAggMode === 'weekly' || (cbAggMode === 'auto' && range === '5y');
+    const raw = cbAggMode === 'intraday' || (cbAggMode === 'auto' && (range === 'day' || range === 'week'));
     const table = useWeekly ? 'electricity_generation_weekly_mwh' : raw ? 'electricity_generation_snapshots' : 'electricity_generation_daily_mwh';
     const valueCol = raw ? 'mw' : 'production_mwh';
 
@@ -5446,26 +5833,34 @@ function initGasDemandChartBuilderUI() {
 
     // Tabs
     const overviewBtn = document.getElementById('gasOverviewTabBtn');
+    const storageTabBtn = document.getElementById('gasStorageTabBtn');
     const demandBtn = document.getElementById('gasDemandTabBtn');
     const overviewPane = document.getElementById('gasOverviewEmTab');
+    const storagePane = document.getElementById('gasStorageEmTab');
     const demandPaneEl = document.getElementById('gasDemandEmTab');
     if (!alreadyBound && overviewBtn && demandBtn && overviewPane && demandPaneEl) {
+        const tabs = [
+            { btn: overviewBtn, pane: overviewPane, name: 'overview' },
+            { btn: storageTabBtn, pane: storagePane, name: 'storage' },
+            { btn: demandBtn, pane: demandPaneEl, name: 'demand' },
+        ];
         const setActive = (which) => {
-            const isDemand = which === 'demand';
-            overviewBtn.classList.toggle('active', !isDemand);
-            demandBtn.classList.toggle('active', isDemand);
-            overviewBtn.setAttribute('aria-selected', String(!isDemand));
-            demandBtn.setAttribute('aria-selected', String(isDemand));
-            overviewPane.classList.toggle('active', !isDemand);
-            demandPaneEl.classList.toggle('active', isDemand);
-
-            if (isDemand) {
-                // Build once when the user first lands on the tab.
+            tabs.forEach(t => {
+                if (!t.btn || !t.pane) return;
+                const on = t.name === which;
+                t.btn.classList.toggle('active', on);
+                t.btn.setAttribute('aria-selected', String(on));
+                t.pane.classList.toggle('active', on);
+            });
+            if (which === 'demand') {
                 if (!gasDemandCbHasBuilt) loadGasDemandChartBuilderChart();
+            } else if (which === 'storage') {
+                loadGasStorageTab();
             }
         };
 
         overviewBtn.addEventListener('click', () => { setSidebarCollapsed(false); setActive('overview'); });
+        if (storageTabBtn) storageTabBtn.addEventListener('click', () => { setSidebarCollapsed(false); setActive('storage'); });
         demandBtn.addEventListener('click', () => { setSidebarCollapsed(true); setActive('demand'); });
     }
 

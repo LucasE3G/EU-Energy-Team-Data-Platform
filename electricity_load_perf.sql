@@ -23,16 +23,28 @@ select
 from public.electricity_load_snapshots
 group by zone_id, source, date_trunc('week', ts);
 
--- EU aggregate from per-zone loads (exclude any synthetic EU zone if ever added)
+-- EU aggregate from per-zone loads.
+-- Two-step hourly aggregation: avg(load_mw) per zone per hour → sum across zones.
+-- This avoids spikes from zones that report at 15-min or 30-min resolution being
+-- summed at timestamps where only a subset of zones have data.
+drop materialized view if exists public.electricity_eu_load_daily_mv cascade;
+drop materialized view if exists public.electricity_eu_load_weekly_mv cascade;
 drop materialized view if exists public.electricity_eu_load_15m_mv;
 create materialized view public.electricity_eu_load_15m_mv as
-select
-  date_bin(interval '15 minutes', ts, '2000-01-01'::timestamptz) as ts,
-  sum(load_mw)::double precision as load_mw
-from public.electricity_load_snapshots
-where source = 'entsoe'
-  and zone_id <> 'EU'
-  and load_mw is not null
+with zone_hour as (
+  select
+    date_trunc('hour', ts) as ts,
+    zone_id,
+    avg(load_mw) as avg_mw
+  from public.electricity_load_snapshots
+  where source = 'entsoe'
+    and zone_id <> 'EU'
+    and load_mw is not null
+    and load_mw > 0
+  group by 1, 2
+)
+select ts, sum(avg_mw)::double precision as load_mw
+from zone_hour
 group by 1;
 
 create index if not exists electricity_eu_load_15m_mv_ts_desc
