@@ -27,7 +27,7 @@ async function fetchAgsiPage(
   to: string,
   page: number,
   size: number,
-): Promise<{ data: AgsiRecord[]; total: number; rawBody?: unknown }> {
+): Promise<{ data: AgsiRecord[]; lastPage: number; rawBody?: unknown }> {
   const url =
     `https://agsi.gie.eu/api?type=eu&from=${from}&to=${to}&page=${page}&size=${size}`;
   const controller = new AbortController();
@@ -63,17 +63,17 @@ async function fetchAgsiPage(
   if (body["error"]) throw new Error(`GIE AGSI error: ${body["error"]}`);
 
   const data = Array.isArray(body["data"]) ? (body["data"] as AgsiRecord[]) : [];
-  const total = typeof body["total"] === "number" ? body["total"] : data.length;
+  // GIE returns last_page (int) and total (record count). Use last_page for pagination.
+  const lastPage = typeof body["last_page"] === "number" ? body["last_page"] : 1;
 
-  return { data, total, rawBody: body };
+  return { data, lastPage, rawBody: body };
 }
 
 async function fetchAllAgsi(apiKey: string, from: string, to: string): Promise<AgsiRecord[]> {
   const size = 300;
   const first = await fetchAgsiPage(apiKey, from, to, 1, size);
   const records: AgsiRecord[] = [...first.data];
-  const pages = Math.ceil(first.total / size);
-  for (let p = 2; p <= pages; p++) {
+  for (let p = 2; p <= first.lastPage; p++) {
     const { data } = await fetchAgsiPage(apiKey, from, to, p, size);
     records.push(...data);
   }
