@@ -2383,7 +2383,7 @@ async function loadLoadEuChart(range) {
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
             const since = euRangeToSinceIso(range);
-            const useRaw = range === 'day';
+            const useRaw = range === 'day' || range === 'week';
             const useWeekly = range === '5y';
             const fmtVal = useRaw ? fmtMwShort : fmtGWh;
             const unit = useRaw ? 'MW' : 'GWh';
@@ -2404,18 +2404,20 @@ async function loadLoadEuChart(range) {
                         .gte('ts', since)
                         .order('ts', { ascending: true })
                 , 1000, 100_000);
+                // EU demand is always > 150 GW — filter near-zero values which are reporting gaps
+                const EU_MIN_MW = 150_000;
                 if (euRows.length > 0) {
                     points = euRows
-                        .filter(r => r.ts && Number.isFinite(Number(r.load_mw)) && Number(r.load_mw) > 0)
+                        .filter(r => r.ts && Number(r.load_mw) > EU_MIN_MW)
                         .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
                 } else {
-                    // Fallback: hourly-aggregated MV (may have gaps from sparse reporters)
+                    // Fallback: summed MV — same gap filter applied
                     const mvRows = await gasFetchAllPaged(() =>
                         supabase.from('electricity_eu_load_15m_mv')
                             .select('ts, load_mw').gte('ts', since).order('ts', { ascending: true })
                     , 1000, 100_000);
                     points = mvRows
-                        .filter(r => r.ts && Number.isFinite(Number(r.load_mw)) && Number(r.load_mw) > 0)
+                        .filter(r => r.ts && Number(r.load_mw) > EU_MIN_MW)
                         .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
                 }
             } else {
@@ -2900,29 +2902,29 @@ async function loadCarbonCountryMap() {
     try {
         if (!supabase) return;
         setStatus('Loading country generation data…');
-        // Fetch latest 2 hours of zone-level generation snapshots
-        const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-        const snapRows = await gasFetchAllPaged(() =>
-            supabase.from('electricity_generation_snapshots')
-                .select('ts, zone_id, psr_type, mw')
-                .eq('source', 'entsoe')
-                .neq('zone_id', 'EU')
-                .gte('ts', since)
-                .order('ts', { ascending: false })
-        , 1000, 50_000);
+        // 30-min window + hard row cap to prevent statement timeout
+        const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const { data: snapRows, error: snapErr } = await supabase
+            .from('electricity_generation_snapshots')
+            .select('ts, zone_id, psr_type, mw')
+            .eq('source', 'entsoe')
+            .neq('zone_id', 'EU')
+            .gte('ts', since)
+            .order('ts', { ascending: false })
+            .limit(8000);
+        if (snapErr) throw new Error(snapErr.message);
 
-        if (!snapRows.length) { setStatus('No zone generation data available.'); return; }
+        if (!snapRows?.length) { setStatus('No zone generation data available.'); return; }
 
-        // For each zone, find its most recent timestamp, then compute intensity from that snapshot
-        const latestByZone = new Map(); // zone_id → ts
+        // For each zone, keep only its most-recent timestamp
+        const latestByZone = new Map();
         for (const r of snapRows) {
             const z = String(r.zone_id || '').toUpperCase();
             if (!z || z === 'EU') continue;
             if (!latestByZone.has(z) || r.ts > latestByZone.get(z)) latestByZone.set(z, r.ts);
         }
 
-        // Compute per-zone carbon intensity using only latest snapshot rows
-        const zoneIntensity = new Map(); // zone_id → { intensity, cleanPct, ts }
+        const zoneIntensity = new Map();
         const LOW_CARBON = new Set(['B14','B18','B19','B16','B10','B11','B12','B09','B13','B15','B01','B17']);
         for (const [zone, latestTs] of latestByZone) {
             const zoneRows = snapRows.filter(r => String(r.zone_id).toUpperCase() === zone && r.ts === latestTs);
@@ -2940,49 +2942,21 @@ async function loadCarbonCountryMap() {
 
         if (!zoneIntensity.size) { setStatus('Could not compute zone intensities.'); return; }
 
-        // Render tile grid
-        const tileRows = Array.from(zoneIntensity.entries())
-            .sort((a, b) => (b[1].intensity ?? 0) - (a[1].intensity ?? 0));
-
-        const tiles = tileRows.map(([zone, { intensity }]) => {
-            const bg = Number.isFinite(intensity) ? carbonIntensityColor(intensity) : 'rgba(148,163,184,0.25)';
-            const pct = Math.min(100, Math.max(0, intensity / 600 * 100));
-            const color = textColorForBg(100 - pct);
-            const isActive = carbonZoneSelected === zone;
-            return `<div class="energy-map-tile ${isActive ? 'active' : ''}" data-carbon-zone="${escapeHtml(zone)}" style="background:${bg}; color:${color}">
-                <div class="energy-map-tile-code">${escapeHtml(zone)}</div>
-                <div class="energy-map-tile-value">${Number.isFinite(intensity) ? Math.round(intensity) + 'g' : '—'}</div>
-            </div>`;
-        }).join('');
-
-        const legend = `<div class="energy-map-legend">
-            <span>Low carbon</span>
-            <div class="energy-map-legend-bar" style="background: linear-gradient(to right, #10b981, #ef4444);"></div>
-            <span>High carbon</span>
-        </div>`;
-        mapEl.innerHTML = `${legend}<div class="energy-map-grid">${tiles}</div>`;
-
-        mapEl.querySelectorAll('.energy-map-tile[data-carbon-zone]').forEach(el => {
-            el.addEventListener('click', () => {
-                const z = el.getAttribute('data-carbon-zone');
-                if (!z) return;
-                carbonZoneSelected = z;
-                mapEl.querySelectorAll('.energy-map-tile').forEach(t => t.classList.remove('active'));
-                el.classList.add('active');
-                document.getElementById('carbonZoneSection')?.style.setProperty('display', '');
-                updateCarbonZoneRangeBtnActive();
-                loadCarbonZoneChart(z, carbonZoneRange);
-            });
+        // Geo map (falls back to tile grid if GeoJSON unavailable)
+        await renderCarbonGeoMap(mapEl, zoneIntensity).catch(e => {
+            console.warn('Carbon geo map failed, using tile grid:', e);
+            renderCarbonTileGrid(mapEl, zoneIntensity);
         });
 
-        // Render table
+        // Table
         if (tableBody) {
             const fmt = d => {
                 if (!d) return '—';
                 const dt = new Date(d);
                 return Number.isNaN(dt.getTime()) ? d : dt.toLocaleString();
             };
-            tableBody.innerHTML = tileRows.map(([zone, { intensity, cleanPct, ts }]) => `
+            const sorted = Array.from(zoneIntensity.entries()).sort((a, b) => (b[1].intensity ?? 0) - (a[1].intensity ?? 0));
+            tableBody.innerHTML = sorted.map(([zone, { intensity, cleanPct, ts }]) => `
                 <tr style="cursor:pointer;" onclick="carbonZoneSelected='${zone}'; document.getElementById('carbonZoneSection').style.display=''; updateCarbonZoneRangeBtnActive(); loadCarbonZoneChart('${zone}', carbonZoneRange);">
                     <td><strong>${escapeHtml(zone)}</strong></td>
                     <td>${Number.isFinite(intensity) ? Math.round(intensity) + ' g' : '—'}</td>
@@ -2997,6 +2971,178 @@ async function loadCarbonCountryMap() {
     } catch (err) {
         console.error('Carbon country map failed:', err);
         setStatus(`Failed: ${err.message || String(err)}`);
+    }
+}
+
+function renderCarbonTileGrid(mapEl, zoneIntensity) {
+    const sorted = Array.from(zoneIntensity.entries()).sort((a, b) => (b[1].intensity ?? 0) - (a[1].intensity ?? 0));
+    const tiles = sorted.map(([zone, { intensity }]) => {
+        const bg = Number.isFinite(intensity) ? carbonIntensityColor(intensity) : 'rgba(148,163,184,0.25)';
+        const pct = Math.min(100, Math.max(0, intensity / 600 * 100));
+        const color = textColorForBg(100 - pct);
+        return `<div class="energy-map-tile ${carbonZoneSelected === zone ? 'active' : ''}" data-carbon-zone="${escapeHtml(zone)}" style="background:${bg}; color:${color}">
+            <div class="energy-map-tile-code">${escapeHtml(zone)}</div>
+            <div class="energy-map-tile-value">${Number.isFinite(intensity) ? Math.round(intensity) + 'g' : '—'}</div>
+        </div>`;
+    }).join('');
+    mapEl.innerHTML = `<div class="energy-map-grid">${tiles}</div>`;
+    mapEl.querySelectorAll('.energy-map-tile[data-carbon-zone]').forEach(el => {
+        el.addEventListener('click', () => {
+            const z = el.getAttribute('data-carbon-zone');
+            if (!z) return;
+            carbonZoneSelected = z;
+            mapEl.querySelectorAll('.energy-map-tile').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('carbonZoneSection')?.style.setProperty('display', '');
+            updateCarbonZoneRangeBtnActive();
+            loadCarbonZoneChart(z, carbonZoneRange);
+        });
+    });
+}
+
+async function renderCarbonGeoMap(container, zoneIntensity) {
+    const [countryGeo, zoneGeo] = await Promise.all([
+        fetchEuropeCountriesGeoJsonOnce(),
+        fetchEntsoeZonesGeoJsonOnce(),
+    ]);
+
+    // Build lookup maps
+    const byZone = {};
+    const countrySum = new Map();
+    for (const [zone, { intensity }] of zoneIntensity) {
+        if (!Number.isFinite(intensity)) continue;
+        byZone[zone] = intensity;
+        const iso2 = zoneToCountryIso2(zone);
+        const prev = countrySum.get(iso2) || { sum: 0, n: 0 };
+        prev.sum += intensity; prev.n += 1;
+        countrySum.set(iso2, prev);
+    }
+    const byCountry = {};
+    countrySum.forEach((v, k) => { byCountry[k] = v.n ? v.sum / v.n : null; });
+
+    const width = 1400, height = 860, padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+    const selectedZone = String(carbonZoneSelected || '').toUpperCase();
+    const selectedIso2 = zoneToCountryIso2(selectedZone);
+    const selectedIntensity = (selectedZone && byZone[selectedZone] != null)
+        ? byZone[selectedZone]
+        : (selectedIso2 && byCountry[selectedIso2] != null ? byCountry[selectedIso2] : null);
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Carbon intensity map</div>
+                    <div class="energy-map-subtitle">Click a country to chart its carbon intensity over time</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(selectedZone || '—')}</div>
+                    </div>
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Intensity</div>
+                        <div class="energy-map-chip-value">${Number.isFinite(selectedIntensity) ? Math.round(selectedIntensity) + ' g' : '—'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span>Low carbon</span>
+                <div class="energy-map-legend-bar" style="background: linear-gradient(to right, #10b981, #f59e0b, #ef4444);"></div>
+                <span>High carbon</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Carbon intensity map"></svg>
+            </div>
+        </div>`;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    function selectZone(zone) {
+        carbonZoneSelected = zone;
+        document.getElementById('carbonZoneSection')?.style.setProperty('display', '');
+        updateCarbonZoneRangeBtnActive();
+        loadCarbonZoneChart(zone, carbonZoneRange);
+        renderCarbonGeoMap(container, zoneIntensity).catch(() => {});
+    }
+
+    // Base country layer (skip DK/SE/NO/GB — drawn via zone overlay)
+    const countryFeatures = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    for (const f of countryFeatures) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2 || iso2 === 'RU' || iso2 === 'BY') continue;
+        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO' || iso2 === 'GB' || iso2 === 'UK') continue;
+        const dataKey = iso2GeoToDataKey(iso2);
+        const val = byCountry[dataKey];
+        const fill = Number.isFinite(val) ? carbonIntensityColor(val) : 'rgba(148,163,184,0.18)';
+        const geom = f.geometry;
+        if (!geom) continue;
+        const paths = [];
+        if (geom.type === 'Polygon') {
+            paths.push(polygonToPath(geom.coordinates[0], width, height, bounds, padding));
+        } else if (geom.type === 'MultiPolygon') {
+            for (const poly of geom.coordinates) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', paths.join(' '));
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-iso2', iso2);
+        path.style.cursor = 'pointer';
+        if (selectedIso2 && iso2GeoMatchesSelection(iso2, selectedIso2)) path.classList.add('is-selected');
+        path.addEventListener('mouseenter', () => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${dataKey} — ${Number.isFinite(val) ? Math.round(val) + ' g CO₂/kWh' : '—'}`;
+        });
+        path.addEventListener('mousemove', e => { tooltip.style.left = `${e.clientX}px`; tooltip.style.top = `${e.clientY}px`; });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => {
+            const candidates = [...zoneIntensity.keys()].filter(z => zoneToCountryIso2(z) === dataKey);
+            if (!candidates.length) return;
+            selectZone(candidates[0]);
+        });
+        svg.appendChild(path);
+    }
+
+    // Zone overlay for DK/SE/NO/GB
+    const europeBbox = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+    const overlayZones = new Set(['DK1','DK2','SE1','SE2','SE3','SE4','NO1','NO2','NO3','NO4','NO5','GB']);
+    for (const f of (Array.isArray(zoneGeo?.features) ? zoneGeo.features : [])) {
+        const zoneId = normalizeZoneNameToId(f?.properties?.zoneName);
+        if (!zoneId || !overlayZones.has(zoneId)) continue;
+        const geom = filterGeometryToBbox(f?.geometry, europeBbox);
+        if (!geom) continue;
+        const val = byZone[zoneId];
+        const fill = Number.isFinite(val) ? carbonIntensityColor(val) : 'rgba(148,163,184,0.18)';
+        const paths = [];
+        if (geom.type === 'Polygon') {
+            paths.push(polygonToPath(geom.coordinates[0], width, height, bounds, padding));
+        } else if (geom.type === 'MultiPolygon') {
+            for (const poly of geom.coordinates) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', paths.join(' '));
+        path.setAttribute('fill', fill);
+        path.setAttribute('data-zone', zoneId);
+        path.style.cursor = 'pointer';
+        path.classList.add('bz-overlay');
+        if (selectedZone && zoneId === selectedZone) path.classList.add('is-selected');
+        path.addEventListener('mouseenter', () => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${zoneId} — ${Number.isFinite(val) ? Math.round(val) + ' g CO₂/kWh' : '—'}`;
+        });
+        path.addEventListener('mousemove', e => { tooltip.style.left = `${e.clientX}px`; tooltip.style.top = `${e.clientY}px`; });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        path.addEventListener('click', () => selectZone(zoneId));
+        svg.appendChild(path);
     }
 }
 
