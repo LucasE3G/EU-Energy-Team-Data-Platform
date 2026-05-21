@@ -2878,11 +2878,13 @@ function loadCarbonMixChart(latestRows) {
 
 // ─── Carbon intensity by country ─────────────────────────────────────────────
 
-// Normalize intensity (0-600+ gCO₂/kWh) to a 0-100 percent for color mixing.
-// High intensity → red; low intensity → green.
+// Map intensity (gCO₂/kWh) to a color with a power curve so the gradient
+// spreads across the realistic EU range: ~30 g (FR nuclear) → green,
+// ~150 g (DE gas mix) → orange, ~400 g+ (PL coal) → red.
 function carbonIntensityColor(intensity) {
-    const pct = Math.min(100, Math.max(0, Number(intensity) / 600 * 100));
-    return mixColorRedToGreen(100 - pct); // invert: high intensity = red
+    const capped = Math.min(400, Math.max(0, Number(intensity)));
+    const pct = Math.pow(capped / 400, 0.6) * 100;
+    return mixColorRedToGreen(100 - pct);
 }
 
 function updateCarbonZoneRangeBtnActive() {
