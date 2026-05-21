@@ -89,7 +89,8 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const agsiKey = Deno.env.get("GIE_AGSI_API_KEY");
+    // Accepts both GIE_API_KEY (matches .env) and GIE_AGSI_API_KEY for backwards compat
+    const agsiKey = Deno.env.get("GIE_API_KEY") ?? Deno.env.get("GIE_AGSI_API_KEY");
 
     if (!supabaseUrl || !serviceRole) {
       return json(
@@ -101,7 +102,7 @@ serve(async (req) => {
       return json(
         {
           error: "missing_key",
-          message: "GIE_AGSI_API_KEY not set. Register at https://agsi.gie.eu/account",
+          message: "GIE_API_KEY not set in Supabase secrets. Register at https://agsi.gie.eu/account",
         },
         500,
       );
