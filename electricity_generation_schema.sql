@@ -20,6 +20,10 @@ create index if not exists electricity_generation_snapshots_zone_ts
 create index if not exists electricity_generation_snapshots_type_ts
   on public.electricity_generation_snapshots (psr_type, ts desc);
 
+-- Needed for carbon intensity map: ORDER BY ts DESC LIMIT 1 across all zones
+create index if not exists electricity_generation_snapshots_source_ts
+  on public.electricity_generation_snapshots (source, ts desc);
+
 alter table public.electricity_generation_snapshots enable row level security;
 
 do $$
