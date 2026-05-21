@@ -1302,6 +1302,26 @@
                                 <canvas id="storageCountryChart"></canvas>
                             </div>
                         </div>
+
+                        <!-- Latest values table -->
+                        <div class="section" id="storageCountryTableSection" style="display:none; margin-top:24px;">
+                            <div class="section-header">
+                                <h2 class="section-title">Latest values by country</h2>
+                                <span id="storageCountryTableDate" style="font-size:0.8rem; color:var(--text-secondary);"></span>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead><tr>
+                                        <th>Country</th>
+                                        <th>Fill level</th>
+                                        <th>In storage (TWh)</th>
+                                        <th>Injection (TWh)</th>
+                                        <th>Withdrawal (TWh)</th>
+                                    </tr></thead>
+                                    <tbody id="storageCountryTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

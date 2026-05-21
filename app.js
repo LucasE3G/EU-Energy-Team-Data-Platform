@@ -2904,7 +2904,7 @@ async function loadCarbonCountryMap() {
     try {
         if (!supabase) return;
         setStatus('Loading country generation data…');
-        // Step 1: find the latest timestamp — single-row index seek, never times out
+        // Step 1: find the latest timestamp — O(1) index seek with the (source, ts DESC) index
         const { data: peekData, error: peekErr } = await supabase
             .from('electricity_generation_snapshots')
             .select('ts')
@@ -2914,38 +2914,50 @@ async function loadCarbonCountryMap() {
         if (peekErr) throw new Error(peekErr.message);
         if (!peekData?.length) { setStatus('No zone generation data available.'); return; }
         const latestTs = peekData[0].ts;
+        const oneHourBefore = new Date(new Date(latestTs).getTime() - 60 * 60 * 1000).toISOString();
 
-        // Step 2: fetch every psr_type row at that exact timestamp — point lookup, very fast
+        // Step 2: fetch all snapshots in the last hour — bounded range on indexed ts, fast
         const { data: snapRows, error: snapErr } = await supabase
             .from('electricity_generation_snapshots')
             .select('ts, zone_id, psr_type, mw')
             .eq('source', 'entsoe')
-            .eq('ts', latestTs)
             .neq('zone_id', 'EU')
-            .limit(2000);
+            .gte('ts', oneHourBefore)
+            .lte('ts', latestTs)
+            .limit(15000);
         if (snapErr) throw new Error(snapErr.message);
         if (!snapRows?.length) { setStatus('No zone generation data available.'); return; }
 
-        // Each zone has one timestamp (latestTs), so latestByZone maps every zone → latestTs
-        const latestByZone = new Map();
+        // Group rows by zone → snapshot timestamp → psr_type rows
+        const LOW_CARBON = new Set(['B14','B18','B19','B16','B10','B11','B12','B09','B13','B15','B01','B17']);
+        const zoneSnaps = new Map(); // zone → Map<ts, rows[]>
         for (const r of snapRows) {
             const z = String(r.zone_id || '').toUpperCase();
-            if (z && z !== 'EU') latestByZone.set(z, r.ts);
+            if (!z || z === 'EU') continue;
+            if (!zoneSnaps.has(z)) zoneSnaps.set(z, new Map());
+            const tsMap = zoneSnaps.get(z);
+            if (!tsMap.has(r.ts)) tsMap.set(r.ts, []);
+            tsMap.get(r.ts).push(r);
         }
 
+        // For each zone: compute intensity per snapshot, then average across the hour
         const zoneIntensity = new Map();
-        const LOW_CARBON = new Set(['B14','B18','B19','B16','B10','B11','B12','B09','B13','B15','B01','B17']);
-        for (const [zone, latestTs] of latestByZone) {
-            const zoneRows = snapRows.filter(r => String(r.zone_id).toUpperCase() === zone && r.ts === latestTs);
-            const mapped = zoneRows.map(r => ({ ts: r.ts, psr_type: r.psr_type, mw: r.mw }));
-            const pts = computeCarbonIntensity(mapped);
-            if (!pts.length) continue;
-            const totalMw = zoneRows.reduce((s, r) => s + (Number(r.mw) || 0), 0);
-            const cleanMw = zoneRows.filter(r => LOW_CARBON.has(r.psr_type)).reduce((s, r) => s + (Number(r.mw) || 0), 0);
+        for (const [zone, tsMap] of zoneSnaps) {
+            const snapIntensities = [];
+            let sumCleanMw = 0, sumTotalMw = 0, newestTs = '';
+            for (const [ts, rows] of tsMap) {
+                const pts = computeCarbonIntensity(rows.map(r => ({ ts: r.ts, psr_type: r.psr_type, mw: r.mw })));
+                if (pts.length) snapIntensities.push(pts[pts.length - 1].intensity);
+                sumTotalMw += rows.reduce((s, r) => s + (Number(r.mw) || 0), 0);
+                sumCleanMw += rows.filter(r => LOW_CARBON.has(r.psr_type)).reduce((s, r) => s + (Number(r.mw) || 0), 0);
+                if (ts > newestTs) newestTs = ts;
+            }
+            if (!snapIntensities.length) continue;
+            const avgIntensity = snapIntensities.reduce((s, v) => s + v, 0) / snapIntensities.length;
             zoneIntensity.set(zone, {
-                intensity: pts[pts.length - 1].intensity,
-                cleanPct: totalMw > 0 ? cleanMw / totalMw * 100 : null,
-                ts: latestTs,
+                intensity: avgIntensity,
+                cleanPct: sumTotalMw > 0 ? sumCleanMw / sumTotalMw * 100 : null,
+                ts: newestTs,
             });
         }
 
@@ -3624,8 +3636,9 @@ async function initStorageCountryGrid() {
     bindRange('storageCountryRange5yBtn', '5y');
     updateStorageCountryRangeBtnActive();
 
-    // Fetch latest fill_pct per country
+    // Fetch latest values per country
     let latestFill = {};
+    let latestRows = [];
     try {
         const latestDate = await supabase
             .from('gas_storage_country_daily')
@@ -3636,11 +3649,17 @@ async function initStorageCountryGrid() {
             const ld = latestDate.data[0].gas_day;
             const { data } = await supabase
                 .from('gas_storage_country_daily')
-                .select('country, full_pct')
-                .eq('gas_day', ld);
-            if (data) data.forEach(r => { latestFill[r.country] = Number(r.full_pct); });
+                .select('country, full_pct, gas_in_storage_twh, injection_twh, withdrawal_twh, gas_day')
+                .eq('gas_day', ld)
+                .order('full_pct', { ascending: false });
+            if (data) {
+                latestRows = data;
+                data.forEach(r => { latestFill[r.country] = Number(r.full_pct); });
+            }
         }
     } catch (_) {}
+
+    renderStorageCountryTable(latestRows);
 
     await renderStorageGeoMap(gridEl, latestFill).catch(e => {
         console.warn('Storage geo map failed, using tiles:', e);
@@ -3762,6 +3781,40 @@ function renderStorageTileGrid(container, latestFill) {
             else { chartCard?.style.setProperty('display', 'none'); }
         });
     });
+}
+
+function renderStorageCountryTable(rows) {
+    const section = document.getElementById('storageCountryTableSection');
+    const tbody = document.getElementById('storageCountryTableBody');
+    const dateEl = document.getElementById('storageCountryTableDate');
+    if (!tbody || !rows.length) return;
+    const fmt = v => v != null && Number.isFinite(Number(v)) ? Number(v).toFixed(1) : '—';
+    const fmtPct = v => v != null && Number.isFinite(Number(v)) ? Number(v).toFixed(1) + '%' : '—';
+    if (dateEl && rows[0]?.gas_day) dateEl.textContent = `As of ${rows[0].gas_day}`;
+    tbody.innerHTML = rows.map(r => {
+        const pct = Number(r.full_pct);
+        const bg = Number.isFinite(pct) ? mixColorRedToGreen(pct) : 'rgba(148,163,184,0.18)';
+        const inj = Number(r.injection_twh);
+        const wit = Number(r.withdrawal_twh);
+        const flowColor = Number.isFinite(inj) && Number.isFinite(wit)
+            ? (inj > wit ? 'var(--green)' : inj < wit ? 'var(--red)' : '')
+            : '';
+        return `<tr style="cursor:pointer;" onclick="
+            storageCountriesSelected.add('${r.country}');
+            document.getElementById('storageCountryChartCard').style.display='';
+            loadStorageCountryChart([...storageCountriesSelected], storageCountryRange);
+            renderStorageGeoMap(document.getElementById('storageCountryGrid'), ${JSON.stringify({[r.country]: pct})}).catch(()=>{});">
+            <td>
+                <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:${bg}; margin-right:6px; vertical-align:middle;"></span>
+                <strong>${escapeHtml(r.country)}</strong>
+            </td>
+            <td>${fmtPct(r.full_pct)}</td>
+            <td>${fmt(r.gas_in_storage_twh)}</td>
+            <td style="color:${flowColor}">${fmt(r.injection_twh)}</td>
+            <td style="color:${flowColor}">${fmt(r.withdrawal_twh)}</td>
+        </tr>`;
+    }).join('');
+    section?.style.setProperty('display', '');
 }
 
 function updateStorageCountryRangeBtnActive() {
