@@ -345,6 +345,7 @@
                     <button class="em-tab-btn" data-em-tab="demand">Demand</button>
                     <button class="em-tab-btn" data-em-tab="carbon">Carbon intensity</button>
                     <button class="em-tab-btn" data-em-tab="price-gen">Price vs renewables</button>
+                    <button class="em-tab-btn" data-em-tab="flows">Flows</button>
                     <button class="em-tab-btn" data-em-tab="chart-builder">Chart Builder</button>
                 </div>
 
@@ -954,6 +955,46 @@
                             <h3 id="priceGenChartTitle">EU — Price vs renewable share</h3>
                             <div class="chart-container">
                                 <canvas id="priceGenScatterChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Flows / Transmission tab -->
+                <div id="flowsEmTab" class="em-tab-pane">
+                    <div class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Cross-border electricity flows</h2>
+                            <div class="section-actions" style="gap:8px; display:flex; align-items:center; flex-wrap:wrap;">
+                                <button class="btn-secondary" id="flowsRangeDayBtn">Day</button>
+                                <button class="btn-secondary" id="flowsRangeWeekBtn">Week</button>
+                                <button class="btn-secondary" id="flowsRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="flowsRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="flowsRefreshBtn" title="Reload latest flow data from ENTSO-E" style="margin-left:8px;">↻ Refresh data</button>
+                            </div>
+                        </div>
+                        <p style="color:var(--text-secondary); font-size:0.85rem; margin:0 0 12px;">Net import/export position per country. Blue = net importer, orange = net exporter. Click a country to see its trading partner breakdown.</p>
+                        <div id="flowsStatus" style="color:var(--text-secondary); margin-bottom:8px;"></div>
+                        <div id="flowsMapContainer" class="energy-map-card"></div>
+                    </div>
+
+                    <div class="section" id="flowsCountrySection" style="display:none; margin-top:24px;">
+                        <div class="section-header">
+                            <h2 class="section-title" id="flowsCountryTitle">Country — Cross-border flows</h2>
+                            <button class="chart-export-btn" data-chart="flowsPartnerChart" title="Download">↓</button>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                            <div class="chart-card">
+                                <h3 style="font-size:0.9rem; margin:0 0 8px; color:var(--text-secondary);">Net flow by partner (GWh)</h3>
+                                <div class="chart-container" style="height:280px;">
+                                    <canvas id="flowsPartnerChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="chart-card">
+                                <h3 style="font-size:0.9rem; margin:0 0 8px; color:var(--text-secondary);">Net imports over time (GWh/day)</h3>
+                                <div class="chart-container" style="height:280px;">
+                                    <canvas id="flowsNetChart"></canvas>
+                                </div>
                             </div>
                         </div>
                     </div>

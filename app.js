@@ -53,6 +53,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             removeItem: () => {},
         };
 
+        window.__supabaseUrl = config.url;
+        window.__supabaseAnonKey = config.anonKey;
         supabase = window.supabase.createClient(config.url, config.anonKey, {
             auth: {
                 persistSession: false,
@@ -1777,6 +1779,13 @@ function switchElectricityMeterTab(target) {
             initPriceGenTabControls();
         }
         loadPriceGenTabData();
+    } else if (target === 'flows') {
+        document.getElementById('flowsEmTab')?.classList.add('active');
+        if (!flowsTabInited) {
+            flowsTabInited = true;
+            initFlowsTabControls();
+        }
+        loadFlowsMap(flowsRange);
     } else if (target === 'chart-builder') {
         document.getElementById('chartBuilderEmTab')?.classList.add('active');
         setSidebarCollapsed(true);
@@ -3568,7 +3577,7 @@ async function loadGasStorageChart(range) {
                 plugins: { legend: { display: false } },
                 scales: {
                     x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
-                    y: { min: 0, max: 100, ticks: { callback: v => `${v}%` } },
+                    y: { min: 0, ticks: { callback: v => `${v}%` } },
                 },
             },
         });
@@ -3882,7 +3891,7 @@ async function loadStorageCountryChart(countries, range) {
                     plugins: { legend: { display: datasets.length > 1 } },
                     scales: {
                         x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
-                        y: { min: 0, max: 100, ticks: { callback: v => `${v}%` } },
+                        y: { min: 0, ticks: { callback: v => `${v}%` } },
                     },
                 },
             });
@@ -3897,6 +3906,359 @@ async function loadStorageCountryChart(countries, range) {
         }
     })();
     try { return await storageCountryLoadInFlight; } finally { storageCountryLoadInFlight = null; }
+}
+
+// ─── Cross-border flows / transmission ───────────────────────────────────────
+
+let flowsTabInited = false;
+let flowsRange = 'week';
+let flowsSelectedZone = null;
+let flowsPartnerChart = null;
+let flowsNetChart = null;
+let flowsMapData = null; // cached for re-renders after zone click
+
+// Key EU border pairs (both directions for net calculation)
+const TRANSMISSION_PAIRS = [
+    {from:'FR',to:'DE'},{from:'DE',to:'FR'},{from:'FR',to:'BE'},{from:'BE',to:'FR'},
+    {from:'FR',to:'ES'},{from:'ES',to:'FR'},{from:'FR',to:'IT'},{from:'IT',to:'FR'},
+    {from:'FR',to:'GB'},{from:'GB',to:'FR'},{from:'DE',to:'AT'},{from:'AT',to:'DE'},
+    {from:'DE',to:'NL'},{from:'NL',to:'DE'},{from:'DE',to:'PL'},{from:'PL',to:'DE'},
+    {from:'DE',to:'CZ'},{from:'CZ',to:'DE'},{from:'DE',to:'DK1'},{from:'DK1',to:'DE'},
+    {from:'DE',to:'DK2'},{from:'DK2',to:'DE'},{from:'BE',to:'NL'},{from:'NL',to:'BE'},
+    {from:'BE',to:'GB'},{from:'GB',to:'BE'},{from:'NL',to:'GB'},{from:'GB',to:'NL'},
+    {from:'AT',to:'IT'},{from:'IT',to:'AT'},{from:'AT',to:'HU'},{from:'HU',to:'AT'},
+    {from:'AT',to:'CZ'},{from:'CZ',to:'AT'},{from:'AT',to:'SI'},{from:'SI',to:'AT'},
+    {from:'ES',to:'PT'},{from:'PT',to:'ES'},{from:'CZ',to:'SK'},{from:'SK',to:'CZ'},
+    {from:'SK',to:'HU'},{from:'HU',to:'SK'},{from:'HU',to:'RO'},{from:'RO',to:'HU'},
+    {from:'HU',to:'HR'},{from:'HR',to:'HU'},{from:'RO',to:'BG'},{from:'BG',to:'RO'},
+    {from:'BG',to:'GR'},{from:'GR',to:'BG'},{from:'IT',to:'SI'},{from:'SI',to:'IT'},
+    {from:'IT',to:'GR'},{from:'GR',to:'IT'},{from:'SI',to:'HR'},{from:'HR',to:'SI'},
+    {from:'PL',to:'CZ'},{from:'CZ',to:'PL'},{from:'PL',to:'SK'},{from:'SK',to:'PL'},
+    {from:'NO2',to:'NL'},{from:'NL',to:'NO2'},{from:'NO2',to:'DK1'},{from:'DK1',to:'NO2'},
+    {from:'SE3',to:'DK1'},{from:'DK1',to:'SE3'},{from:'SE4',to:'DK2'},{from:'DK2',to:'SE4'},
+    {from:'FI',to:'SE1'},{from:'SE1',to:'FI'},{from:'FI',to:'EE'},{from:'EE',to:'FI'},
+    {from:'EE',to:'LV'},{from:'LV',to:'EE'},{from:'LV',to:'LT'},{from:'LT',to:'LV'},
+    {from:'LT',to:'PL'},{from:'PL',to:'LT'},
+];
+
+function netFlowColor(netGwh, maxAbsGwh) {
+    if (!Number.isFinite(netGwh) || maxAbsGwh <= 0) return 'rgba(148,163,184,0.25)';
+    const t = Math.max(-1, Math.min(1, netGwh / maxAbsGwh));
+    if (t >= 0) {
+        // 0→grey, 1→blue
+        return `rgb(${Math.round(lerp(180,14,t))},${Math.round(lerp(180,165,t))},${Math.round(lerp(180,233,t))})`;
+    } else {
+        // -1→orange, 0→grey
+        const a = -t;
+        return `rgb(${Math.round(lerp(180,249,a))},${Math.round(lerp(180,115,a))},${Math.round(lerp(180,22,a))})`;
+    }
+}
+
+function initFlowsTabControls() {
+    const bindRange = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => { flowsRange = range; updateFlowsRangeBtnActive(); loadFlowsMap(range); });
+    };
+    bindRange('flowsRangeDayBtn', 'day');
+    bindRange('flowsRangeWeekBtn', 'week');
+    bindRange('flowsRangeMonthBtn', 'month');
+    bindRange('flowsRange6mBtn', '6m');
+    updateFlowsRangeBtnActive();
+
+    const refreshBtn = document.getElementById('flowsRefreshBtn');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = '1';
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '↻ Loading…';
+            const setStatus = msg => { const el = document.getElementById('flowsStatus'); if (el) el.textContent = msg; };
+            setStatus('Fetching latest flow data from ENTSO-E (this takes ~30s)…');
+            try {
+                const res = await fetch(`${window.__supabaseUrl}/functions/v1/entsoe_ingest_transmission_eu_latest`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${window.__supabaseAnonKey}` },
+                    body: JSON.stringify({ pairs: TRANSMISSION_PAIRS, concurrency: 8, delay_ms: 50 }),
+                });
+                const data = await res.json();
+                setStatus(data.ok ? `Loaded ${data.rows_upserted} flow readings. Errors: ${data.errors || 0}` : `Error: ${data.message || JSON.stringify(data)}`);
+                if (data.ok) loadFlowsMap(flowsRange);
+            } catch (e) {
+                setStatus(`Refresh failed: ${e.message}`);
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = '↻ Refresh data';
+            }
+        });
+    }
+}
+
+function updateFlowsRangeBtnActive() {
+    ['day','week','month','6m'].forEach(r => {
+        const key = r === 'day' ? 'Day' : r === 'week' ? 'Week' : r === 'month' ? 'Month' : '6m';
+        document.getElementById(`flowsRange${key}Btn`)?.classList.toggle('active', r === flowsRange);
+    });
+}
+
+function flowsRangeToSince(range) {
+    const d = new Date();
+    const days = { day: 1, week: 7, month: 30, '6m': 180 };
+    d.setDate(d.getDate() - (days[range] ?? 7));
+    return d.toISOString().slice(0, 10);
+}
+
+async function loadFlowsMap(range) {
+    const container = document.getElementById('flowsMapContainer');
+    const statusEl = document.getElementById('flowsStatus');
+    if (!container || !supabase) return;
+    const setStatus = msg => { if (statusEl) statusEl.textContent = msg || ''; };
+    setStatus('Loading flow data…');
+
+    try {
+        const since = flowsRangeToSince(range);
+        const useIntraday = range === 'day';
+        const table = useIntraday ? 'electricity_net_imports_mw' : 'electricity_net_imports_daily_mwh';
+        const valueCol = useIntraday ? 'net_mw' : 'net_mwh';
+
+        const rows = await gasFetchAllPaged(() =>
+            supabase.from(table)
+                .select(`zone_id,${valueCol}`)
+                .gte('ts', useIntraday ? new Date(Date.now() - 86400000).toISOString() : since)
+                .limit(50000)
+        , 1000, 200_000);
+
+        if (!rows.length) {
+            setStatus('No flow data yet — click "↻ Refresh data" to load from ENTSO-E.');
+            container.innerHTML = `<div class="chart-loading" style="padding:40px; text-align:center;">
+                No cross-border flow data.<br>Click <strong>↻ Refresh data</strong> above to load the latest from ENTSO-E.
+            </div>`;
+            return;
+        }
+
+        // Aggregate net position per country (sum over time window, aggregate bidding zones → country)
+        const countryNet = new Map();
+        for (const r of rows) {
+            const iso2 = zoneToCountryIso2(r.zone_id);
+            if (!iso2 || iso2 === 'EU') continue;
+            const v = Number(r[valueCol]);
+            if (!Number.isFinite(v)) continue;
+            countryNet.set(iso2, (countryNet.get(iso2) || 0) + v);
+        }
+
+        // Convert to average (divide by number of data points per zone)
+        const countryCount = new Map();
+        for (const r of rows) {
+            const iso2 = zoneToCountryIso2(r.zone_id);
+            if (!iso2 || iso2 === 'EU') continue;
+            countryCount.set(iso2, (countryCount.get(iso2) || 0) + 1);
+        }
+        const netByZone = {};
+        countryNet.forEach((sum, iso2) => {
+            const n = countryCount.get(iso2) || 1;
+            netByZone[iso2] = sum / n;
+        });
+
+        flowsMapData = netByZone;
+        setStatus('');
+        await renderFlowsGeoMap(container, netByZone);
+    } catch (err) {
+        console.error('Flows map failed:', err);
+        setStatus(`Failed: ${err.message}`);
+    }
+}
+
+async function renderFlowsGeoMap(container, netByZone) {
+    const countryGeo = await fetchEuropeCountriesGeoJsonOnce();
+    const width = 1400, height = 860, padding = 10;
+    const bounds = { minLon: -25, maxLon: 45, minLat: 34, maxLat: 72 };
+
+    const maxAbs = Math.max(...Object.values(netByZone).map(Math.abs).filter(Number.isFinite), 1);
+    const selected = String(flowsSelectedZone || '').toUpperCase();
+    const selNet = netByZone[selected];
+    const selLabel = selected || '—';
+
+    container.innerHTML = `
+        <div class="energy-map-shell">
+            <div class="energy-map-top">
+                <div class="energy-map-top-left">
+                    <div class="energy-map-title">Net import/export position</div>
+                    <div class="energy-map-subtitle">Click a country to see its trading partner breakdown</div>
+                </div>
+                <div class="energy-map-top-right">
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Selected</div>
+                        <div class="energy-map-chip-value">${escapeHtml(selLabel)}</div>
+                    </div>
+                    <div class="energy-map-chip">
+                        <div class="energy-map-chip-label">Net position</div>
+                        <div class="energy-map-chip-value">${Number.isFinite(selNet) ? (selNet > 0 ? '+' : '') + Math.round(selNet / 1000) + ' TWh' : '—'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="energy-map-legend energy-map-legend--premium">
+                <span style="color:#f97316;">Net exporter</span>
+                <div class="energy-map-legend-bar" style="background:linear-gradient(to right,#f97316,#94a3b8,#0ea5e9);"></div>
+                <span style="color:#0ea5e9;">Net importer</span>
+            </div>
+            <div class="energy-map-stage">
+                <svg class="energy-geo-map" viewBox="0 0 ${width} ${height}" role="img" aria-label="Flows map"></svg>
+            </div>
+        </div>`;
+
+    const svg = container.querySelector('svg.energy-geo-map');
+    if (!svg) return;
+
+    let tooltip = document.querySelector('.energy-map-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'energy-map-tooltip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+    }
+
+    const countryFeatures = Array.isArray(countryGeo?.features) ? countryGeo.features : [];
+    for (const f of countryFeatures) {
+        const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+        if (!iso2 || iso2 === 'RU' || iso2 === 'BY') continue;
+        const dataKey = iso2GeoToDataKey(iso2);
+        const val = netByZone[dataKey];
+        const fill = netFlowColor(val, maxAbs);
+        const geom = f.geometry;
+        if (!geom) continue;
+        const paths = [];
+        if (geom.type === 'Polygon') {
+            paths.push(polygonToPath(geom.coordinates[0], width, height, bounds, padding));
+        } else if (geom.type === 'MultiPolygon') {
+            for (const poly of geom.coordinates) if (poly?.[0]) paths.push(polygonToPath(poly[0], width, height, bounds, padding));
+        } else continue;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', paths.join(' '));
+        path.setAttribute('fill', fill);
+        path.style.cursor = Number.isFinite(val) ? 'pointer' : 'default';
+        if (dataKey === selected) path.classList.add('is-selected');
+
+        const gwh = Number.isFinite(val) ? Math.round(val / 1000) : null;
+        path.addEventListener('mouseenter', () => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = gwh != null
+                ? `${dataKey} — ${gwh > 0 ? 'net import ' : 'net export '} ${Math.abs(gwh)} TWh`
+                : `${dataKey} — no data`;
+        });
+        path.addEventListener('mousemove', e => { tooltip.style.left = `${e.clientX}px`; tooltip.style.top = `${e.clientY}px`; });
+        path.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        if (Number.isFinite(val)) {
+            path.addEventListener('click', () => {
+                flowsSelectedZone = dataKey;
+                renderFlowsGeoMap(container, netByZone).catch(() => {});
+                loadFlowsCountryCharts(dataKey, flowsRange);
+            });
+        }
+        svg.appendChild(path);
+    }
+}
+
+async function loadFlowsCountryCharts(zone, range) {
+    document.getElementById('flowsCountrySection')?.style.setProperty('display', '');
+    const titleEl = document.getElementById('flowsCountryTitle');
+    if (titleEl) titleEl.textContent = `${zone} — Cross-border flows`;
+
+    const since = flowsRangeToSince(range);
+    const useIntraday = range === 'day';
+
+    // Partner breakdown: sum net flow per trading partner
+    try {
+        const { data: rows } = await supabase
+            .from('electricity_crossborder_flows')
+            .select('ts, from_zone, to_zone, mw')
+            .or(`from_zone.eq.${zone},to_zone.eq.${zone}`)
+            .gte('ts', useIntraday ? new Date(Date.now() - 86400000).toISOString() : since + 'T00:00:00Z')
+            .limit(20000);
+
+        if (rows?.length) {
+            // Net per partner (positive = zone imports from partner)
+            const partnerNet = new Map();
+            for (const r of rows) {
+                if (r.to_zone === zone) {
+                    // import from r.from_zone
+                    partnerNet.set(r.from_zone, (partnerNet.get(r.from_zone) || 0) + Number(r.mw || 0));
+                } else {
+                    // export to r.to_zone
+                    partnerNet.set(r.to_zone, (partnerNet.get(r.to_zone) || 0) - Number(r.mw || 0));
+                }
+            }
+            const partners = [...partnerNet.entries()]
+                .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+                .slice(0, 12);
+            const labels = partners.map(([p]) => p);
+            const values = partners.map(([, v]) => Math.round(v / 1000)); // MWh → GWh
+            const colors = values.map(v => v > 0 ? '#0ea5e9' : '#f97316');
+
+            if (flowsPartnerChart) { try { flowsPartnerChart.destroy(); } catch (_) {} flowsPartnerChart = null; }
+            const canvas = document.getElementById('flowsPartnerChart');
+            if (canvas) {
+                flowsPartnerChart = new Chart(canvas.getContext('2d'), {
+                    type: 'bar',
+                    data: { labels, datasets: [{ label: 'Net flow (GWh)', data: values, backgroundColor: colors }] },
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { callback: v => `${v} GWh` }, grid: { display: false } },
+                            y: { ticks: { font: { size: 11 } } },
+                        },
+                    },
+                });
+            }
+        }
+    } catch (e) { console.error('Partner chart failed:', e); }
+
+    // Net imports over time for this zone
+    try {
+        const table = useIntraday ? 'electricity_net_imports_mw' : 'electricity_net_imports_daily_mwh';
+        const valueCol = useIntraday ? 'net_mw' : 'net_mwh';
+        const { data: timeRows } = await supabase
+            .from(table)
+            .select(`ts,${valueCol}`)
+            .eq('zone_id', zone)
+            .gte('ts', useIntraday ? new Date(Date.now() - 86400000).toISOString() : since + 'T00:00:00Z')
+            .order('ts', { ascending: true })
+            .limit(5000);
+
+        if (timeRows?.length) {
+            const labels = timeRows.map(r => {
+                const d = new Date(r.ts);
+                return useIntraday ? d.toLocaleString() : d.toLocaleDateString();
+            });
+            const values = timeRows.map(r => r[valueCol] != null ? Math.round(Number(r[valueCol]) / 1000) : null);
+            const posColor = 'rgba(14,165,233,0.8)', negColor = 'rgba(249,115,22,0.8)';
+
+            if (flowsNetChart) { try { flowsNetChart.destroy(); } catch (_) {} flowsNetChart = null; }
+            const canvas = document.getElementById('flowsNetChart');
+            if (canvas) {
+                flowsNetChart = new Chart(canvas.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Net imports (GWh/day)',
+                            data: values,
+                            backgroundColor: values.map(v => v != null && v >= 0 ? posColor : negColor),
+                        }],
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { maxRotation: 0, maxTicksLimit: 8 }, grid: { display: false } },
+                            y: { ticks: { callback: v => `${v} GWh` } },
+                        },
+                    },
+                });
+            }
+        }
+    } catch (e) { console.error('Net time chart failed:', e); }
 }
 
 function initChartBuilderControls() {
