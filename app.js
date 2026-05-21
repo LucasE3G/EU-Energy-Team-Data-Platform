@@ -2383,7 +2383,7 @@ async function loadLoadEuChart(range) {
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
             const since = euRangeToSinceIso(range);
-            const useRaw = range === 'day' || range === 'week';
+            const useRaw = range === 'day';
             const useWeekly = range === '5y';
             const fmtVal = useRaw ? fmtMwShort : fmtGWh;
             const unit = useRaw ? 'MW' : 'GWh';
@@ -2904,7 +2904,7 @@ async function loadCarbonCountryMap() {
         const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
         const snapRows = await gasFetchAllPaged(() =>
             supabase.from('electricity_generation_snapshots')
-                .select('ts, zone_id, psr_type, generation_mw')
+                .select('ts, zone_id, psr_type, mw')
                 .eq('source', 'entsoe')
                 .neq('zone_id', 'EU')
                 .gte('ts', since)
@@ -2926,11 +2926,11 @@ async function loadCarbonCountryMap() {
         const LOW_CARBON = new Set(['B14','B18','B19','B16','B10','B11','B12','B09','B13','B15','B01','B17']);
         for (const [zone, latestTs] of latestByZone) {
             const zoneRows = snapRows.filter(r => String(r.zone_id).toUpperCase() === zone && r.ts === latestTs);
-            const mapped = zoneRows.map(r => ({ ts: r.ts, psr_type: r.psr_type, mw: r.generation_mw }));
+            const mapped = zoneRows.map(r => ({ ts: r.ts, psr_type: r.psr_type, mw: r.mw }));
             const pts = computeCarbonIntensity(mapped);
             if (!pts.length) continue;
-            const totalMw = zoneRows.reduce((s, r) => s + (Number(r.generation_mw) || 0), 0);
-            const cleanMw = zoneRows.filter(r => LOW_CARBON.has(r.psr_type)).reduce((s, r) => s + (Number(r.generation_mw) || 0), 0);
+            const totalMw = zoneRows.reduce((s, r) => s + (Number(r.mw) || 0), 0);
+            const cleanMw = zoneRows.filter(r => LOW_CARBON.has(r.psr_type)).reduce((s, r) => s + (Number(r.mw) || 0), 0);
             zoneIntensity.set(zone, {
                 intensity: pts[pts.length - 1].intensity,
                 cleanPct: totalMw > 0 ? cleanMw / totalMw * 100 : null,
@@ -3032,13 +3032,12 @@ async function loadCarbonZoneChart(zone, range) {
             } else {
                 rows = await gasFetchAllPaged(() =>
                     supabase.from('electricity_generation_snapshots')
-                        .select('ts, psr_type, generation_mw')
+                        .select('ts, psr_type, mw')
                         .eq('zone_id', zone)
                         .eq('source', 'entsoe')
                         .gte('ts', since)
                         .order('ts', { ascending: true })
                 , 1000, 100_000);
-                rows = rows.map(r => ({ ts: r.ts, psr_type: r.psr_type, mw: r.generation_mw }));
             }
 
             const points = computeCarbonIntensity(rows);
@@ -3299,7 +3298,7 @@ async function loadGasStorageTab() {
         if (!gasStorageTabInited) {
             gasStorageTabInited = true;
             initGasStorageControls();
-            initStorageCountryGrid();
+            await initStorageCountryGrid();
         }
         await loadGasStorageChart(gasStorageRange);
     })();
@@ -3439,7 +3438,15 @@ async function loadGasStorageChart(range) {
 
 // ─── Gas storage by country ──────────────────────────────────────────────────
 
-function initStorageCountryGrid() {
+const STORAGE_COUNTRY_COLORS = [
+    '#0ea5e9','#f59e0b','#10b981','#8b5cf6','#ef4444',
+    '#06b6d4','#f97316','#6366f1','#84cc16','#ec4899',
+    '#14b8a6','#a855f7','#eab308','#22c55e','#3b82f6',
+    '#d946ef','#78716c','#f43f5e','#0891b2','#65a30d',
+];
+let storageCountriesSelected = new Set();
+
+async function initStorageCountryGrid() {
     if (storageCountryGridInited) return;
     storageCountryGridInited = true;
     const gridEl = document.getElementById('storageCountryGrid');
@@ -3452,7 +3459,7 @@ function initStorageCountryGrid() {
         btn.addEventListener('click', () => {
             storageCountryRange = range;
             updateStorageCountryRangeBtnActive();
-            if (storageCountrySelected) loadStorageCountryChart(storageCountrySelected, range);
+            if (storageCountriesSelected.size) loadStorageCountryChart([...storageCountriesSelected], range);
         });
     };
     bindRange('storageCountryRange3mBtn', '3m');
@@ -3462,20 +3469,58 @@ function initStorageCountryGrid() {
     bindRange('storageCountryRange5yBtn', '5y');
     updateStorageCountryRangeBtnActive();
 
-    gridEl.innerHTML = GAS_STORAGE_COUNTRIES.map(c => `
-        <button class="cb-country-card" data-storage-country="${escapeHtml(c)}" style="min-width:48px; text-align:center; padding:6px 10px;">
-            ${escapeHtml(c)}
-        </button>
-    `).join('');
+    // Fetch latest fill_pct per country for tile coloring
+    let latestFill = {};
+    try {
+        const latestDate = await supabase
+            .from('gas_storage_country_daily')
+            .select('gas_day')
+            .order('gas_day', { ascending: false })
+            .limit(1);
+        if (latestDate.data?.length) {
+            const ld = latestDate.data[0].gas_day;
+            const { data } = await supabase
+                .from('gas_storage_country_daily')
+                .select('country, full_pct')
+                .eq('gas_day', ld);
+            if (data) data.forEach(r => { latestFill[r.country] = r.full_pct; });
+        }
+    } catch (_) {}
 
-    gridEl.querySelectorAll('[data-storage-country]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const c = btn.getAttribute('data-storage-country');
-            storageCountrySelected = c;
-            gridEl.querySelectorAll('[data-storage-country]').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById('storageCountryChartCard')?.style.setProperty('display', '');
-            loadStorageCountryChart(c, storageCountryRange);
+    gridEl.innerHTML = `<div class="energy-map-legend" style="margin-bottom:8px;">
+        <span>Empty</span>
+        <div class="energy-map-legend-bar" style="background: linear-gradient(to right, #ef4444, #f59e0b, #10b981);"></div>
+        <span>Full</span>
+    </div><div class="energy-map-grid">` +
+    GAS_STORAGE_COUNTRIES.map(c => {
+        const pct = latestFill[c];
+        const bg = Number.isFinite(pct) ? mixColorRedToGreen(pct) : 'rgba(148,163,184,0.25)';
+        const textColor = Number.isFinite(pct) ? textColorForBg(pct) : 'rgba(15,23,42,0.8)';
+        const val = Number.isFinite(pct) ? `${pct.toFixed(0)}%` : '—';
+        return `<div class="energy-map-tile" data-storage-country="${escapeHtml(c)}" style="background:${bg}; color:${textColor}">
+            <div class="energy-map-tile-code">${escapeHtml(c)}</div>
+            <div class="energy-map-tile-value">${val}</div>
+        </div>`;
+    }).join('') + `</div>`;
+
+    gridEl.querySelectorAll('.energy-map-tile[data-storage-country]').forEach(el => {
+        el.addEventListener('click', () => {
+            const c = el.getAttribute('data-storage-country');
+            if (!c) return;
+            if (storageCountriesSelected.has(c)) {
+                storageCountriesSelected.delete(c);
+                el.classList.remove('active');
+            } else {
+                storageCountriesSelected.add(c);
+                el.classList.add('active');
+            }
+            const chartCard = document.getElementById('storageCountryChartCard');
+            if (storageCountriesSelected.size) {
+                chartCard?.style.setProperty('display', '');
+                loadStorageCountryChart([...storageCountriesSelected], storageCountryRange);
+            } else {
+                chartCard?.style.setProperty('display', 'none');
+            }
         });
     });
 }
@@ -3487,7 +3532,7 @@ function updateStorageCountryRangeBtnActive() {
     });
 }
 
-async function loadStorageCountryChart(country, range) {
+async function loadStorageCountryChart(countries, range) {
     if (storageCountryLoadInFlight) return await storageCountryLoadInFlight;
     storageCountryLoadInFlight = (async () => {
         const statusEl = document.getElementById('storageCountryStatus');
@@ -3499,48 +3544,60 @@ async function loadStorageCountryChart(country, range) {
         try {
             if (!supabase) return;
             const since = gasStorageRangeToSince(range);
-            setStatus(`Loading ${country} storage (${range})…`);
+            setStatus(`Loading storage (${range})…`);
 
-            const rows = await gasFetchAllPaged(() =>
-                supabase.from('gas_storage_country_daily')
-                    .select('gas_day, full_pct, gas_in_storage_twh, injection_twh, withdrawal_twh')
-                    .eq('country', country)
-                    .gte('gas_day', since)
-                    .order('gas_day', { ascending: true })
-            , 1000, 10_000);
+            // Fetch all selected countries in parallel
+            const countryDatasets = await Promise.all(countries.map(async (country, i) => {
+                const rows = await gasFetchAllPaged(() =>
+                    supabase.from('gas_storage_country_daily')
+                        .select('gas_day, full_pct')
+                        .eq('country', country)
+                        .gte('gas_day', since)
+                        .order('gas_day', { ascending: true })
+                , 1000, 10_000);
+                return { country, rows };
+            }));
 
-            if (!rows.length) {
-                setStatus(`No storage data for ${country}. Run backfill_gas_storage_country.py.`);
-                return;
-            }
+            // Build unified label set from all dates
+            const allDates = new Set();
+            countryDatasets.forEach(({ rows }) => rows.forEach(r => allDates.add(r.gas_day)));
+            const labels = [...allDates].sort();
 
-            const labels = rows.map(r => r.gas_day);
-            const fillData = rows.map(r => r.full_pct != null ? Number(Number(r.full_pct).toFixed(2)) : null);
+            const datasets = countryDatasets
+                .filter(d => d.rows.length > 0)
+                .map(({ country, rows }, i) => {
+                    const byDate = Object.fromEntries(rows.map(r => [r.gas_day, r.full_pct]));
+                    const color = STORAGE_COUNTRY_COLORS[i % STORAGE_COUNTRY_COLORS.length];
+                    return {
+                        label: country,
+                        data: labels.map(d => byDate[d] != null ? Number(Number(byDate[d]).toFixed(2)) : null),
+                        borderColor: color,
+                        backgroundColor: 'transparent',
+                        fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2,
+                        spanGaps: true,
+                    };
+                });
+
+            if (!datasets.length) { setStatus('No storage data for selected countries.'); return; }
 
             if (storageCountryChart) { try { storageCountryChart.destroy(); } catch (_) {} storageCountryChart = null; }
             storageCountryChart = new Chart(canvas.getContext('2d'), {
                 type: 'line',
-                data: {
-                    labels,
-                    datasets: [{
-                        label: `${country} fill level (%)`,
-                        data: fillData,
-                        borderColor: '#0ea5e9',
-                        backgroundColor: 'rgba(14,165,233,0.12)',
-                        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
-                    }],
-                },
+                data: { labels, datasets },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: datasets.length > 1 } },
                     scales: {
                         x: { type: 'category', ticks: { maxRotation: 0, maxTicksLimit: 10 }, grid: { display: false } },
                         y: { min: 0, max: 100, ticks: { callback: v => `${v}%` } },
                     },
                 },
             });
-            if (titleEl) titleEl.textContent = `${country} — Gas storage fill level (%) — ${range}`;
+            const title = countries.length === 1
+                ? `${countries[0]} — Gas storage fill level (%) — ${range}`
+                : `Gas storage fill level (%) — ${range}`;
+            if (titleEl) titleEl.textContent = title;
             setStatus('');
         } catch (err) {
             console.error('Storage country chart failed:', err);

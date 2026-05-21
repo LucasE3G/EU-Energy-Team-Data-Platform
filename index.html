@@ -1283,19 +1283,21 @@
                     <div class="section" style="margin-top: 24px;">
                         <div class="section-header">
                             <h2 class="section-title">Storage by country</h2>
-                            <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                                <button class="btn-secondary" id="storageCountryRange3mBtn">3m</button>
-                                <button class="btn-secondary" id="storageCountryRange6mBtn">6m</button>
-                                <button class="btn-secondary" id="storageCountryRange1yBtn">1y</button>
-                                <button class="btn-secondary" id="storageCountryRange2yBtn">2y</button>
-                                <button class="btn-secondary" id="storageCountryRange5yBtn">5y</button>
-                                <button class="chart-export-btn" data-chart="storageCountryChart" title="Download chart as PNG">↓</button>
-                            </div>
                         </div>
                         <div id="storageCountryStatus" style="color: var(--text-secondary); margin-bottom: 8px;"></div>
-                        <div id="storageCountryGrid" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"></div>
+                        <div id="storageCountryGrid" style="margin-bottom:12px;"></div>
                         <div class="chart-card" id="storageCountryChartCard" style="display:none;">
-                            <h3 id="storageCountryChartTitle">Country — Gas storage fill level (%)</h3>
+                            <div class="section-header" style="margin-bottom:8px;">
+                                <h3 id="storageCountryChartTitle" style="margin:0;">Country — Gas storage fill level (%)</h3>
+                                <div class="section-actions" style="gap:6px; display:flex; align-items:center;">
+                                    <button class="btn-secondary" id="storageCountryRange3mBtn">3m</button>
+                                    <button class="btn-secondary" id="storageCountryRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="storageCountryRange1yBtn">1y</button>
+                                    <button class="btn-secondary" id="storageCountryRange2yBtn">2y</button>
+                                    <button class="btn-secondary" id="storageCountryRange5yBtn">5y</button>
+                                    <button class="chart-export-btn" data-chart="storageCountryChart" title="Download chart as PNG">↓</button>
+                                </div>
+                            </div>
                             <div class="chart-container">
                                 <canvas id="storageCountryChart"></canvas>
                             </div>
