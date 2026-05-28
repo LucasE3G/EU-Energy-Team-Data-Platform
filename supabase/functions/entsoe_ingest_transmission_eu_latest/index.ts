@@ -157,18 +157,35 @@ serve(async (req) => {
     const perRequestDelayMs = Number(body?.delay_ms ?? 100);
     const concurrency = Math.max(1, Math.min(8, Number(body?.concurrency ?? 6)));
 
-    // For "latest" we don't need all-to-all pairs (explodes). Start with a curated neighbor list
-    // and allow override later. For now: compute pairs from provided `pairs` if present.
-    const pairs: Array<{ from: string; to: string }> = Array.isArray(body?.pairs) ? body.pairs : [];
-    const work = pairs.length
-      ? pairs.map((p) => ({ from: String(p.from).toUpperCase(), to: String(p.to).toUpperCase() }))
-      : [];
+    // Default neighbor pairs used when no explicit pairs are provided (e.g. from cron).
+    const DEFAULT_PAIRS: Array<{ from: string; to: string }> = [
+      {from:"FR",to:"DE"},{from:"DE",to:"FR"},{from:"FR",to:"BE"},{from:"BE",to:"FR"},
+      {from:"FR",to:"ES"},{from:"ES",to:"FR"},{from:"FR",to:"IT"},{from:"IT",to:"FR"},
+      {from:"FR",to:"GB"},{from:"GB",to:"FR"},{from:"DE",to:"AT"},{from:"AT",to:"DE"},
+      {from:"DE",to:"NL"},{from:"NL",to:"DE"},{from:"DE",to:"PL"},{from:"PL",to:"DE"},
+      {from:"DE",to:"CZ"},{from:"CZ",to:"DE"},{from:"DE",to:"DK1"},{from:"DK1",to:"DE"},
+      {from:"DE",to:"DK2"},{from:"DK2",to:"DE"},{from:"BE",to:"NL"},{from:"NL",to:"BE"},
+      {from:"BE",to:"GB"},{from:"GB",to:"BE"},{from:"NL",to:"GB"},{from:"GB",to:"NL"},
+      {from:"AT",to:"IT"},{from:"IT",to:"AT"},{from:"AT",to:"HU"},{from:"HU",to:"AT"},
+      {from:"AT",to:"CZ"},{from:"CZ",to:"AT"},{from:"AT",to:"SI"},{from:"SI",to:"AT"},
+      {from:"ES",to:"PT"},{from:"PT",to:"ES"},{from:"CZ",to:"SK"},{from:"SK",to:"CZ"},
+      {from:"SK",to:"HU"},{from:"HU",to:"SK"},{from:"HU",to:"RO"},{from:"RO",to:"HU"},
+      {from:"HU",to:"HR"},{from:"HR",to:"HU"},{from:"RO",to:"BG"},{from:"BG",to:"RO"},
+      {from:"BG",to:"GR"},{from:"GR",to:"BG"},{from:"IT",to:"SI"},{from:"SI",to:"IT"},
+      {from:"IT",to:"GR"},{from:"GR",to:"IT"},{from:"SI",to:"HR"},{from:"HR",to:"SI"},
+      {from:"PL",to:"CZ"},{from:"CZ",to:"PL"},{from:"PL",to:"SK"},{from:"SK",to:"PL"},
+      {from:"NO2",to:"NL"},{from:"NL",to:"NO2"},{from:"NO2",to:"DK1"},{from:"DK1",to:"NO2"},
+      {from:"SE3",to:"DK1"},{from:"DK1",to:"SE3"},{from:"SE4",to:"DK2"},{from:"DK2",to:"SE4"},
+      {from:"FI",to:"SE1"},{from:"SE1",to:"FI"},{from:"FI",to:"EE"},{from:"EE",to:"FI"},
+      {from:"EE",to:"LV"},{from:"LV",to:"EE"},{from:"LV",to:"LT"},{from:"LT",to:"LV"},
+      {from:"LT",to:"PL"},{from:"PL",to:"LT"},
+    ];
+
+    const pairs: Array<{ from: string; to: string }> = Array.isArray(body?.pairs) ? body.pairs : DEFAULT_PAIRS;
+    const work = pairs.map((p) => ({ from: String(p.from).toUpperCase(), to: String(p.to).toUpperCase() }));
 
     if (!work.length) {
-      return json({
-        ok: false,
-        message: "No pairs provided. Pass {pairs:[{from:'FR',to:'DE'},...]}",
-      }, 400);
+      return json({ ok: false, message: "No pairs to process." }, 400);
     }
 
     const supabase = createClient(supabaseUrl, serviceRole, {

@@ -1652,6 +1652,8 @@ let elecSelectedSource = null;
 // Demand (load) tab
 let loadEuChart = null;
 let loadEuRange = '1y';
+let loadEuMode = 'intraday'; // 'intraday' | 'aggregate'
+let loadEuAggRange = 'month'; // 'day' | 'week' | 'month' | 'year'
 let loadEuChartLoadInFlight = null;
 
 let loadZoneChart = null;
@@ -1913,6 +1915,24 @@ function initElectricityTabControls() {
     }
 }
 
+function setLoadEuMode(mode) {
+    loadEuMode = mode;
+    document.getElementById('loadEuIntradayBtns')?.style.setProperty('display', mode === 'intraday' ? '' : 'none');
+    document.getElementById('loadEuAggregateBtns')?.style.setProperty('display', mode === 'aggregate' ? '' : 'none');
+    document.getElementById('loadEuModeIntradayBtn')?.classList.toggle('active', mode === 'intraday');
+    document.getElementById('loadEuModeAggBtn')?.classList.toggle('active', mode === 'aggregate');
+    if (mode === 'aggregate') updateLoadEuAggRangeButtonActive();
+    else updateLoadEuRangeButtonActive();
+    loadLoadEuChart(mode === 'aggregate' ? loadEuAggRange : loadEuRange);
+}
+
+function updateLoadEuAggRangeButtonActive() {
+    ['day','week','month','year'].forEach(r => {
+        const key = r.charAt(0).toUpperCase() + r.slice(1);
+        document.getElementById(`loadEuAgg${key}Btn`)?.classList.toggle('active', r === loadEuAggRange);
+    });
+}
+
 function initLoadTabControls() {
     const bindEu = (id, range) => {
         const btn = document.getElementById(id);
@@ -1930,6 +1950,33 @@ function initLoadTabControls() {
     bindEu('loadEuRange6mBtn', '6m');
     bindEu('loadEuRange1yBtn', '1y');
     bindEu('loadEuRange5yBtn', '5y');
+
+    const bindAgg = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+            loadEuAggRange = range;
+            updateLoadEuAggRangeButtonActive();
+            loadLoadEuChart(range);
+        });
+    };
+    bindAgg('loadEuAggDayBtn', 'day');
+    bindAgg('loadEuAggWeekBtn', 'week');
+    bindAgg('loadEuAggMonthBtn', 'month');
+    bindAgg('loadEuAggYearBtn', 'year');
+
+    const modeIntraday = document.getElementById('loadEuModeIntradayBtn');
+    if (modeIntraday && !modeIntraday.dataset.bound) {
+        modeIntraday.dataset.bound = '1';
+        modeIntraday.addEventListener('click', () => setLoadEuMode('intraday'));
+    }
+    const modeAgg = document.getElementById('loadEuModeAggBtn');
+    if (modeAgg && !modeAgg.dataset.bound) {
+        modeAgg.dataset.bound = '1';
+        modeAgg.addEventListener('click', () => setLoadEuMode('aggregate'));
+    }
+    setLoadEuMode(loadEuMode);
 
     const bindZone = (id, range) => {
         const btn = document.getElementById(id);
@@ -2391,6 +2438,12 @@ async function loadLoadEuChart(range) {
 
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
+
+            if (loadEuMode === 'aggregate') {
+                await loadLoadEuChartAggregate(range, canvas, titleEl, setStatus);
+                return;
+            }
+
             const since = euRangeToSinceIso(range);
             const useRaw = range === 'day' || range === 'week';
             const useWeekly = range === '5y';
@@ -2491,6 +2544,95 @@ async function loadLoadEuChart(range) {
     })();
     try { return await loadEuChartLoadInFlight; }
     finally { loadEuChartLoadInFlight = null; }
+}
+
+async function loadLoadEuChartAggregate(period, canvas, titleEl, setStatus) {
+    setStatus(`Loading EU demand aggregate (${period})…`);
+    // Fetch daily data — we'll group in JS for week/month/year
+    const since = (() => {
+        const d = new Date();
+        if (period === 'day') d.setFullYear(d.getFullYear() - 1);
+        else if (period === 'week') d.setFullYear(d.getFullYear() - 3);
+        else d.setFullYear(d.getFullYear() - 10);
+        return d.toISOString().slice(0, 10);
+    })();
+
+    const { data, error } = await supabase
+        .from('electricity_eu_load_daily_mwh')
+        .select('ts, consumption_mwh')
+        .gte('ts', since)
+        .order('ts', { ascending: true })
+        .limit(4000);
+    if (error) throw new Error(error.message);
+
+    const rows = (Array.isArray(data) ? data : []).filter(r => r.ts && Number.isFinite(Number(r.consumption_mwh)));
+
+    // Group rows by period key
+    const grouped = new Map();
+    for (const r of rows) {
+        const d = new Date(r.ts);
+        let key;
+        if (period === 'day') {
+            key = r.ts.slice(0, 10);
+        } else if (period === 'week') {
+            // ISO week key: YYYY-Www
+            const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+            const w = Math.ceil(((d - jan4) / 86400000 + jan4.getUTCDay() + 1) / 7);
+            key = `${d.getUTCFullYear()}-W${String(w).padStart(2, '0')}`;
+        } else if (period === 'month') {
+            key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        } else {
+            key = String(d.getUTCFullYear());
+        }
+        const prev = grouped.get(key) || 0;
+        grouped.set(key, prev + Number(r.consumption_mwh));
+    }
+
+    const keys = [...grouped.keys()].sort();
+    const labels = keys.map(k => {
+        if (period === 'day') return new Date(k).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        if (period === 'week') return k;
+        if (period === 'month') {
+            const [yr, mo] = k.split('-');
+            return new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+        }
+        return k;
+    });
+    const values = keys.map(k => grouped.get(k) / 1000); // MWh → GWh
+
+    const unit = 'GWh';
+    if (titleEl) titleEl.textContent = `EU — Total electricity demand per ${period} (${unit})`;
+    setStatus('');
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+    if (loadEuChart) { try { loadEuChart.destroy(); } catch (_) {} loadEuChart = null; }
+
+    loadEuChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: `EU demand per ${period} (${unit})`,
+                data: values,
+                backgroundColor: 'rgba(14,165,233,0.7)',
+                borderColor: '#0ea5e9',
+                borderWidth: 1,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+            scales: {
+                x: { type: 'category', ticks: { maxRotation: 45 }, grid: { display: false } },
+                y: { beginAtZero: false, ticks: { callback: v => fmtGWh(Number(v)) } },
+            },
+        },
+    });
 }
 
 async function loadLoadZoneChart(zone, range, source = null) {
@@ -3621,6 +3763,7 @@ const STORAGE_COUNTRY_COLORS = [
     '#d946ef','#78716c','#f43f5e','#0891b2','#65a30d',
 ];
 let storageCountriesSelected = new Set();
+let storageLatestFillCache = {};
 
 async function initStorageCountryGrid() {
     if (storageCountryGridInited) return;
@@ -3664,6 +3807,7 @@ async function initStorageCountryGrid() {
             if (data) {
                 latestRows = data;
                 data.forEach(r => { latestFill[r.country] = Number(r.full_pct); });
+                storageLatestFillCache = latestFill;
             }
         }
     } catch (_) {}
@@ -3808,14 +3952,11 @@ function renderStorageCountryTable(rows) {
         const flowColor = Number.isFinite(inj) && Number.isFinite(wit)
             ? (inj > wit ? 'var(--green)' : inj < wit ? 'var(--red)' : '')
             : '';
-        return `<tr style="cursor:pointer;" onclick="
-            storageCountriesSelected.add('${r.country}');
-            document.getElementById('storageCountryChartCard').style.display='';
-            loadStorageCountryChart([...storageCountriesSelected], storageCountryRange);
-            renderStorageGeoMap(document.getElementById('storageCountryGrid'), ${JSON.stringify({[r.country]: pct})}).catch(()=>{});">
+        const countryName = CB_COUNTRY_NAMES[r.country] || r.country;
+        return `<tr style="cursor:pointer;" data-country="${escapeHtml(r.country)}">
             <td>
                 <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:${bg}; margin-right:6px; vertical-align:middle;"></span>
-                <strong>${escapeHtml(r.country)}</strong>
+                <strong>${escapeHtml(countryName)}</strong>
             </td>
             <td>${fmtPct(r.full_pct)}</td>
             <td>${fmt(r.gas_in_storage_twh)}</td>
@@ -3823,6 +3964,15 @@ function renderStorageCountryTable(rows) {
             <td style="color:${flowColor}">${fmt(r.withdrawal_twh)}</td>
         </tr>`;
     }).join('');
+    tbody.querySelectorAll('tr[data-country]').forEach(tr => {
+        tr.addEventListener('click', () => {
+            const country = tr.getAttribute('data-country');
+            storageCountriesSelected.add(country);
+            document.getElementById('storageCountryChartCard').style.display = '';
+            loadStorageCountryChart([...storageCountriesSelected], storageCountryRange);
+            renderStorageGeoMap(document.getElementById('storageCountryGrid'), storageLatestFillCache).catch(() => {});
+        });
+    });
     section?.style.setProperty('display', '');
 }
 
@@ -6448,6 +6598,7 @@ let gasSelectedCountry = null;
 let gasEuChart = null;
 let gasCountryChart = null;
 let gasDemandCbChart = null;
+let gasDemandCbChartInFlight = null;
 let gasDemandCbRange = 'month';
 let gasDemandCbChartType = 'line'; // 'line' | 'area'
 let gasDemandCbSelected = []; // [{ id, dbCode, displayCode, metric, color, visible }]
@@ -7259,9 +7410,12 @@ function initGasDemandChartBuilderUI() {
 
     gasDemandCbRecolorAndRenderSelected();
     gasDemandCbRenderCountriesGrid();
+    loadGasDemandChartBuilderChart();
 }
 
 async function loadGasDemandChartBuilderChart() {
+    if (gasDemandCbChartInFlight) return await gasDemandCbChartInFlight;
+    gasDemandCbChartInFlight = (async () => {
     const statusEl = document.getElementById('gasCbStatus');
     const canvas = document.getElementById('gasDemandChartBuilderCanvas');
     const titleEl = document.getElementById('gasCbChartTitle');
@@ -7402,6 +7556,8 @@ async function loadGasDemandChartBuilderChart() {
         console.error('Gas demand chart builder failed:', err);
         setStatus(`Failed: ${err.message || String(err)}`);
     }
+    })();
+    try { return await gasDemandCbChartInFlight; } finally { gasDemandCbChartInFlight = null; }
 }
 
 async function fetchTtfPrices(fromDate) {

@@ -711,12 +711,23 @@
                         <div class="section-header">
                             <h2 class="section-title">EU + EEA total electricity demand (ENTSO‑E)</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                                <button class="btn-secondary" id="loadEuRangeDayBtn">Day</button>
-                                <button class="btn-secondary" id="loadEuRangeWeekBtn">Week</button>
-                                <button class="btn-secondary" id="loadEuRangeMonthBtn">Month</button>
-                                <button class="btn-secondary" id="loadEuRange6mBtn">6m</button>
-                                <button class="btn-secondary" id="loadEuRange1yBtn">1y</button>
-                                <button class="btn-secondary" id="loadEuRange5yBtn">5y</button>
+                                <span id="loadEuIntradayBtns">
+                                    <button class="btn-secondary" id="loadEuRangeDayBtn">Day</button>
+                                    <button class="btn-secondary" id="loadEuRangeWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="loadEuRangeMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="loadEuRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="loadEuRange1yBtn">1y</button>
+                                    <button class="btn-secondary" id="loadEuRange5yBtn">5y</button>
+                                </span>
+                                <span id="loadEuAggregateBtns" style="display:none;">
+                                    <button class="btn-secondary" id="loadEuAggDayBtn">Day</button>
+                                    <button class="btn-secondary" id="loadEuAggWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="loadEuAggMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="loadEuAggYearBtn">Year</button>
+                                </span>
+                                <span style="color:var(--text-secondary); margin:0 2px;">|</span>
+                                <button class="btn-secondary" id="loadEuModeIntradayBtn" title="Show time series">Intraday</button>
+                                <button class="btn-secondary" id="loadEuModeAggBtn" title="Show aggregated totals">Aggregate</button>
                                 <button class="chart-info-btn" data-chart="loadEuChart" title="Methodology &amp; data source">ⓘ</button>
                                 <button class="chart-export-btn" data-chart="loadEuChart" title="Download chart as PNG">↓</button>
                             </div>
