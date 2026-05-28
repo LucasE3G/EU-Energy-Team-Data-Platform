@@ -8,21 +8,62 @@ function json(data: unknown, status = 200) {
   });
 }
 
-// Yahoo Finance chart API — no key required.
-// TTF=F is the front-month TTF Natural Gas futures contract, priced in EUR/MWh.
-// We fetch daily OHLCV and upsert each trading day as a price record.
-async function fetchTtfOhlcv(range: string): Promise<{ ts: string; open: number | null; high: number | null; low: number | null; close: number | null }[]> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/TTF%3DF?interval=1d&range=${encodeURIComponent(range)}`;
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+// Yahoo Finance requires a session cookie + crumb for authenticated API calls.
+// Without this, requests from server IPs get 401 or are rate-limited.
+async function getYahooCrumb(): Promise<{ cookie: string; crumb: string }> {
+  const cookieRes = await fetch("https://fc.yahoo.com", {
+    headers: { "user-agent": BROWSER_UA, "accept": "text/html" },
+    redirect: "follow",
+  });
+  const rawCookie = cookieRes.headers.get("set-cookie") ?? "";
+  const cookie = rawCookie.split(";")[0];
+  if (!cookie) throw new Error("Failed to obtain Yahoo Finance session cookie from fc.yahoo.com");
+
+  const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+    headers: {
+      "user-agent": BROWSER_UA,
+      "cookie": cookie,
+      "accept": "text/plain,*/*",
+    },
+  });
+  if (!crumbRes.ok) {
+    throw new Error(`Yahoo crumb endpoint returned HTTP ${crumbRes.status}`);
+  }
+  const crumb = (await crumbRes.text()).trim();
+  if (!crumb) throw new Error("Yahoo Finance returned an empty crumb");
+  return { cookie, crumb };
+}
+
+async function fetchTtfOhlcv(
+  range: string,
+): Promise<{ ts: string; open: number | null; high: number | null; low: number | null; close: number | null }[]> {
+  const { cookie, crumb } = await getYahooCrumb();
+
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/TTF%3DF` +
+    `?interval=1d&range=${encodeURIComponent(range)}&crumb=${encodeURIComponent(crumb)}`;
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), 25_000);
   const res = await fetch(url, {
     signal: controller.signal,
-    headers: { "user-agent": "Mozilla/5.0" },
+    headers: {
+      "user-agent": BROWSER_UA,
+      "cookie": cookie,
+      "accept": "application/json,text/plain,*/*",
+      "referer": "https://finance.yahoo.com/",
+    },
   }).finally(() => clearTimeout(timeout));
 
-  if (!res.ok) throw new Error(`Yahoo Finance HTTP ${res.status}`);
-  const body = await res.json();
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Yahoo Finance chart API returned HTTP ${res.status}: ${body.slice(0, 200)}`);
+  }
 
+  const body = await res.json();
   const result = body?.chart?.result?.[0];
   if (!result) throw new Error("No chart result in Yahoo Finance response");
 
@@ -33,17 +74,15 @@ async function fetchTtfOhlcv(range: string): Promise<{ ts: string; open: number 
   const lows: (number | null)[] = quote.low ?? [];
   const closes: (number | null)[] = quote.close ?? [];
 
-  return timestamps.map((unixSec, i) => {
-    const d = new Date(unixSec * 1000);
-    const ts = d.toISOString().slice(0, 10); // YYYY-MM-DD
-    return {
-      ts,
+  return timestamps
+    .map((unixSec, i) => ({
+      ts: new Date(unixSec * 1000).toISOString().slice(0, 10),
       open: opens[i] ?? null,
       high: highs[i] ?? null,
       low: lows[i] ?? null,
       close: closes[i] ?? null,
-    };
-  }).filter(r => r.close !== null);
+    }))
+    .filter((r) => r.close !== null);
 }
 
 serve(async (req) => {
@@ -57,17 +96,16 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    // Default: fetch last 5 days (daily refresh). Pass range="2y" for backfill.
     const range: string = body?.range ?? "5d";
 
     const rows = await fetchTtfOhlcv(range);
-    if (!rows.length) return json({ ok: true, inserted: 0, message: "No data returned" });
+    if (!rows.length) return json({ ok: true, inserted: 0, message: "No data returned from Yahoo Finance" });
 
     const supabase = createClient(supabaseUrl, serviceRole, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const dbRows = rows.map(r => ({
+    const dbRows = rows.map((r) => ({
       ts: r.ts,
       close_eur_per_mwh: r.close,
       open_eur_per_mwh: r.open,

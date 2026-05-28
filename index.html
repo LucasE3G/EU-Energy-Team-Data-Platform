@@ -503,12 +503,22 @@
                         <div class="section-header">
                             <h2 class="section-title">EU + EEA electricity generation by type (ENTSO‑E)</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                                <button class="btn-secondary" id="elecEuRangeDayBtn">Day</button>
-                                <button class="btn-secondary" id="elecEuRangeWeekBtn">Week</button>
-                                <button class="btn-secondary" id="elecEuRangeMonthBtn">Month</button>
-                                <button class="btn-secondary" id="elecEuRange6mBtn">6m</button>
-                                <button class="btn-secondary" id="elecEuRange1yBtn">1y</button>
-                                <button class="btn-secondary" id="elecEuRange5yBtn">5y</button>
+                                <span id="elecEuIntradayBtns">
+                                    <button class="btn-secondary" id="elecEuRangeDayBtn">Day</button>
+                                    <button class="btn-secondary" id="elecEuRangeWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="elecEuRangeMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="elecEuRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="elecEuRange1yBtn">1y</button>
+                                    <button class="btn-secondary" id="elecEuRange5yBtn">5y</button>
+                                </span>
+                                <span id="elecEuAggregateBtns" style="display:none;">
+                                    <button class="btn-secondary" id="elecEuAggWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="elecEuAggMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="elecEuAggYearBtn">Year</button>
+                                </span>
+                                <span style="color:var(--text-secondary); margin:0 2px;">|</span>
+                                <button class="btn-secondary" id="elecEuModeIntradayBtn">Intraday</button>
+                                <button class="btn-secondary" id="elecEuModeAggBtn">Aggregate</button>
                                 <button class="chart-info-btn" data-chart="elecEuChart" title="Methodology &amp; data source">ⓘ</button>
                                 <button class="chart-export-btn" data-chart="elecEuChart" title="Download chart as PNG">↓</button>
                             </div>
@@ -539,12 +549,22 @@
                         <div class="section-header">
                             <h2 class="section-title">Selected zone electricity generation by type</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                                <button class="btn-secondary" id="elecZoneRangeDayBtn">Day</button>
-                                <button class="btn-secondary" id="elecZoneRangeWeekBtn">Week</button>
-                                <button class="btn-secondary" id="elecZoneRangeMonthBtn">Month</button>
-                                <button class="btn-secondary" id="elecZoneRange6mBtn">6m</button>
-                                <button class="btn-secondary" id="elecZoneRange1yBtn">1y</button>
-                                <button class="btn-secondary" id="elecZoneRange5yBtn">5y</button>
+                                <span id="elecZoneIntradayBtns">
+                                    <button class="btn-secondary" id="elecZoneRangeDayBtn">Day</button>
+                                    <button class="btn-secondary" id="elecZoneRangeWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="elecZoneRangeMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="elecZoneRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="elecZoneRange1yBtn">1y</button>
+                                    <button class="btn-secondary" id="elecZoneRange5yBtn">5y</button>
+                                </span>
+                                <span id="elecZoneAggregateBtns" style="display:none;">
+                                    <button class="btn-secondary" id="elecZoneAggWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="elecZoneAggMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="elecZoneAggYearBtn">Year</button>
+                                </span>
+                                <span style="color:var(--text-secondary); margin:0 2px;">|</span>
+                                <button class="btn-secondary" id="elecZoneModeIntradayBtn">Intraday</button>
+                                <button class="btn-secondary" id="elecZoneModeAggBtn">Aggregate</button>
                                 <button class="chart-info-btn" data-chart="elecZoneChart" title="Methodology &amp; data source">ⓘ</button>
                                 <button class="chart-export-btn" data-chart="elecZoneChart" title="Download chart as PNG">↓</button>
                             </div>
@@ -758,12 +778,23 @@
                         <div class="section-header">
                             <h2 class="section-title">Selected zone electricity demand</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                                <button class="btn-secondary" id="loadZoneRangeDayBtn">Day</button>
-                                <button class="btn-secondary" id="loadZoneRangeWeekBtn">Week</button>
-                                <button class="btn-secondary" id="loadZoneRangeMonthBtn">Month</button>
-                                <button class="btn-secondary" id="loadZoneRange6mBtn">6m</button>
-                                <button class="btn-secondary" id="loadZoneRange1yBtn">1y</button>
-                                <button class="btn-secondary" id="loadZoneRange5yBtn">5y</button>
+                                <span id="loadZoneIntradayBtns">
+                                    <button class="btn-secondary" id="loadZoneRangeDayBtn">Day</button>
+                                    <button class="btn-secondary" id="loadZoneRangeWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="loadZoneRangeMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="loadZoneRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="loadZoneRange1yBtn">1y</button>
+                                    <button class="btn-secondary" id="loadZoneRange5yBtn">5y</button>
+                                </span>
+                                <span id="loadZoneAggregateBtns" style="display:none;">
+                                    <button class="btn-secondary" id="loadZoneAggDayBtn">Day</button>
+                                    <button class="btn-secondary" id="loadZoneAggWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="loadZoneAggMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="loadZoneAggYearBtn">Year</button>
+                                </span>
+                                <span style="color:var(--text-secondary); margin:0 2px;">|</span>
+                                <button class="btn-secondary" id="loadZoneModeIntradayBtn">Intraday</button>
+                                <button class="btn-secondary" id="loadZoneModeAggBtn">Aggregate</button>
                                 <button class="chart-info-btn" data-chart="loadZoneChart" title="Methodology &amp; data source">ⓘ</button>
                                 <button class="chart-export-btn" data-chart="loadZoneChart" title="Download chart as PNG">↓</button>
                             </div>
@@ -883,11 +914,21 @@
                         <div class="section-header">
                             <h2 class="section-title" id="carbonZoneSectionTitle">Country carbon intensity</h2>
                             <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                                <button class="btn-secondary" id="carbonZoneRangeDayBtn">Day</button>
-                                <button class="btn-secondary" id="carbonZoneRangeWeekBtn">Week</button>
-                                <button class="btn-secondary" id="carbonZoneRangeMonthBtn">Month</button>
-                                <button class="btn-secondary" id="carbonZoneRange6mBtn">6m</button>
-                                <button class="btn-secondary" id="carbonZoneRange1yBtn">1y</button>
+                                <span id="carbonZoneIntradayBtns">
+                                    <button class="btn-secondary" id="carbonZoneRangeDayBtn">Day</button>
+                                    <button class="btn-secondary" id="carbonZoneRangeWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="carbonZoneRangeMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="carbonZoneRange6mBtn">6m</button>
+                                    <button class="btn-secondary" id="carbonZoneRange1yBtn">1y</button>
+                                </span>
+                                <span id="carbonZoneAggregateBtns" style="display:none;">
+                                    <button class="btn-secondary" id="carbonZoneAggWeekBtn">Week</button>
+                                    <button class="btn-secondary" id="carbonZoneAggMonthBtn">Month</button>
+                                    <button class="btn-secondary" id="carbonZoneAggYearBtn">Year</button>
+                                </span>
+                                <span style="color:var(--text-secondary); margin:0 2px;">|</span>
+                                <button class="btn-secondary" id="carbonZoneModeIntradayBtn">Intraday</button>
+                                <button class="btn-secondary" id="carbonZoneModeAggBtn">Aggregate</button>
                                 <button class="chart-export-btn" data-chart="carbonZoneChart" title="Download chart as PNG">↓</button>
                             </div>
                         </div>
@@ -1179,12 +1220,22 @@
                     <div class="section-header">
                         <h2 class="section-title">EU27 aggregate gas demand by sector</h2>
                         <div class="section-actions" style="gap: 8px; display: flex; flex-wrap: wrap; align-items: center;">
-                            <button class="btn-secondary" id="gasEuRangeMonthBtn">Month</button>
-                            <button class="btn-secondary" id="gasEuRange3mBtn">3m</button>
-                            <button class="btn-secondary" id="gasEuRange6mBtn">6m</button>
-                            <button class="btn-secondary" id="gasEuRange1yBtn">1y</button>
-                            <button class="btn-secondary" id="gasEuRange2yBtn">2y</button>
-                            <button class="btn-secondary" id="gasEuRange5yBtn">5y</button>
+                            <span id="gasEuIntradayBtns">
+                                <button class="btn-secondary" id="gasEuRangeMonthBtn">Month</button>
+                                <button class="btn-secondary" id="gasEuRange3mBtn">3m</button>
+                                <button class="btn-secondary" id="gasEuRange6mBtn">6m</button>
+                                <button class="btn-secondary" id="gasEuRange1yBtn">1y</button>
+                                <button class="btn-secondary" id="gasEuRange2yBtn">2y</button>
+                                <button class="btn-secondary" id="gasEuRange5yBtn">5y</button>
+                            </span>
+                            <span id="gasEuAggregateBtns" style="display:none;">
+                                <button class="btn-secondary" id="gasEuAggWeekBtn">Week</button>
+                                <button class="btn-secondary" id="gasEuAggMonthBtn">Month</button>
+                                <button class="btn-secondary" id="gasEuAggYearBtn">Year</button>
+                            </span>
+                            <span style="color:var(--text-secondary); margin:0 2px;">|</span>
+                            <button class="btn-secondary" id="gasEuModeIntradayBtn">Intraday</button>
+                            <button class="btn-secondary" id="gasEuModeAggBtn">Aggregate</button>
                             <button class="chart-info-btn" data-chart="gasEuChart" title="Methodology &amp; data source">ⓘ</button>
                             <button class="chart-export-btn" data-chart="gasEuChart" title="Download chart as PNG">↓</button>
                         </div>

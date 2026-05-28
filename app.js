@@ -1638,10 +1638,14 @@ function setupEnergyEuAutoRefresh() {
 
 let elecEuChart = null;
 let elecEuRange = '1y';
+let elecEuMode = 'intraday';
+let elecEuAggRange = 'month';
 let elecEuChartLoadInFlight = null;
 
 let elecZoneChart = null;
 let elecZoneRange = 'day';
+let elecZoneMode = 'intraday';
+let elecZoneAggRange = 'month';
 let elecZoneChartLoadInFlight = null;
 
 let elecTabInited = false;
@@ -1658,6 +1662,8 @@ let loadEuChartLoadInFlight = null;
 
 let loadZoneChart = null;
 let loadZoneRange = 'day';
+let loadZoneMode = 'intraday';
+let loadZoneAggRange = 'month';
 let loadZoneChartLoadInFlight = null;
 
 let loadTabInited = false;
@@ -1690,6 +1696,8 @@ let carbonChartLoadInFlight = null;
 let carbonZoneSelected = null;
 let carbonZoneChart = null;
 let carbonZoneRange = 'week';
+let carbonZoneMode = 'intraday';
+let carbonZoneAggRange = 'month';
 let carbonZoneLoadInFlight = null;
 let carbonCountryDataLoaded = false;
 
@@ -1871,6 +1879,127 @@ function updatePriceMapWindowButtons() {
     if (label) label.textContent = `EU avg (${priceMapWindow === '30d' ? 'last 30d' : 'last 24h'})`;
 }
 
+// ─── Shared aggregate helpers ────────────────────────────────────────────────
+
+function tsPeriodKey(ts, period) {
+    const d = new Date(ts);
+    if (period === 'day') return d.toISOString().slice(0, 10);
+    if (period === 'week') {
+        const monday = d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000;
+        return new Date(monday).toISOString().slice(0, 10);
+    }
+    if (period === 'month') return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    return String(d.getUTCFullYear());
+}
+
+function tsPeriodLabel(key, period) {
+    if (period === 'day') return new Date(key).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    if (period === 'week') return 'W/' + new Date(key).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    if (period === 'month') {
+        const [yr, mo] = key.split('-');
+        return new Date(+yr, +mo - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+    }
+    return key;
+}
+
+function aggSincePeriod(period) {
+    const d = new Date();
+    if (period === 'day') d.setFullYear(d.getFullYear() - 1);
+    else if (period === 'week') d.setFullYear(d.getFullYear() - 3);
+    else if (period === 'month') d.setFullYear(d.getFullYear() - 10);
+    else d.setFullYear(d.getFullYear() - 20);
+    return d.toISOString().slice(0, 10);
+}
+
+function setChartModePanels(prefix, mode) {
+    document.getElementById(`${prefix}IntradayBtns`)?.style.setProperty('display', mode === 'intraday' ? '' : 'none');
+    document.getElementById(`${prefix}AggregateBtns`)?.style.setProperty('display', mode === 'aggregate' ? '' : 'none');
+    document.getElementById(`${prefix}ModeIntradayBtn`)?.classList.toggle('active', mode === 'intraday');
+    document.getElementById(`${prefix}ModeAggBtn`)?.classList.toggle('active', mode === 'aggregate');
+}
+
+// ─── EU Generation aggregate mode ────────────────────────────────────────────
+
+function setElecEuMode(mode) {
+    elecEuMode = mode;
+    setChartModePanels('elecEu', mode);
+    updateElecEuAggRangeButtonActive();
+    loadElecEuTotalChart(mode === 'aggregate' ? elecEuAggRange : elecEuRange);
+}
+
+function updateElecEuAggRangeButtonActive() {
+    ['week','month','year'].forEach(r => {
+        const key = r.charAt(0).toUpperCase() + r.slice(1);
+        document.getElementById(`elecEuAgg${key}Btn`)?.classList.toggle('active', r === elecEuAggRange);
+    });
+}
+
+// ─── Zone Generation aggregate mode ──────────────────────────────────────────
+
+function setElecZoneMode(mode) {
+    elecZoneMode = mode;
+    setChartModePanels('elecZone', mode);
+    updateElecZoneAggRangeButtonActive();
+    if (elecSelectedZone) loadElecZoneTotalChart(elecSelectedZone, mode === 'aggregate' ? elecZoneAggRange : elecZoneRange, elecSelectedSource);
+}
+
+function updateElecZoneAggRangeButtonActive() {
+    ['week','month','year'].forEach(r => {
+        const key = r.charAt(0).toUpperCase() + r.slice(1);
+        document.getElementById(`elecZoneAgg${key}Btn`)?.classList.toggle('active', r === elecZoneAggRange);
+    });
+}
+
+// ─── Zone Demand aggregate mode ───────────────────────────────────────────────
+
+function setLoadZoneMode(mode) {
+    loadZoneMode = mode;
+    setChartModePanels('loadZone', mode);
+    updateLoadZoneAggRangeButtonActive();
+    if (loadSelectedZone) loadLoadZoneChart(loadSelectedZone, mode === 'aggregate' ? loadZoneAggRange : loadZoneRange, loadSelectedSource);
+}
+
+function updateLoadZoneAggRangeButtonActive() {
+    ['day','week','month','year'].forEach(r => {
+        const key = r.charAt(0).toUpperCase() + r.slice(1);
+        document.getElementById(`loadZoneAgg${key}Btn`)?.classList.toggle('active', r === loadZoneAggRange);
+    });
+}
+
+// ─── Carbon Zone aggregate mode ───────────────────────────────────────────────
+
+function setCarbonZoneMode(mode) {
+    carbonZoneMode = mode;
+    setChartModePanels('carbonZone', mode);
+    updateCarbonZoneAggRangeButtonActive();
+    if (carbonZoneSelected) loadCarbonZoneChart(carbonZoneSelected, mode === 'aggregate' ? carbonZoneAggRange : carbonZoneRange);
+}
+
+function updateCarbonZoneAggRangeButtonActive() {
+    ['week','month','year'].forEach(r => {
+        const key = r.charAt(0).toUpperCase() + r.slice(1);
+        document.getElementById(`carbonZoneAgg${key}Btn`)?.classList.toggle('active', r === carbonZoneAggRange);
+    });
+}
+
+// ─── Gas EU aggregate mode ────────────────────────────────────────────────────
+
+function setGasEuMode(mode) {
+    gasEuMode = mode;
+    setChartModePanels('gasEu', mode);
+    updateGasEuAggRangeButtonActive();
+    loadGasEuAggregateChart(mode === 'aggregate' ? gasEuAggRange : gasEuRange);
+}
+
+function updateGasEuAggRangeButtonActive() {
+    ['week','month','year'].forEach(r => {
+        const key = r.charAt(0).toUpperCase() + r.slice(1);
+        document.getElementById(`gasEuAgg${key}Btn`)?.classList.toggle('active', r === gasEuAggRange);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function initElectricityTabControls() {
     const bindEu = (id, range) => {
         const btn = document.getElementById(id);
@@ -1890,6 +2019,21 @@ function initElectricityTabControls() {
     bindEu('elecEuRange1yBtn', '1y');
     bindEu('elecEuRange5yBtn', '5y');
 
+    const bindEuAgg = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => { elecEuAggRange = range; updateElecEuAggRangeButtonActive(); loadElecEuTotalChart(range); });
+    };
+    bindEuAgg('elecEuAggWeekBtn', 'week');
+    bindEuAgg('elecEuAggMonthBtn', 'month');
+    bindEuAgg('elecEuAggYearBtn', 'year');
+    const elecEuModeI = document.getElementById('elecEuModeIntradayBtn');
+    if (elecEuModeI && !elecEuModeI.dataset.bound) { elecEuModeI.dataset.bound='1'; elecEuModeI.addEventListener('click', () => setElecEuMode('intraday')); }
+    const elecEuModeA = document.getElementById('elecEuModeAggBtn');
+    if (elecEuModeA && !elecEuModeA.dataset.bound) { elecEuModeA.dataset.bound='1'; elecEuModeA.addEventListener('click', () => setElecEuMode('aggregate')); }
+    setChartModePanels('elecEu', elecEuMode);
+
     const bindZone = (id, range) => {
         const btn = document.getElementById(id);
         if (!btn || btn.dataset.bound) return;
@@ -1907,6 +2051,21 @@ function initElectricityTabControls() {
     bindZone('elecZoneRange6mBtn', '6m');
     bindZone('elecZoneRange1yBtn', '1y');
     bindZone('elecZoneRange5yBtn', '5y');
+
+    const bindZoneAgg = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => { elecZoneAggRange = range; updateElecZoneAggRangeButtonActive(); if (elecSelectedZone) loadElecZoneTotalChart(elecSelectedZone, range, elecSelectedSource); });
+    };
+    bindZoneAgg('elecZoneAggWeekBtn', 'week');
+    bindZoneAgg('elecZoneAggMonthBtn', 'month');
+    bindZoneAgg('elecZoneAggYearBtn', 'year');
+    const elecZoneModeI = document.getElementById('elecZoneModeIntradayBtn');
+    if (elecZoneModeI && !elecZoneModeI.dataset.bound) { elecZoneModeI.dataset.bound='1'; elecZoneModeI.addEventListener('click', () => setElecZoneMode('intraday')); }
+    const elecZoneModeA = document.getElementById('elecZoneModeAggBtn');
+    if (elecZoneModeA && !elecZoneModeA.dataset.bound) { elecZoneModeA.dataset.bound='1'; elecZoneModeA.addEventListener('click', () => setElecZoneMode('aggregate')); }
+    setChartModePanels('elecZone', elecZoneMode);
 
     const refreshBtn = document.getElementById('elecRefreshBtn');
     if (refreshBtn && !refreshBtn.dataset.bound) {
@@ -1994,6 +2153,22 @@ function initLoadTabControls() {
     bindZone('loadZoneRange6mBtn', '6m');
     bindZone('loadZoneRange1yBtn', '1y');
     bindZone('loadZoneRange5yBtn', '5y');
+
+    const bindZoneAgg = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => { loadZoneAggRange = range; updateLoadZoneAggRangeButtonActive(); if (loadSelectedZone) loadLoadZoneChart(loadSelectedZone, range, loadSelectedSource); });
+    };
+    bindZoneAgg('loadZoneAggDayBtn', 'day');
+    bindZoneAgg('loadZoneAggWeekBtn', 'week');
+    bindZoneAgg('loadZoneAggMonthBtn', 'month');
+    bindZoneAgg('loadZoneAggYearBtn', 'year');
+    const loadZoneModeI = document.getElementById('loadZoneModeIntradayBtn');
+    if (loadZoneModeI && !loadZoneModeI.dataset.bound) { loadZoneModeI.dataset.bound='1'; loadZoneModeI.addEventListener('click', () => setLoadZoneMode('intraday')); }
+    const loadZoneModeA = document.getElementById('loadZoneModeAggBtn');
+    if (loadZoneModeA && !loadZoneModeA.dataset.bound) { loadZoneModeA.dataset.bound='1'; loadZoneModeA.addEventListener('click', () => setLoadZoneMode('aggregate')); }
+    setChartModePanels('loadZone', loadZoneMode);
 
     const refreshBtn = document.getElementById('loadRefreshBtn');
     if (refreshBtn && !refreshBtn.dataset.bound) {
@@ -2598,7 +2773,7 @@ async function loadLoadEuChartAggregate(period, canvas, titleEl, setStatus) {
         }
         return k;
     });
-    const values = keys.map(k => grouped.get(k) / 1000); // MWh → GWh
+    const values = keys.map(k => grouped.get(k)); // MWh, fmtGWh handles display
 
     const unit = 'GWh';
     if (titleEl) titleEl.textContent = `EU — Total electricity demand per ${period} (${unit})`;
@@ -2646,6 +2821,12 @@ async function loadLoadZoneChart(zone, range, source = null) {
 
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
+
+            if (loadZoneMode === 'aggregate') {
+                await loadLoadZoneChartAggregate(zone, range, canvas, titleEl, setStatus);
+                return;
+            }
+
             const since = rangeToSinceIso(range);
             const useWeekly = range === '5y';
             const useDaily = range === '6m' || range === '1y';
@@ -2724,6 +2905,44 @@ async function loadLoadZoneChart(zone, range, source = null) {
     finally { loadZoneChartLoadInFlight = null; }
 }
 
+async function loadLoadZoneChartAggregate(zone, period, canvas, titleEl, setStatus) {
+    setStatus(`Loading ${zone} demand aggregate (${period})…`);
+    const since = aggSincePeriod(period);
+    const { data, error } = await supabase.from('electricity_load_daily_mwh')
+        .select('ts, consumption_mwh').eq('zone_id', zone).gte('ts', since)
+        .order('ts', { ascending: true }).limit(4000);
+    if (error) throw new Error(error.message);
+    const rows = (Array.isArray(data) ? data : []).filter(r => r.ts && Number.isFinite(Number(r.consumption_mwh)));
+
+    const grouped = new Map();
+    for (const r of rows) {
+        const key = tsPeriodKey(r.ts, period);
+        grouped.set(key, (grouped.get(key) || 0) + Number(r.consumption_mwh));
+    }
+    const keys = [...grouped.keys()].sort();
+    const labels = keys.map(k => tsPeriodLabel(k, period));
+    const values = keys.map(k => grouped.get(k)); // MWh, fmtGWh handles display
+
+    if (titleEl) titleEl.textContent = `${zone} — Demand per ${period} (GWh)`;
+    setStatus('');
+    const ctx = canvas.getContext('2d');
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+    if (loadZoneChart) { try { loadZoneChart.destroy(); } catch (_) {} loadZoneChart = null; }
+    loadZoneChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: `Demand per ${period} (GWh)`, data: values, backgroundColor: 'rgba(2,132,199,0.7)', borderColor: '#0284c7', borderWidth: 1 }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+            scales: {
+                x: { type: 'category', ticks: { maxRotation: 45 }, grid: { display: false } },
+                y: { beginAtZero: false, ticks: { callback: v => fmtGWh(Number(v)) } },
+            },
+        },
+    });
+}
 
 function updatePriceEuRangeButtonActive() {
     const map = {
@@ -2856,6 +3075,21 @@ function initCarbonTabControls() {
     bindZone('carbonZoneRangeMonthBtn', 'month');
     bindZone('carbonZoneRange6mBtn', '6m');
     bindZone('carbonZoneRange1yBtn', '1y');
+
+    const bindZoneAgg = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => { carbonZoneAggRange = range; updateCarbonZoneAggRangeButtonActive(); if (carbonZoneSelected) loadCarbonZoneChart(carbonZoneSelected, range); });
+    };
+    bindZoneAgg('carbonZoneAggWeekBtn', 'week');
+    bindZoneAgg('carbonZoneAggMonthBtn', 'month');
+    bindZoneAgg('carbonZoneAggYearBtn', 'year');
+    const carbonZoneModeI = document.getElementById('carbonZoneModeIntradayBtn');
+    if (carbonZoneModeI && !carbonZoneModeI.dataset.bound) { carbonZoneModeI.dataset.bound='1'; carbonZoneModeI.addEventListener('click', () => setCarbonZoneMode('intraday')); }
+    const carbonZoneModeA = document.getElementById('carbonZoneModeAggBtn');
+    if (carbonZoneModeA && !carbonZoneModeA.dataset.bound) { carbonZoneModeA.dataset.bound='1'; carbonZoneModeA.addEventListener('click', () => setCarbonZoneMode('aggregate')); }
+    setChartModePanels('carbonZone', carbonZoneMode);
 }
 
 function updateCarbonRangeBtnActive() {
@@ -3329,6 +3563,12 @@ async function loadCarbonZoneChart(zone, range) {
 
         try {
             if (!supabase) return;
+
+            if (carbonZoneMode === 'aggregate') {
+                await loadCarbonZoneChartAggregate(zone, range, canvas, titleEl, setStatus);
+                return;
+            }
+
             const since = euRangeToSinceIso(range);
             const useDaily = range === '6m' || range === '1y';
             const useWeekly = false; // zone data only available daily at best for long ranges
@@ -3397,6 +3637,57 @@ async function loadCarbonZoneChart(zone, range) {
         }
     })();
     try { return await carbonZoneLoadInFlight; } finally { carbonZoneLoadInFlight = null; }
+}
+
+async function loadCarbonZoneChartAggregate(zone, period, canvas, titleEl, setStatus) {
+    setStatus(`Loading ${zone} carbon aggregate (${period})…`);
+    const since = aggSincePeriod(period);
+    const rows = await gasFetchAllPaged(() =>
+        supabase.from('electricity_generation_daily_mwh')
+            .select('ts, psr_type, production_mwh').eq('zone_id', zone).gte('ts', since).order('ts', { ascending: true })
+    , 1000, 50_000);
+
+    // Group by period: accumulate generation per (period, psr_type), then compute intensity
+    const periodGen = new Map(); // key → Map(psr_type → total_mwh)
+    for (const r of rows) {
+        if (!r.ts || !r.psr_type) continue;
+        const key = tsPeriodKey(r.ts, period);
+        if (!periodGen.has(key)) periodGen.set(key, new Map());
+        const byType = periodGen.get(key);
+        const v = Number(r.production_mwh);
+        if (Number.isFinite(v)) byType.set(r.psr_type, (byType.get(r.psr_type) || 0) + v);
+    }
+
+    const keys = [...periodGen.keys()].sort();
+    const labels = keys.map(k => tsPeriodLabel(k, period));
+    const intensities = keys.map(k => {
+        const byType = periodGen.get(k);
+        let totalMwh = 0, co2Mwh = 0;
+        for (const [psr, mwh] of byType) {
+            const group = ELEC_TYPE_GROUPS.find(g => g.types.includes(psr));
+            const factor = group ? (CARBON_FACTORS[group.key] ?? null) : null;
+            if (factor !== null) { totalMwh += mwh; co2Mwh += mwh * factor; }
+        }
+        return totalMwh > 0 ? Math.round(co2Mwh / totalMwh) : null;
+    });
+
+    if (titleEl) titleEl.textContent = `${zone} — Carbon intensity per ${period} (gCO₂/kWh)`;
+    setStatus('');
+    const ctx = canvas.getContext('2d');
+    if (carbonZoneChart) { try { carbonZoneChart.destroy(); } catch (_) {} carbonZoneChart = null; }
+    carbonZoneChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: `Carbon intensity (gCO₂/kWh)`, data: intensities, backgroundColor: 'rgba(120,113,108,0.7)', borderColor: '#78716c', borderWidth: 1 }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { type: 'category', ticks: { maxRotation: 45 }, grid: { display: false } },
+                y: { beginAtZero: true, ticks: { callback: v => `${v}` } },
+            },
+        },
+    });
 }
 
 // ─── Price vs renewables scatter tab ─────────────────────────────────────────
@@ -6059,6 +6350,19 @@ async function elecFetchZoneTotalSeries(zone, range, source) {
     return { rows, valueCol, labelDaily: !use15m };
 }
 
+function groupGenerationByPeriod(rows, valueCol, period) {
+    const grouped = new Map();
+    for (const r of rows) {
+        if (!r.ts || !r.psr_type) continue;
+        const key = tsPeriodKey(r.ts, period);
+        if (!grouped.has(key)) grouped.set(key, new Map());
+        const byType = grouped.get(key);
+        const v = Number(r[valueCol]);
+        if (Number.isFinite(v)) byType.set(r.psr_type, (byType.get(r.psr_type) || 0) + v);
+    }
+    return grouped;
+}
+
 async function loadElecEuTotalChart(range) {
     if (elecEuChartLoadInFlight) return await elecEuChartLoadInFlight;
 
@@ -6071,6 +6375,12 @@ async function loadElecEuTotalChart(range) {
 
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
+
+            if (elecEuMode === 'aggregate') {
+                await renderGenAggChart('elecEu', null, range, canvas, titleEl, setStatus);
+                return;
+            }
+
             const isMwh = range !== 'day';
             const unit = isMwh ? 'GWh' : 'MW';
             const fmt = isMwh ? fmtGWh : fmtMwShort;
@@ -6160,6 +6470,12 @@ async function loadElecZoneTotalChart(zone, range, source = null) {
 
         try {
             if (!supabase) throw new Error('Supabase client not initialized.');
+
+            if (elecZoneMode === 'aggregate') {
+                await renderGenAggChart('elecZone', zone, range, canvas, titleEl, setStatus, source);
+                return;
+            }
+
             const isMwh = range !== 'day';
             const unit = isMwh ? 'GWh' : 'MW';
             const fmt = isMwh ? fmtGWh : fmtMwShort;
@@ -6235,6 +6551,84 @@ async function loadElecZoneTotalChart(zone, range, source = null) {
 
     try { return await elecZoneChartLoadInFlight; }
     finally { elecZoneChartLoadInFlight = null; }
+}
+
+async function renderGenAggChart(chartVar, zone, period, canvas, titleEl, setStatus, source) {
+    setStatus(`Loading generation aggregate (${period})…`);
+    const since = aggSincePeriod(period);
+    const isEu = !zone;
+
+    let rows;
+    if (isEu) {
+        const { data, error } = await supabase.from('electricity_eu_generation_daily_mwh')
+            .select('ts, psr_type, production_mwh').gte('ts', since).order('ts', { ascending: true }).limit(10000);
+        if (error) throw new Error(error.message);
+        rows = Array.isArray(data) ? data : [];
+    } else {
+        rows = await gasFetchAllPaged(() => {
+            let q = supabase.from('electricity_generation_daily_mwh')
+                .select('ts, psr_type, production_mwh').eq('zone_id', zone).gte('ts', since).order('ts', { ascending: true });
+            return q;
+        }, 1000, 50_000);
+    }
+
+    const grouped = groupGenerationByPeriod(rows, 'production_mwh', period);
+    const keys = [...grouped.keys()].sort();
+    const labels = keys.map(k => tsPeriodLabel(k, period));
+    const title = isEu ? `EU — Generation by type per ${period} (GWh)` : `${zone} — Generation by type per ${period} (GWh)`;
+    if (titleEl) titleEl.textContent = title;
+    setStatus('');
+
+    const ctx = canvas.getContext('2d');
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+    if (chartVar === 'elecEu') { if (elecEuChart) { try { elecEuChart.destroy(); } catch(_) {} elecEuChart = null; } }
+    else { if (elecZoneChart) { try { elecZoneChart.destroy(); } catch(_) {} elecZoneChart = null; } }
+
+    const datasets = [];
+    for (const g of ELEC_TYPE_GROUPS) {
+        const data = keys.map(k => {
+            const byType = grouped.get(k) || new Map();
+            const sum = g.types.reduce((acc, t) => acc + (byType.get(t) || 0), 0);
+            return sum > 0 ? sum : null; // MWh, fmtGWh handles display
+        });
+        if (data.some(v => v != null)) {
+            datasets.push({ label: g.label, data, backgroundColor: g.color + 'cc', borderColor: g.color, borderWidth: 1, stack: 'gen' });
+        }
+    }
+
+    const chart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: {
+                    backgroundColor: 'rgba(15,23,42,0.92)', titleColor: '#fff', bodyColor: '#fff', padding: 10,
+                    filter: (item) => item.raw != null && item.raw > 0,
+                    callbacks: {
+                        label: (item) => {
+                            const total = item.chart.data.datasets.reduce((s, ds) => s + (Number(ds.data[item.dataIndex]) || 0), 0);
+                            const pct = total > 0 ? ` (${((Number(item.raw) / total) * 100).toFixed(1)}%)` : '';
+                            return `${item.dataset.label}: ${fmtGWh(Number(item.raw))}${pct}`;
+                        },
+                        footer: (items) => {
+                            const total = items.reduce((s, i) => s + (Number(i.raw) || 0), 0);
+                            return total > 0 ? `Total: ${fmtGWh(total)}` : '';
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: { type: 'category', stacked: true, ticks: { maxRotation: 45, maxTicksLimit: 20 }, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtGWh(Number(v)) }, grid: { color: 'rgba(148,163,184,0.25)' } },
+            },
+        },
+    });
+    if (chartVar === 'elecEu') elecEuChart = chart;
+    else elecZoneChart = chart;
 }
 
 // Bucket raw {ts, y} points into day/week averages. When bucket is null, returns input unchanged.
@@ -6593,6 +6987,8 @@ const GAS_SECTOR_COLORS = {
 };
 
 let gasEuRange = '1y';
+let gasEuMode = 'intraday';
+let gasEuAggRange = 'month';
 let gasCountryRange = '1y';
 let gasSelectedCountry = null;
 let gasEuChart = null;
@@ -6822,6 +7218,21 @@ async function loadGasMeterPage() {
     bindEu(document.getElementById('gasEuRange1yBtn'), '1y');
     bindEu(document.getElementById('gasEuRange2yBtn'), '2y');
     bindEu(document.getElementById('gasEuRange5yBtn'), '5y');
+
+    const bindEuAgg = (id, range) => {
+        const btn = document.getElementById(id);
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => { gasEuAggRange = range; updateGasEuAggRangeButtonActive(); loadGasEuAggregateChart(range); });
+    };
+    bindEuAgg('gasEuAggWeekBtn', 'week');
+    bindEuAgg('gasEuAggMonthBtn', 'month');
+    bindEuAgg('gasEuAggYearBtn', 'year');
+    const gasEuModeI = document.getElementById('gasEuModeIntradayBtn');
+    if (gasEuModeI && !gasEuModeI.dataset.bound) { gasEuModeI.dataset.bound='1'; gasEuModeI.addEventListener('click', () => setGasEuMode('intraday')); }
+    const gasEuModeA = document.getElementById('gasEuModeAggBtn');
+    if (gasEuModeA && !gasEuModeA.dataset.bound) { gasEuModeA.dataset.bound='1'; gasEuModeA.addEventListener('click', () => setGasEuMode('aggregate')); }
+    setChartModePanels('gasEu', gasEuMode);
 
     const bindCountry = (btn, range) => {
         if (!btn || btn.dataset.bound) return;
@@ -7580,6 +7991,11 @@ async function loadGasEuAggregateChart(range) {
     const setStatus = (m) => { if (statusEl) statusEl.textContent = m || ''; };
 
     try {
+        if (gasEuMode === 'aggregate') {
+            await loadGasEuChartAggregate(range, canvas, titleEl, setStatus);
+            return;
+        }
+
         const cachedReady = gasCacheFresh(gasEuAllRows);
         setStatus(cachedReady ? `Rendering EU27 (${range})…` : `Loading EU27 aggregate (${range})…`);
         const fromDate = gasRangeStartISO(range);
@@ -7665,6 +8081,63 @@ async function loadGasEuAggregateChart(range) {
         console.error('EU gas aggregate failed:', err);
         setStatus(`Failed: ${err.message || err}`);
     }
+}
+
+async function loadGasEuChartAggregate(period, canvas, titleEl, setStatus) {
+    setStatus(`Loading EU27 gas aggregate by ${period}…`);
+    const all = await gasFetchEuAll();
+    const eu27Set = new Set(GAS_EU27);
+
+    // Group by (period, sector)
+    const byPeriod = new Map();
+    for (const r of all || []) {
+        if (!eu27Set.has(r.country_code)) continue;
+        const key = tsPeriodKey(r.gas_day, period);
+        if (!key) continue;
+        const agg = byPeriod.get(key) || { power: 0, household: 0, industry: 0, count: 0 };
+        if (r.power_mwh != null) agg.power += Number(r.power_mwh);
+        if (r.household_mwh != null) agg.household += Number(r.household_mwh);
+        if (r.industry_mwh != null) agg.industry += Number(r.industry_mwh);
+        agg.count += 1;
+        byPeriod.set(key, agg);
+    }
+    const keys = [...byPeriod.keys()].sort();
+    const labels = keys.map(k => tsPeriodLabel(k, period));
+    const power = keys.map(k => byPeriod.get(k).power / 1000);
+    const household = keys.map(k => byPeriod.get(k).household / 1000);
+    const industry = keys.map(k => byPeriod.get(k).industry / 1000);
+
+    if (titleEl) titleEl.textContent = `EU27 — Gas demand by sector per ${period} (GWh)`;
+    setStatus('');
+    if (gasEuChart) { try { gasEuChart.destroy(); } catch (_) {} }
+    gasEuChart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Power',     data: power,     backgroundColor: GAS_SECTOR_COLORS.power     + 'cc', borderColor: GAS_SECTOR_COLORS.power,     borderWidth: 1, stack: 'sec' },
+                { label: 'Household', data: household, backgroundColor: GAS_SECTOR_COLORS.household + 'cc', borderColor: GAS_SECTOR_COLORS.household, borderWidth: 1, stack: 'sec' },
+                { label: 'Industry',  data: industry,  backgroundColor: GAS_SECTOR_COLORS.industry  + 'cc', borderColor: GAS_SECTOR_COLORS.industry,  borderWidth: 1, stack: 'sec' },
+            ],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(0)} GWh`,
+                        footer: (items) => `Total: ${items.reduce((s, i) => s + (Number(i.raw) || 0), 0).toFixed(0)} GWh`,
+                    },
+                },
+            },
+            scales: {
+                x: { type: 'category', stacked: true, ticks: { maxRotation: 45 }, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, ticks: { callback: v => `${Math.round(Number(v))} GWh` } },
+            },
+        },
+    });
 }
 
 async function loadGasCountryChart(country, range) {
