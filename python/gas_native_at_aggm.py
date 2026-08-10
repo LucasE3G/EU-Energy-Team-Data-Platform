@@ -123,15 +123,21 @@ def main() -> None:
         efficiency=efficiency, session=s, log_prefix="  AT ",
     )
 
+    # `X and Y:.1f` formats the whole `and` expression, so a null component fed
+    # None to :.1f and killed the run before the upsert on line 140 — losing a
+    # full backfill to a log line. Same "n/a" idiom as gas_native_entsog_points.
+    def gwh(v) -> str:
+        return "n/a" if v is None else f"{v/1000:.1f}"
+
     first, last = rows[0], rows[-1]
-    print(f"  first: {first['gas_day']} total={first['total_mwh']/1000:.1f} GWh "
-          f"(P={first.get('power_mwh') and first['power_mwh']/1000:.1f} "
-          f"HH={first.get('household_mwh') and first['household_mwh']/1000:.1f} "
-          f"I={first.get('industry_mwh') and first['industry_mwh']/1000:.1f})")
-    print(f"  last : {last['gas_day']} total={last['total_mwh']/1000:.1f} GWh "
-          f"(P={last.get('power_mwh') and last['power_mwh']/1000:.1f} "
-          f"HH={last.get('household_mwh') and last['household_mwh']/1000:.1f} "
-          f"I={last.get('industry_mwh') and last['industry_mwh']/1000:.1f})")
+    print(f"  first: {first['gas_day']} total={gwh(first['total_mwh'])} GWh "
+          f"(P={gwh(first.get('power_mwh'))} "
+          f"HH={gwh(first.get('household_mwh'))} "
+          f"I={gwh(first.get('industry_mwh'))})")
+    print(f"  last : {last['gas_day']} total={gwh(last['total_mwh'])} GWh "
+          f"(P={gwh(last.get('power_mwh'))} "
+          f"HH={gwh(last.get('household_mwh'))} "
+          f"I={gwh(last.get('industry_mwh'))})")
 
     if dry_run:
         print("Dry-run: not upserting.")

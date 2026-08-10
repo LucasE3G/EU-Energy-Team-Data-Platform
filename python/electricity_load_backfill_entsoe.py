@@ -175,7 +175,11 @@ def main() -> None:
         print("Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in .env", file=sys.stderr)
         sys.exit(1)
 
+    # BACKFILL_DAYS wins when set: filling a gap left by a stalled ingest needs
+    # a window of days, and the years-only knob could not express that.
     years = int(os.getenv("ENTSOE_LOAD_BACKFILL_YEARS", "5"))
+    days_env = os.getenv("ENTSOE_LOAD_BACKFILL_DAYS")
+    backfill_days = int(days_env) if days_env else years * 365
     chunk_days = int(os.getenv("ENTSOE_LOAD_CHUNK_DAYS", "7"))
     delay_s = float(os.getenv("ENTSOE_LOAD_DELAY_SECONDS", "0.25"))
     max_requests = int(os.getenv("ENTSOE_LOAD_MAX_REQUESTS", "1000000"))
@@ -185,7 +189,7 @@ def main() -> None:
     zones = [z.strip() for z in zones_env.split(",")] if zones_env else list(DOMAINS.keys())
 
     now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    target_start = now - timedelta(days=years * 365)
+    target_start = now - timedelta(days=backfill_days)
 
     req = 0
     for zone in zones:
@@ -194,6 +198,7 @@ def main() -> None:
             continue
         print(f"\n== LOAD {zone} ({domain}) ==")
         end = now
+        consecutive_failures = 0
 
         while end > target_start and req < max_requests:
             start = end - timedelta(days=chunk_days)
@@ -210,8 +215,17 @@ def main() -> None:
                     time.sleep(10)
                 else:
                     time.sleep(2)
+                # `continue` retries the same window without advancing `end` or
+                # `req`, so a zone ENTSO-E no longer serves (GB since Brexit,
+                # for one) used to spin here forever. Move on after 3 tries.
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    print(f"Giving up on {zone} after {consecutive_failures} consecutive failures",
+                          file=sys.stderr)
+                    break
                 continue
 
+            consecutive_failures = 0
             req += 1
             if delay_s > 0:
                 time.sleep(delay_s)
