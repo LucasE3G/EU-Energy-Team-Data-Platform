@@ -32,6 +32,10 @@
                     <span class="nav-icon">🔥</span>
                     <span>EU gas meter</span>
                 </a>
+                <a href="#" class="nav-item" data-page="country-profile">
+                    <span class="nav-icon">🌍</span>
+                    <span>Country profile</span>
+                </a>
             </div>
             <div class="nav-section">
                 <div class="nav-section-header">Info</div>
@@ -1560,6 +1564,31 @@
                     <button class="modal-close" id="chartInfoClose">&times;</button>
                 </div>
                 <div class="modal-body chart-info-body" id="chartInfoBody"></div>
+            </div>
+        </div>
+
+        <!-- Country Profile Page -->
+        <div id="countryProfilePage" class="page">
+            <div class="page-header">
+                <h1>Country profile</h1>
+                <p class="page-subtitle">Every datapoint we hold for one country, across every dataset on the platform</p>
+            </div>
+
+            <div class="cp-toolbar">
+                <div class="cp-toolbar-field">
+                    <label for="cpCountrySelect">Country</label>
+                    <select id="cpCountrySelect" class="filter-select"></select>
+                </div>
+                <button id="cpRefreshBtn" class="cp-btn" type="button">Refresh</button>
+                <label class="cp-check">
+                    <input type="checkbox" id="cpExactCounts" checked>
+                    <span>Exact row counts (slower)</span>
+                </label>
+                <span id="cpStatus" class="cp-status"></span>
+            </div>
+
+            <div id="cpBody" class="cp-body">
+                <div class="cp-empty">Select a country to build its profile.</div>
             </div>
         </div>
 

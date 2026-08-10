@@ -496,6 +496,11 @@ function navigateToPage(page, countryId = null) {
         document.querySelector('[data-page="gas-meter"]')?.classList.add('active');
         document.getElementById('pageTitle').textContent = 'EU gas meter';
         loadGasMeterPage();
+    } else if (page === 'country-profile') {
+        document.getElementById('countryProfilePage')?.classList.add('active');
+        document.querySelector('[data-page="country-profile"]')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'Country profile';
+        loadCountryProfilePage();
     } else if (page === 'country' && countryId) {
         document.getElementById('countryPage').classList.add('active');
         document.getElementById('pageTitle').textContent = 'National renovation building plans';
@@ -2630,33 +2635,27 @@ async function loadLoadEuChart(range) {
 
             let points;
             if (useRaw) {
-                // Use the ENTSO-E EU aggregate zone directly — avoids cross-zone summation gaps
-                // from zones with different reporting frequencies (hourly vs 15-min vs daily).
-                const euRows = await gasFetchAllPaged(() =>
-                    supabase
-                        .from('electricity_load_snapshots')
+                // electricity_eu_load_15m_mv aggregates per zone per hour before
+                // summing, which is what stops zones on different reporting
+                // frequencies (hourly vs 15-min vs 30-min) from producing spikes
+                // at timestamps where only a subset has reported.
+                //
+                // This used to query electricity_load_snapshots for a zone_id of
+                // 'EU' first and treat the MV as a fallback, but no ingest has
+                // ever written an 'EU' zone row — the table holds per-zone rows
+                // only — so that path always returned empty and cost a wasted
+                // paged query. The MV is the real source.
+                const mvRows = await gasFetchAllPaged(() =>
+                    supabase.from('electricity_eu_load_15m_mv')
                         .select('ts, load_mw')
-                        .eq('zone_id', 'EU')
-                        .eq('source', 'entsoe')
                         .gte('ts', since)
                         .order('ts', { ascending: true })
                 , 1000, 100_000);
                 // EU demand is always > 150 GW — filter near-zero values which are reporting gaps
                 const EU_MIN_MW = 150_000;
-                if (euRows.length > 0) {
-                    points = euRows
-                        .filter(r => r.ts && Number(r.load_mw) > EU_MIN_MW)
-                        .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
-                } else {
-                    // Fallback: summed MV — same gap filter applied
-                    const mvRows = await gasFetchAllPaged(() =>
-                        supabase.from('electricity_eu_load_15m_mv')
-                            .select('ts, load_mw').gte('ts', since).order('ts', { ascending: true })
-                    , 1000, 100_000);
-                    points = mvRows
-                        .filter(r => r.ts && Number(r.load_mw) > EU_MIN_MW)
-                        .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
-                }
+                points = mvRows
+                    .filter(r => r.ts && Number(r.load_mw) > EU_MIN_MW)
+                    .map(r => ({ ts: r.ts, y: Number(r.load_mw) }));
             } else {
                 // Online behaviour: use precomputed energy (MWh) tables and display as GWh.
                 const table = useWeekly ? 'electricity_eu_load_weekly_mwh' : 'electricity_eu_load_daily_mwh';
@@ -11624,6 +11623,576 @@ function renderComparisonChart(countryData, tableDescription) {
             }
         });
     }, 100);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Country profile
+//
+// One page that inventories every datapoint held for a single country. Before
+// this existed, answering "what do we have for X?" meant hand-querying six
+// tables, so the page deliberately reports coverage and freshness — not just
+// values — and calls out the known source-mixing problem in gas demand.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Electricity lives in bidding zones, gas in countries. Three countries split
+// into several zones, so a profile has to union them.
+const CP_ZONES_BY_COUNTRY = {
+    DK: ['DK1', 'DK2'],
+    NO: ['NO1', 'NO2', 'NO3', 'NO4', 'NO5'],
+    SE: ['SE1', 'SE2', 'SE3', 'SE4'],
+};
+
+// gas_demand_daily uses UK where the electricity tables use GB.
+const CP_GAS_CODE = { GB: 'UK' };
+
+// The renovation-plan tables key off ISO-3; everything else uses ISO-2.
+const CP_ISO3_TO_ISO2 = {
+    AUT: 'AT', BEL: 'BE', BGR: 'BG', CYP: 'CY', CZE: 'CZ', DEU: 'DE', DNK: 'DK',
+    ESP: 'ES', EST: 'EE', FIN: 'FI', FRA: 'FR', GBR: 'GB', GRC: 'GR', HRV: 'HR',
+    HUN: 'HU', IRL: 'IE', ITA: 'IT', LTU: 'LT', LUX: 'LU', LVA: 'LV', MLT: 'MT',
+    NLD: 'NL', POL: 'PL', PRT: 'PT', ROU: 'RO', SVK: 'SK', SVN: 'SI', SWE: 'SE',
+};
+
+const CP_COUNTRIES = [
+    'AT', 'BE', 'BG', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB',
+    'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'NO', 'PL', 'PT',
+    'RO', 'SE', 'SI', 'SK',
+];
+
+const CP_LAST_COUNTRY_KEY = 'app.countryProfile.country';
+
+let cpWired = false;
+let cpLoadToken = 0;        // guards against out-of-order responses
+let cpNbrpCountries = null; // countries table, fetched once
+
+function cpZones(cc) {
+    return CP_ZONES_BY_COUNTRY[cc] || [cc];
+}
+
+function cpSetStatus(msg) {
+    const el = document.getElementById('cpStatus');
+    if (el) el.textContent = msg || '';
+}
+
+// ── Freshness ──────────────────────────────────────────────────────────────
+// Cadence-aware: a 15-minute feed that is a day old is broken, a daily feed
+// that is a day old is perfectly normal.
+function cpFreshness(lastIso, cadence) {
+    if (!lastIso) return { key: 'none', label: 'No data', ageH: null };
+    const ageH = (Date.now() - new Date(lastIso).getTime()) / 3600000;
+    const [liveMax, lagMax] = cadence === 'daily' ? [72, 336] : [6, 168];
+    if (ageH <= liveMax) return { key: 'live', label: 'Live', ageH };
+    if (ageH <= lagMax) return { key: 'lagging', label: 'Lagging', ageH };
+    return { key: 'stalled', label: 'Stalled', ageH };
+}
+
+function cpAgeText(ageH) {
+    if (ageH == null) return '—';
+    // Day-ahead prices are published for tomorrow, so the newest point is
+    // legitimately in the future.
+    if (ageH < 0) return `${Math.round(-ageH)} h ahead`;
+    if (ageH < 1) return `${Math.max(1, Math.round(ageH * 60))} min ago`;
+    if (ageH < 48) return `${Math.round(ageH)} h ago`;
+    return `${Math.round(ageH / 24)} days ago`;
+}
+
+function cpFmtDate(iso) {
+    if (!iso) return '—';
+    return String(iso).slice(0, 10);
+}
+
+function cpFmtInt(n) {
+    if (n == null) return '—';
+    return Number(n).toLocaleString('en-GB');
+}
+
+// ── Query helpers ──────────────────────────────────────────────────────────
+function cpApplyFilter(query, spec) {
+    if (spec.zones) {
+        return spec.zones.length > 1
+            ? query.in(spec.col, spec.zones)
+            : query.eq(spec.col, spec.zones[0]);
+    }
+    return query.eq(spec.col, spec.value);
+}
+
+// Exact counts on these tables are normally sub-second even at ~1M rows, but
+// they occasionally trip the statement timeout under load. One retry clears
+// that in practice; only then do we fall back to the planner estimate, which
+// is imprecise enough (it read 1.12M for a zone pair holding 1.19M) that the
+// UI has to mark it as approximate.
+async function cpCountRows(spec, wantExact) {
+    const attempt = async (mode) => {
+        const q = supabase.from(spec.table).select(spec.col, { count: mode, head: true });
+        return await cpApplyFilter(q, spec);
+    };
+    if (wantExact) {
+        for (let tries = 0; tries < 2; tries++) {
+            try {
+                const r = await attempt('exact');
+                if (!r.error) return { count: r.count, approx: false };
+            } catch (_) { /* retry, then fall through to the estimate */ }
+        }
+    }
+    try {
+        const r = await attempt('planned');
+        if (r.error) return { count: null, approx: false, error: r.error.message };
+        return { count: r.count, approx: true };
+    } catch (e) {
+        return { count: null, approx: false, error: e.message };
+    }
+}
+
+async function cpEdge(spec, ascending) {
+    const q = supabase.from(spec.table)
+        .select(spec.tsCol)
+        .order(spec.tsCol, { ascending })
+        .limit(1);
+    const { data, error } = await cpApplyFilter(q, spec);
+    if (error || !data || !data.length) return null;
+    return data[0][spec.tsCol];
+}
+
+async function cpLatestRow(spec, cols) {
+    const q = supabase.from(spec.table)
+        .select(cols)
+        .order(spec.tsCol, { ascending: false })
+        .limit(1);
+    const { data, error } = await cpApplyFilter(q, spec);
+    if (error || !data || !data.length) return null;
+    return data[0];
+}
+
+function cpDatasetSpecs(cc) {
+    const zones = cpZones(cc);
+    const gas = CP_GAS_CODE[cc] || cc;
+    return [
+        { id: 'generation', label: 'Electricity generation by fuel', source: 'ENTSO-E A75',
+          table: 'electricity_generation_snapshots', col: 'zone_id', zones, tsCol: 'ts',
+          cadence: '15min', grain: '15-min × fuel type', page: 'energy-meter' },
+        { id: 'mix', label: 'Renewable share', source: 'ENTSO-E (derived)',
+          table: 'energy_mix_snapshots', col: 'zone_id', zones, tsCol: 'ts',
+          cadence: '15min', grain: '15-min', page: 'energy-meter' },
+        { id: 'load', label: 'Electricity demand (load)', source: 'ENTSO-E A65',
+          table: 'electricity_load_snapshots', col: 'zone_id', zones, tsCol: 'ts',
+          cadence: '15min', grain: '15-min', page: 'energy-meter' },
+        { id: 'price', label: 'Day-ahead electricity price', source: 'ENTSO-E A44',
+          table: 'electricity_day_ahead_prices', col: 'zone_id', zones, tsCol: 'ts',
+          cadence: '15min', grain: 'hourly / 15-min', page: 'energy-meter' },
+        { id: 'flows', label: 'Cross-border flows (exports)', source: 'ENTSO-E A11',
+          table: 'electricity_crossborder_flows', col: 'from_zone', zones, tsCol: 'ts',
+          cadence: '15min', grain: 'per border', page: 'energy-meter' },
+        { id: 'gasdemand', label: 'Gas demand by sector', source: 'ENTSOG / GIE / Eurostat',
+          table: 'gas_demand_daily', col: 'country_code', value: gas, tsCol: 'gas_day',
+          cadence: 'daily', grain: 'daily', page: 'gas-meter' },
+        { id: 'gasstorage', label: 'Gas storage', source: 'GIE AGSI',
+          table: 'gas_storage_country_daily', col: 'country', value: cc, tsCol: 'gas_day',
+          cadence: 'daily', grain: 'daily', page: 'gas-meter' },
+    ];
+}
+
+// ── Section builders ───────────────────────────────────────────────────────
+async function cpBuildCoverage(cc, wantExact) {
+    const specs = cpDatasetSpecs(cc);
+    return await Promise.all(specs.map(async (spec) => {
+        const [counted, first, last] = await Promise.all([
+            cpCountRows(spec, wantExact),
+            cpEdge(spec, true),
+            cpEdge(spec, false),
+        ]);
+        return { spec, ...counted, first, last, fresh: cpFreshness(last, spec.cadence) };
+    }));
+}
+
+async function cpGenerationMix(cc) {
+    const zones = cpZones(cc);
+    const withZones = (q) => (zones.length > 1 ? q.in('zone_id', zones) : q.eq('zone_id', zones[0]));
+
+    const { data: tsRows } = await withZones(
+        supabase.from('electricity_generation_snapshots').select('ts').order('ts', { ascending: false }).limit(1)
+    );
+    if (!tsRows || !tsRows.length) return null;
+    const ts = tsRows[0].ts;
+
+    const { data: rows } = await withZones(
+        supabase.from('electricity_generation_snapshots').select('psr_type, mw').eq('ts', ts).limit(500)
+    );
+    if (!rows || !rows.length) return null;
+
+    const byGroup = new Map();
+    let total = 0;
+    for (const r of rows) {
+        const mw = Number(r.mw) || 0;
+        if (!Number.isFinite(mw)) continue;
+        total += mw;
+        const group = ELEC_TYPE_GROUPS.find(g => g.types.includes(r.psr_type));
+        const key = group ? group.key : 'other';
+        const label = group ? group.label : 'Other';
+        const color = group ? group.color : '#94a3b8';
+        const prev = byGroup.get(key) || { label, color, mw: 0 };
+        prev.mw += mw;
+        byGroup.set(key, prev);
+    }
+    const items = [...byGroup.values()].filter(g => g.mw > 0).sort((a, b) => b.mw - a.mw);
+    return { ts, total, items, fuelCount: new Set(rows.map(r => r.psr_type)).size };
+}
+
+// Surfaces the source-mixing defect: gas_demand_daily stitches together an
+// ENTSOG-implied daily series and a Eurostat monthly figure spread across the
+// month. Where the two disagree on level, the chart shows a sawtooth that is
+// an artefact, not real demand.
+async function cpGasQuality(cc) {
+    const gas = CP_GAS_CODE[cc] || cc;
+    let rows;
+    try {
+        rows = await gasFetchAllPaged(() =>
+            supabase.from('gas_demand_daily')
+                .select('gas_day, total_mwh, source_total')
+                .eq('country_code', gas)
+                .order('gas_day', { ascending: true })
+        , 1000, 10000);
+    } catch (_) {
+        return null;
+    }
+    if (!rows || !rows.length) return null;
+
+    const bySource = new Map();
+    const byMonth = new Map();
+    for (const r of rows) {
+        const src = r.source_total || 'unknown';
+        bySource.set(src, (bySource.get(src) || 0) + 1);
+        const m = String(r.gas_day).slice(0, 7);
+        if (!byMonth.has(m)) byMonth.set(m, []);
+        byMonth.get(m).push(r);
+    }
+
+    // Compare the two families within the same month — that removes season.
+    const median = (arr) => {
+        if (!arr.length) return null;
+        const s = [...arr].sort((a, b) => a - b);
+        const mid = s.length >> 1;
+        return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    };
+    const ratios = [];
+    let mixedMonths = 0;
+    for (const [, monthRows] of byMonth) {
+        const uncal = monthRows.filter(r => r.source_total === 'entsog_gie_implied_daily')
+            .map(r => Number(r.total_mwh) || 0).filter(v => v > 0);
+        const euro = monthRows.filter(r => String(r.source_total || '').startsWith('eurostat'))
+            .map(r => Number(r.total_mwh) || 0).filter(v => v > 0);
+        const families = new Set(monthRows.map(r => String(r.source_total || '').split('_')[0]));
+        if (families.size > 1) mixedMonths += 1;
+        if (uncal.length && euro.length) {
+            const mu = median(uncal);
+            const me = median(euro);
+            if (mu > 0) ratios.push(me / mu);
+        }
+    }
+
+    const uncalCount = bySource.get('entsog_gie_implied_daily') || 0;
+    return {
+        total: rows.length,
+        bySource: [...bySource.entries()].sort((a, b) => b[1] - a[1]),
+        mixedMonths,
+        monthCount: byMonth.size,
+        uncalCount,
+        scaleGap: ratios.length ? median(ratios) : null,
+    };
+}
+
+async function cpNbrp(cc) {
+    if (!cpNbrpCountries) {
+        const { data } = await supabase.from('countries').select('id, code, name');
+        cpNbrpCountries = data || [];
+    }
+    const match = cpNbrpCountries.find(c => (CP_ISO3_TO_ISO2[c.code] || c.code) === cc);
+    const name = CB_COUNTRY_NAMES[cc] || cc;
+
+    // Countries absent from the corpus can still appear as comparator rows in
+    // other countries' EU-wide tables, which is worth surfacing.
+    let mentions = 0;
+    try {
+        const { count } = await supabase.from('data_points')
+            .select('id', { count: 'exact', head: true })
+            .eq('row_data->>Country', name);
+        mentions = count || 0;
+    } catch (_) { /* comparator lookup is best-effort */ }
+
+    if (!match) return { covered: false, mentions, name };
+
+    const [tables, measures] = await Promise.all([
+        supabase.from('data_tables').select('id', { count: 'exact', head: true }).eq('country_id', match.id),
+        supabase.from('measures').select('id', { count: 'exact', head: true }).eq('country_id', match.id),
+    ]);
+    return {
+        covered: true,
+        countryId: match.id,
+        name: match.name || name,
+        tables: tables.count || 0,
+        measures: measures.count || 0,
+        mentions,
+    };
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────
+function cpRenderCoverage(coverage) {
+    const rows = coverage.map(c => {
+        const approx = c.approx && c.count != null ? '~' : '';
+        const countTxt = c.count == null ? '—' : `${approx}${cpFmtInt(c.count)}`;
+        const range = c.first ? `${cpFmtDate(c.first)} → ${cpFmtDate(c.last)}` : '—';
+        return `
+            <tr>
+                <td>
+                    <div class="cp-ds-name">${escapeHtml(c.spec.label)}</div>
+                    <div class="cp-ds-meta">${escapeHtml(c.spec.source)} · ${escapeHtml(c.spec.grain)}</div>
+                </td>
+                <td class="cp-num">${countTxt}</td>
+                <td class="cp-range">${escapeHtml(range)}</td>
+                <td><span class="cp-badge cp-badge-${c.fresh.key}">${escapeHtml(c.fresh.label)}</span></td>
+                <td class="cp-age">${escapeHtml(cpAgeText(c.fresh.ageH))}</td>
+            </tr>`;
+    }).join('');
+
+    return `
+        <section class="cp-section">
+            <h2 class="cp-section-title">Data coverage</h2>
+            <div class="table-container">
+                <table class="data-table cp-table">
+                    <thead>
+                        <tr>
+                            <th>Dataset</th><th class="cp-num">Rows</th><th>Coverage</th>
+                            <th>Status</th><th>Last point</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </section>`;
+}
+
+function cpRenderHeadline(coverage, latest) {
+    const totalRows = coverage.reduce((s, c) => s + (c.count || 0), 0);
+    const anyApprox = coverage.some(c => c.approx && c.count != null);
+    const withData = coverage.filter(c => c.count).length;
+    const problems = coverage.filter(c => c.fresh.key === 'stalled' || c.fresh.key === 'lagging').length;
+
+    const tile = (value, label, cls) =>
+        `<div class="cp-tile ${cls || ''}"><div class="cp-tile-value">${value}</div>
+         <div class="cp-tile-label">${escapeHtml(label)}</div></div>`;
+
+    const tiles = [
+        tile(`${anyApprox ? '~' : ''}${cpFmtInt(totalRows)}`, 'Datapoints held'),
+        tile(`${withData} / ${coverage.length}`, 'Datasets with data'),
+        tile(String(problems), 'Feeds behind schedule', problems ? 'cp-tile-warn' : ''),
+        tile(latest.renewable == null ? '—' : `${latest.renewable.toFixed(1)}%`, 'Renewable share (latest)'),
+        tile(latest.price == null ? '—' : `€${latest.price.toFixed(1)}`, 'Day-ahead €/MWh'),
+        tile(latest.load == null ? '—' : `${cpFmtInt(Math.round(latest.load))}`, 'Electricity load (MW)'),
+        tile(latest.gasDemand == null ? '—' : `${cpFmtInt(Math.round(latest.gasDemand / 1000))}`, 'Gas demand (GWh/day)'),
+        tile(latest.storage == null ? '—' : `${latest.storage.toFixed(1)}%`, 'Gas storage full'),
+    ].join('');
+
+    return `<div class="cp-tiles">${tiles}</div>`;
+}
+
+function cpRenderMix(mix) {
+    if (!mix || !mix.total) {
+        return `<section class="cp-section">
+            <h2 class="cp-section-title">Generation mix</h2>
+            <div class="cp-empty">No generation snapshot available.</div>
+        </section>`;
+    }
+    const bars = mix.items.map(it => {
+        const pct = (it.mw / mix.total) * 100;
+        return `
+            <div class="cp-mix-row">
+                <div class="cp-mix-label">${escapeHtml(it.label)}</div>
+                <div class="cp-mix-track">
+                    <div class="cp-mix-fill" style="width:${pct.toFixed(1)}%;background:${escapeHtml(it.color)}"></div>
+                </div>
+                <div class="cp-mix-val">${pct.toFixed(1)}%</div>
+                <div class="cp-mix-mw">${cpFmtInt(Math.round(it.mw))} MW</div>
+            </div>`;
+    }).join('');
+
+    return `
+        <section class="cp-section">
+            <h2 class="cp-section-title">Generation mix
+                <span class="cp-section-note">latest snapshot · ${escapeHtml(new Date(mix.ts).toLocaleString('en-GB'))}
+                · ${mix.fuelCount} fuel types · ${cpFmtInt(Math.round(mix.total))} MW total</span>
+            </h2>
+            <div class="cp-mix">${bars}</div>
+        </section>`;
+}
+
+function cpRenderGasQuality(q) {
+    if (!q) return '';
+    const srcRows = q.bySource.map(([src, n]) => {
+        const bad = src === 'entsog_gie_implied_daily';
+        return `<tr class="${bad ? 'cp-row-bad' : ''}">
+            <td><code>${escapeHtml(src)}</code></td>
+            <td class="cp-num">${cpFmtInt(n)}</td>
+            <td class="cp-num">${((n / q.total) * 100).toFixed(1)}%</td>
+        </tr>`;
+    }).join('');
+
+    let warning = '';
+    if (q.uncalCount && q.scaleGap && q.scaleGap > 2) {
+        warning = `<div class="cp-warn">
+            <strong>Scale mismatch in gas demand.</strong>
+            ${cpFmtInt(q.uncalCount)} days use the uncalibrated
+            <code>entsog_gie_implied_daily</code> series, which sits about
+            <strong>${q.scaleGap.toFixed(1)}× below</strong> the Eurostat-budgeted days in the
+            same months. Because the two are interleaved day by day
+            (${q.mixedMonths} of ${q.monthCount} months mix sources), the demand chart shows a
+            sawtooth that is an artefact of the source switch rather than real demand.
+        </div>`;
+    } else if (q.mixedMonths) {
+        warning = `<div class="cp-note">${q.mixedMonths} of ${q.monthCount} months combine more than one
+            source, but the sources agree on level, so the series is consistent.</div>`;
+    }
+
+    return `
+        <section class="cp-section">
+            <h2 class="cp-section-title">Gas demand provenance</h2>
+            ${warning}
+            <div class="table-container">
+                <table class="data-table cp-table">
+                    <thead><tr><th>Source</th><th class="cp-num">Days</th><th class="cp-num">Share</th></tr></thead>
+                    <tbody>${srcRows}</tbody>
+                </table>
+            </div>
+        </section>`;
+}
+
+function cpRenderNbrp(nbrp) {
+    const mentionLine = nbrp.mentions
+        ? `<p class="cp-note">Appears as a comparator row in ${cpFmtInt(nbrp.mentions)}
+           table row(s) belonging to other countries.</p>`
+        : '';
+
+    if (!nbrp.covered) {
+        return `
+            <section class="cp-section">
+                <h2 class="cp-section-title">National building renovation plan</h2>
+                <div class="cp-empty">Not covered — no NBRP tables or policy measures for this country.</div>
+                ${mentionLine}
+            </section>`;
+    }
+    return `
+        <section class="cp-section">
+            <h2 class="cp-section-title">National building renovation plan</h2>
+            <div class="cp-tiles cp-tiles-sm">
+                <div class="cp-tile"><div class="cp-tile-value">${cpFmtInt(nbrp.tables)}</div>
+                    <div class="cp-tile-label">Data tables</div></div>
+                <div class="cp-tile"><div class="cp-tile-value">${cpFmtInt(nbrp.measures)}</div>
+                    <div class="cp-tile-label">Policy measures</div></div>
+            </div>
+            ${mentionLine}
+            <button class="cp-btn cp-btn-link" type="button"
+                data-cp-country-id="${nbrp.countryId}">Open full renovation-plan profile →</button>
+        </section>`;
+}
+
+// ── Orchestration ──────────────────────────────────────────────────────────
+async function cpLoadCountry(cc) {
+    const token = ++cpLoadToken;
+    const body = document.getElementById('cpBody');
+    if (!body) return;
+
+    const wantExact = document.getElementById('cpExactCounts')?.checked !== false;
+    body.innerHTML = '<div class="cp-empty">Building profile…</div>';
+    cpSetStatus('Querying…');
+
+    try {
+        const zones = cpZones(cc);
+        const specs = cpDatasetSpecs(cc);
+        const specById = (id) => specs.find(s => s.id === id);
+
+        const [coverage, mix, gasQuality, nbrp, mixRow, priceRow, loadRow, storageRow, gasRow] =
+            await Promise.all([
+                cpBuildCoverage(cc, wantExact),
+                cpGenerationMix(cc),
+                cpGasQuality(cc),
+                cpNbrp(cc),
+                cpLatestRow(specById('mix'), 'ts, renewable_percent'),
+                cpLatestRow(specById('price'), 'ts, price_eur_per_mwh'),
+                cpLatestRow(specById('load'), 'ts, load_mw'),
+                cpLatestRow(specById('gasstorage'), 'gas_day, full_pct, gas_in_storage_twh'),
+                cpLatestRow(specById('gasdemand'), 'gas_day, total_mwh'),
+            ]);
+
+        if (token !== cpLoadToken) return; // a newer request has taken over
+
+        const latest = {
+            renewable: mixRow ? Number(mixRow.renewable_percent) : null,
+            price: priceRow ? Number(priceRow.price_eur_per_mwh) : null,
+            load: loadRow ? Number(loadRow.load_mw) : null,
+            storage: storageRow ? Number(storageRow.full_pct) : null,
+            gasDemand: gasRow ? Number(gasRow.total_mwh) : null,
+        };
+
+        const flag = cbCountryFlag(cc);
+        const name = CB_COUNTRY_NAMES[cc] || cc;
+        const zoneNote = zones.length > 1
+            ? `Electricity bidding zones: ${zones.join(', ')}`
+            : `Electricity bidding zone: ${zones[0]}`;
+
+        body.innerHTML = `
+            <div class="cp-head">
+                <div class="cp-head-flag">${escapeHtml(flag)}</div>
+                <div>
+                    <h2 class="cp-head-name">${escapeHtml(name)} <span class="cp-head-code">${escapeHtml(cc)}</span></h2>
+                    <div class="cp-head-sub">${escapeHtml(zoneNote)}</div>
+                </div>
+            </div>
+            ${cpRenderHeadline(coverage, latest)}
+            ${cpRenderCoverage(coverage)}
+            ${cpRenderMix(mix)}
+            ${cpRenderGasQuality(gasQuality)}
+            ${cpRenderNbrp(nbrp)}
+        `;
+
+        body.querySelector('[data-cp-country-id]')?.addEventListener('click', (e) => {
+            navigateToPage('country', e.currentTarget.getAttribute('data-cp-country-id'));
+        });
+
+        cpSetStatus(`Updated ${new Date().toLocaleTimeString('en-GB')}`);
+    } catch (err) {
+        if (token !== cpLoadToken) return;
+        console.error('Country profile failed:', err);
+        body.innerHTML = `<div class="cp-empty cp-empty-error">Could not build the profile: ${escapeHtml(err.message)}</div>`;
+        cpSetStatus('Failed');
+    }
+}
+
+function loadCountryProfilePage() {
+    const select = document.getElementById('cpCountrySelect');
+    if (!select) return;
+
+    if (!cpWired) {
+        select.innerHTML = CP_COUNTRIES.map(cc => {
+            const name = CB_COUNTRY_NAMES[cc] || cc;
+            return `<option value="${escapeHtml(cc)}">${escapeHtml(`${cbCountryFlag(cc)} ${name}`)}</option>`;
+        }).join('');
+
+        let initial = 'PL';
+        try {
+            const saved = localStorage.getItem(CP_LAST_COUNTRY_KEY);
+            if (saved && CP_COUNTRIES.includes(saved)) initial = saved;
+        } catch (_) { /* storage may be blocked */ }
+        select.value = initial;
+
+        select.addEventListener('change', () => {
+            try { localStorage.setItem(CP_LAST_COUNTRY_KEY, select.value); } catch (_) { /* ignore */ }
+            cpLoadCountry(select.value);
+        });
+        document.getElementById('cpRefreshBtn')?.addEventListener('click', () => cpLoadCountry(select.value));
+        document.getElementById('cpExactCounts')?.addEventListener('change', () => cpLoadCountry(select.value));
+
+        cpWired = true;
+    }
+
+    cpLoadCountry(select.value);
 }
 
 })(); // End IIFE

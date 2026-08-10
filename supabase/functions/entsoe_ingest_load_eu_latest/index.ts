@@ -210,13 +210,36 @@ serve(async (req) => {
       if (refreshErr) console.error("MV refresh failed:", refreshErr.message);
     }
 
+    const attempted = zones.filter((z) => DOMAINS[z]).length;
+    const errorCount = Object.keys(errors).length;
+
+    // Previously this always returned 200, even when every zone failed. The
+    // caller (the GitHub Action and pg_cron) only checks the status code, so a
+    // total ingest failure looked like success and went unnoticed for weeks.
+    // Writing nothing while zones were attempted is a failure — say so.
+    if (!rows.length && attempted > 0) {
+      return json({
+        error: "ingest_empty",
+        message: `No load rows written for any of ${attempted} zone(s)`,
+        ts: bestTs ?? null,
+        zones_total: zones.length,
+        zone_rows_upserted: 0,
+        zones_skipped: Object.keys(skipped).length,
+        errors: errorCount,
+        // Surface a few real messages so the caller's log is actionable.
+        error_sample: Object.entries(errors).slice(0, 5).map(([z, m]) => `${z}: ${m}`),
+        skipped_sample: Object.keys(skipped).slice(0, 10),
+      }, 502);
+    }
+
     return json({
       ok: true,
       ts: bestTs ?? null,
       zones_total: zones.length,
       zone_rows_upserted: rows.length,
       zones_skipped: Object.keys(skipped).length,
-      errors: Object.keys(errors).length,
+      errors: errorCount,
+      error_sample: Object.entries(errors).slice(0, 5).map(([z, m]) => `${z}: ${m}`),
     });
   } catch (e) {
     return json({ error: "internal_error", message: e?.message ?? String(e) }, 500);
