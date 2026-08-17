@@ -1685,7 +1685,21 @@
                 <div class="hw-card">
                     <div class="hw-card-head">
                         <h3>How much of the extra demand was met by gas</h3>
-                        <p>Extra gas generation on heatwave days as a share of the extra demand. Both terms are measured directly &mdash; gas is a single ENTSO-E production type and demand comes from metered load &mdash; so this needs no reconstruction of the rest of the mix. Above 100% means gas rose by more than demand did, covering lost output elsewhere as well; below zero means gas fell.</p>
+                        <p>
+                            Extra gas generation on heatwave days as a share of the extra demand. Both terms
+                            are measured directly &mdash; gas is a single ENTSO-E production type and demand
+                            comes from metered load &mdash; so this needs no reconstruction of the rest of
+                            the mix.
+                        </p>
+                        <p style="margin-top:8px">
+                            <strong>Above 100%</strong> means gas rose by more than demand did, for one of two
+                            reasons: other domestic generation fell and gas replaced it (Belgium, whose
+                            non-gas output dropped 17.9&nbsp;GWh/day with its nuclear fleet), or the country
+                            also exported more (Netherlands, +7.2&nbsp;GWh/day of extra net exports).
+                            <strong>Below zero</strong> means gas fell outright. The figure after each bar is
+                            the size of the demand change itself &mdash; a high share on a small change
+                            carries far less weight than Italy&rsquo;s 88% on 60.8&nbsp;GWh/day.
+                        </p>
                     </div>
                     <svg id="hwGasShare" height="360" role="img" aria-label="Share of the extra heatwave demand met by gas"></svg>
                     <button class="hw-tbl-btn" data-hwt="hwGasShareTbl">Show data table</button>

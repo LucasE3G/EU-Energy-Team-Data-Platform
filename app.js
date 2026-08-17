@@ -13003,8 +13003,14 @@ function hwRenderGasShare() {
     const svg = document.getElementById('hwGasShare');
     if (!svg) return;
     hwClear(svg);
+    // A ratio on a tiny denominator is volatile and must not outrank a real one:
+    // Czechia's 90% sits on a 2.1 GWh/day demand change against Italy's 88% on
+    // 60.8. Countries below the floor are dropped, and the magnitude is printed
+    // beside every bar so the reader can weight what remains.
+    const MIN_DEMAND_GWH = 3;
     const rows = hwData.sources.slice()
-        .filter(r => Number(r.extra_demand_gwh) > 1 && Number.isFinite(Number(r.gas_pct_of_extra_demand)))
+        .filter(r => Number(r.extra_demand_gwh) >= MIN_DEMAND_GWH
+                  && Number.isFinite(Number(r.gas_pct_of_extra_demand)))
         .sort((a, b) => Number(b.gas_pct_of_extra_demand) - Number(a.gas_pct_of_extra_demand))
         .slice(0, 14);
     if (!rows.length) { svg.setAttribute('height', 50); return; }
@@ -13012,7 +13018,7 @@ function hwRenderGasShare() {
     const H = rows.length * 24 + 44;
     svg.setAttribute('height', H);
     const W = svg.clientWidth || 800;
-    const m = {t: 10, r: 96, b: 30, l: 104};
+    const m = {t: 10, r: 168, b: 30, l: 104};
     const iw = Math.max(80, W - m.l - m.r);
     const vals = rows.map(r => Number(r.gas_pct_of_extra_demand));
     const lo = Math.min(0, ...vals), hi = Math.max(100, ...vals);
@@ -13037,7 +13043,12 @@ function hwRenderGasShare() {
             fill: neg ? '#1baf7a' : HW_FUEL_COLOR.gas});
         hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 2, class: 'hw-lbl', 'text-anchor': 'end'},
             hwName(r.country_code));
-        hwEl(svg, 'text', {x: (neg ? x : x + w) + 8, y: y + bh - 2, class: 'hw-val'}, v + '%');
+        const endX = (neg ? x : x + w) + 8;
+        hwEl(svg, 'text', {x: endX, y: y + bh - 2, class: 'hw-val'}, v + '%');
+        // Magnitude beside the ratio: 88% of 60.8 GWh/day is a different fact
+        // from 90% of 2.1, and the bar length alone cannot say which is which.
+        hwEl(svg, 'text', {x: endX + 42, y: y + bh - 2, class: 'hw-tick'},
+            `on ${hwFmt(r.extra_demand_gwh, 1)} GWh/day`);
         const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
         hwTip(hit, `<b>${hwName(r.country_code)}</b><br>
             Extra demand ${hwFmt(r.extra_demand_gwh, 1)} GWh/day<br>
