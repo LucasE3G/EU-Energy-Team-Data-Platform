@@ -12928,8 +12928,12 @@ function hwRenderGasImports() {
     const svg = document.getElementById('hwGasImp');
     if (!svg) return;
     hwClear(svg);
+    // Explicit null checks: Number(null) is 0, not NaN, so isFinite alone let
+    // Switzerland through with "gas — GWh/day" — a country with no gas fleet
+    // has nothing to say about gas displacement and is excluded.
     const rows = hwData.sources.slice().filter(r =>
-        Number.isFinite(Number(r.extra_imports_gwh)) && Number.isFinite(Number(r.extra_gas_gwh)));
+        r.extra_imports_gwh != null && r.extra_gas_gwh != null
+        && Number.isFinite(Number(r.extra_imports_gwh)) && Number.isFinite(Number(r.extra_gas_gwh)));
     if (!rows.length) { svg.setAttribute('height', 50); return; }
 
     const W = svg.clientWidth || 800, H = 380;
@@ -12957,7 +12961,14 @@ function hwRenderGasImports() {
             fill: displacing ? '#1baf7a' : HW_POS, stroke: '#ffffff', 'stroke-width': 2});
         hwEl(svg, 'text', {x: x + 9, y: y + 4, class: 'hw-tick'}, r.country_code);
         const hit = hwEl(svg, 'circle', {cx: x, cy: y, r: 16, fill: 'transparent'});
-        hwTip(hit, `<b>${hwName(r.country_code)}</b><br>Imports ${hwSign(r.extra_imports_gwh, 1)} GWh/day<br>
+        // Phrase the trade change from the country's actual position: France's
+        // +67.7 is exports falling, not imports appearing.
+        const tp = hwData.trade.find(t => t.country_code === r.country_code);
+        const d = Number(r.extra_imports_gwh);
+        const tradeLine = tp && Number(tp.normal_net_export_gwh) > 0
+            ? `Exports ${d >= 0 ? 'fell' : 'rose'} ${hwFmt(Math.abs(d), 1)} GWh/day`
+            : `Imports ${d >= 0 ? 'rose' : 'fell'} ${hwFmt(Math.abs(d), 1)} GWh/day`;
+        hwTip(hit, `<b>${hwName(r.country_code)}</b><br>${tradeLine}<br>
             Gas ${hwSign(r.extra_gas_gwh, 1)} GWh/day<br>Extra demand ${hwFmt(r.extra_demand_gwh, 1)}`);
     });
     hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 8, class: 'hw-lbl', 'text-anchor': 'middle'},
@@ -12990,8 +13001,11 @@ function hwRenderGasShare() {
     // is a share of nothing and produced a 509% bar.
     const MIN_UPLIFT_PCT = 2;
     const rows = hwData.sources.slice()
+        // != null before Number(): Number(null) is 0, which let Switzerland —
+        // a country with no gas fleet — render a "-244%" bar of pure noise.
         .filter(r => Number(r.extra_demand_gwh) >= MIN_DEMAND_GWH
                   && Number(r.uplift_pct) >= MIN_UPLIFT_PCT
+                  && r.gas_pct_of_extra_demand != null
                   && Number.isFinite(Number(r.gas_pct_of_extra_demand)))
         .sort((a, b) => (Number(b.gas_pct_of_extra_demand) + 100*Number(b.extra_imports_gwh)/Number(b.extra_demand_gwh))
                       - (Number(a.gas_pct_of_extra_demand) + 100*Number(a.extra_imports_gwh)/Number(a.extra_demand_gwh)))
@@ -13287,17 +13301,20 @@ async function hwFetchAll() {
         // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
         // those countries are excluded rather than drawn as if they were findings.
         sb.from('v_heatwave_fuel_resilience').select('*').gte('heatwave_days', HW_MIN_DAYS),
-        sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', 15),
-        sb.from('v_heatwave_price').select('*').gte('heatwave_days', 20),
-        sb.from('v_heatwave_gas_sector').select('*').gte('heatwave_days', 20),
+        sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', HW_MIN_DAYS),
+        sb.from('v_heatwave_price').select('*').gte('heatwave_days', HW_MIN_DAYS),
+        sb.from('v_heatwave_gas_sector').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_helpers').select('*'),
         gasFetchAllPaged(() => sb.from('weather_country_daily')
             .select('country_code, date, tmax_c, heatwave_id, heatwave_length')
             .gte('date', '2026-01-01').order('date', {ascending: true}), 1000, 40000),
         sb.from('v_heatwave_response_curve').select('*'),
         sb.from('v_heatwave_burden').select('*'),
-        sb.from('v_heatwave_trade_position').select('*').gte('heatwave_days', 20),
-        sb.from('v_heatwave_demand_sources').select('*').gte('heatwave_days', 20),
+        // One floor everywhere (HW_MIN_DAYS): the old mix of 10/15/20 made
+        // Poland (16 days) and Portugal (18) vanish from some charts while
+        // appearing in others, which read as an error rather than a rule.
+        sb.from('v_heatwave_trade_position').select('*').gte('heatwave_days', HW_MIN_DAYS),
+        sb.from('v_heatwave_demand_sources').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_demand_uplift').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_gap_coverage').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_baseline_quality').select('*'),
