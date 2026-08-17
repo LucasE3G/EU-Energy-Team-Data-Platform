@@ -32,7 +32,11 @@
                     <span class="nav-icon">🔥</span>
                     <span>EU gas meter</span>
                 </a>
-                <a href="#" class="nav-item" data-page="country-profile">
+                <a href="#/heatwaves" class="nav-item" data-page="heatwaves">
+                    <span class="nav-icon">🌡️</span>
+                    <span>Heatwaves</span>
+                </a>
+                <a href="#/country-profile" class="nav-item" data-page="country-profile">
                     <span class="nav-icon">🌍</span>
                     <span>Country profile</span>
                 </a>
@@ -1565,6 +1569,133 @@
                 </div>
                 <div class="modal-body chart-info-body" id="chartInfoBody"></div>
             </div>
+        </div>
+
+        <!-- Heatwaves Page -->
+        <div id="heatwavesPage" class="page">
+            <div class="page-header">
+                <h1>Heatwaves</h1>
+                <p class="page-subtitle">How heat stresses the European power system — demand, generation, prices, gas and interconnection</p>
+            </div>
+
+            <div class="hw-intro">
+                A heatwave is three or more consecutive days above the 90th percentile of daily maximum
+                temperature for that calendar day, measured per country against a 2014&ndash;2025 baseline.
+                The threshold is deliberately local — 29&nbsp;&deg;C in Poland, 36&nbsp;&deg;C in Spain — because
+                the energy system responds to the local anomaly, not to an absolute number.
+                <span id="hwFreshness" class="hw-fresh"></span>
+            </div>
+
+            <div class="stats-grid" id="hwKpis"></div>
+
+            <div class="section">
+                <h2 class="section-title">The European picture</h2>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>Renewable share falls as more of Europe bakes</h3>
+                        <p>Renewable share of EU generation, grouped by how many countries were in a heatwave on the same day. Each point is labelled with the number of days behind it.</p>
+                    </div>
+                    <svg id="hwEu" height="300" role="img" aria-label="EU renewable share by number of countries in a heatwave"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwEuTbl">Show data table</button>
+                    <div id="hwEuTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
+                <div class="hw-grid-2">
+                    <div class="hw-card">
+                        <div class="hw-card-head">
+                            <h3>Which sources hold up under heat</h3>
+                            <p>Average change in output on heatwave days across all countries reporting each fuel. Whiskers show the best and worst national outcome.</p>
+                        </div>
+                        <svg id="hwFuels" height="300" role="img" aria-label="Output change by fuel during heatwaves"></svg>
+                        <button class="hw-tbl-btn" data-hwt="hwFuelsTbl">Show data table</button>
+                        <div id="hwFuelsTbl" class="hw-hidden hw-scroll"></div>
+                    </div>
+
+                    <div class="hw-card">
+                        <div class="hw-card-head">
+                            <h3>Renewable share during heatwaves</h3>
+                            <p>Change in the renewable share of generation, in percentage points, against non-heatwave days in the same country and month.</p>
+                        </div>
+                        <svg id="hwRen" height="300" role="img" aria-label="Change in renewable share during heatwaves"></svg>
+                        <button class="hw-tbl-btn" data-hwt="hwRenTbl">Show data table</button>
+                        <div id="hwRenTbl" class="hw-hidden hw-scroll"></div>
+                    </div>
+                </div>
+
+                <div class="hw-grid-2">
+                    <div class="hw-card">
+                        <div class="hw-card-head">
+                            <h3>Day-ahead electricity prices</h3>
+                            <p>Change in the average day-ahead price on heatwave days. The largest responses are not in the hottest countries.</p>
+                        </div>
+                        <svg id="hwPrice" height="300" role="img" aria-label="Change in day-ahead price during heatwaves"></svg>
+                        <button class="hw-tbl-btn" data-hwt="hwPriceTbl">Show data table</button>
+                        <div id="hwPriceTbl" class="hw-hidden hw-scroll"></div>
+                    </div>
+
+                    <div class="hw-card">
+                        <div class="hw-card-head">
+                            <h3>Gas demand by sector</h3>
+                            <p>Gas for power rises to cover the electricity gap while household gas falls with the heating load.</p>
+                        </div>
+                        <div id="hwGasLegend" class="hw-legend"></div>
+                        <svg id="hwGas" height="300" role="img" aria-label="Change in gas demand by sector during heatwaves"></svg>
+                        <button class="hw-tbl-btn" data-hwt="hwGasTbl">Show data table</button>
+                        <div id="hwGasTbl" class="hw-hidden hw-scroll"></div>
+                    </div>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>Did the interconnectors help?</h3>
+                        <p>Extra energy sent to neighbours during <em>their</em> heatwaves, against a same-month baseline. Split by whether the exporter was itself in a heatwave — power moving between two stressed systems is competition for scarce supply, not assistance.</p>
+                    </div>
+                    <div id="hwHelpLegend" class="hw-legend"></div>
+                    <svg id="hwHelp" height="380" role="img" aria-label="Interconnector assistance during heatwaves"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwHelpTbl">Show data table</button>
+                    <div id="hwHelpTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 class="section-title">Country detail</h2>
+                <div class="hw-filters">
+                    <label for="hwCountry">Country</label>
+                    <select id="hwCountry" class="filter-select"></select>
+                    <span class="hw-filter-note">scopes the three charts below</span>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>Cooling response curve</h3>
+                        <p>Average demand indexed to each country&rsquo;s mild-weather baseline (100 = demand at 16&ndash;19&nbsp;&deg;C), against daily maximum temperature. The selected country is highlighted; the rest are context.</p>
+                    </div>
+                    <div id="hwRespLegend" class="hw-legend"></div>
+                    <svg id="hwResp" height="340" role="img" aria-label="Demand index versus daily maximum temperature"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwRespTbl">Show data table</button>
+                    <div id="hwRespTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3 id="hwBalTitle">What covered the gap</h3>
+                        <p>Change in average output by fuel on heatwave days, in megawatts, so the terms reconcile against the change in demand.</p>
+                    </div>
+                    <div id="hwBalLegend" class="hw-legend"></div>
+                    <svg id="hwBal" height="300" role="img" aria-label="Change in generation by fuel during heatwaves"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwBalTbl">Show data table</button>
+                    <div id="hwBalTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+            </div>
+
+            <p class="hw-caveat">
+                <strong>Known data gaps.</strong> Nine countries — Cyprus, Czechia, Finland, Greece, Ireland,
+                Lithuania, Malta, Slovakia and Sweden — have no daily national gas feed and are derived from
+                Eurostat monthly statistics, published roughly four months in arrears. They are excluded from
+                the gas chart rather than shown as zero. Cross-border figures are net physical flows: they
+                establish what moved, not why.
+            </p>
         </div>
 
         <!-- Country Profile Page -->

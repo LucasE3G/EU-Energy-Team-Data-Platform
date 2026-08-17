@@ -2440,3 +2440,101 @@ body.sidebar-collapsed #sidebarReveal {
     .cp-mix-row { grid-template-columns: 96px 1fr 48px; }
     .cp-mix-mw { display: none; }
 }
+
+/* ── Heatwaves page ──────────────────────────────────────────────────────── */
+.hw-intro {
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-color);
+    border-radius: 0 12px 12px 0;
+    max-width: 88ch;
+}
+.hw-fresh { display: block; margin-top: 6px; font-size: 12px; color: var(--text-tertiary); }
+
+.hw-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 20px 22px 16px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow-sm);
+}
+.hw-card-head { margin-bottom: 14px; }
+.hw-card-head h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 4px;
+    line-height: 1.35;
+}
+.hw-card-head p {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 80ch;
+}
+
+.hw-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 18px; }
+.hw-grid-2 .hw-card { margin-bottom: 0; }
+.hw-grid-2 + .hw-grid-2, .hw-grid-2 + .hw-card { margin-top: 18px; }
+
+.hw-filters {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 14px 18px; margin-bottom: 18px;
+    background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+.hw-filters label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.hw-filters select { min-width: 210px; }
+.hw-filter-note { font-size: 12.5px; color: var(--text-tertiary); }
+
+.hw-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px;
+             font-size: 12px; color: var(--text-secondary); }
+.hw-lg { display: flex; align-items: center; gap: 6px; }
+.hw-sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+#heatwavesPage svg { display: block; width: 100%; overflow: visible; }
+.hw-tick { font-size: 11px; fill: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.hw-lbl  { font-size: 12px; fill: var(--text-secondary); }
+.hw-val  { font-size: 12px; fill: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.hw-tbl-btn {
+    font: inherit; font-size: 12px; color: var(--text-secondary);
+    background: none; border: 1px solid var(--border-color); border-radius: 7px;
+    padding: 4px 10px; cursor: pointer; margin-top: 12px;
+}
+.hw-tbl-btn:hover { background: var(--bg-tertiary); }
+.hw-hidden { display: none; }
+.hw-scroll { overflow-x: auto; }
+.hw-table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 12px; }
+.hw-table th, .hw-table td {
+    text-align: right; padding: 5px 9px;
+    border-bottom: 1px solid var(--border-color); font-variant-numeric: tabular-nums;
+}
+.hw-table th:first-child, .hw-table td:first-child { text-align: left; font-variant-numeric: normal; }
+.hw-table th { color: var(--text-secondary); font-weight: 600; }
+
+.hw-tip {
+    position: fixed; pointer-events: none; z-index: 2000; opacity: 0; transition: opacity .1s;
+    background: var(--primary-color); color: #fff; font-size: 12px; line-height: 1.45;
+    padding: 7px 10px; border-radius: 7px; max-width: 250px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.25);
+}
+.hw-tip b { font-weight: 700; }
+
+.hw-caveat {
+    font-size: 12.5px; line-height: 1.65; color: var(--text-secondary);
+    padding: 14px 18px; margin-top: 8px;
+    background: var(--bg-tertiary); border-radius: 10px; max-width: 90ch;
+}
+
+@media (max-width: 768px) {
+    .hw-grid-2 { grid-template-columns: 1fr; }
+    .hw-filters { flex-direction: column; align-items: stretch; }
+}

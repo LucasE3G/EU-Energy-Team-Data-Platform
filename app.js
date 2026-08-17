@@ -168,23 +168,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Restore the last page the user was on (persisted across reloads).
         // Falls back to the dashboard if nothing is stored or if the stored
         // page is invalid.
-        const saved = readLastPageState();
-        if (saved && saved.page && saved.page !== 'dashboard') {
-            if (saved.page === 'country' && saved.countryId && saved.countryName) {
-                // Use navigateToCountry so breadcrumb + sidebar highlight + state
-                // are all restored consistently.
-                navigateToCountry(saved.countryId, saved.countryName);
-            } else if (saved.page === 'country' && saved.countryId) {
-                // Older saved state without a countryName — route through
-                // navigateToPage; breadcrumb will update once loadCountryPage
-                // resolves the country record.
-                navigateToPage('country', saved.countryId);
-            } else {
-                navigateToPage(saved.page);
-            }
+        // A URL in the address bar wins over the stored page: it is how someone
+        // arrives from a shared link, and silently redirecting them to whatever
+        // page they last visited would make links useless.
+        const routed = readRouteFromHash();
+        if (routed) {
+            navigateToPage(routed.page, routed.countryId, {replaceHash: true});
         } else {
-            navigateToPage('home');
+            const saved = readLastPageState();
+            if (saved && saved.page && saved.page !== 'dashboard') {
+                if (saved.page === 'country' && saved.countryId && saved.countryName) {
+                    // Use navigateToCountry so breadcrumb + sidebar highlight + state
+                    // are all restored consistently.
+                    navigateToCountry(saved.countryId, saved.countryName);
+                } else if (saved.page === 'country' && saved.countryId) {
+                    // Older saved state without a countryName — route through
+                    // navigateToPage; breadcrumb will update once loadCountryPage
+                    // resolves the country record.
+                    navigateToPage('country', saved.countryId);
+                } else {
+                    navigateToPage(saved.page);
+                }
+            } else {
+                navigateToPage('home');
+            }
         }
+
+        // Back/forward and pasted links.
+        window.addEventListener('hashchange', () => {
+            const r = readRouteFromHash();
+            if (r && r.page !== currentRoutePage) navigateToPage(r.page, r.countryId, {fromHash: true});
+        });
     } catch (error) {
         console.error('Error initializing app:', error);
         console.error('Error details:', error.message, error.stack);
@@ -450,7 +464,35 @@ function track(event, props) {
 }
 
 // Navigate to page
-function navigateToPage(page, countryId = null) {
+// ── URL routing ────────────────────────────────────────────────────────────
+// Every page is addressable as `#/<page>` (countries as `#/country/<id>`), so
+// a page can be linked to, bookmarked and shared. Before this the app kept the
+// current page only in localStorage, which meant every URL landed on whatever
+// page that particular browser last had open.
+const ROUTABLE_PAGES = new Set([
+    'home', 'dashboard', 'energy-meter', 'gas-meter', 'heatwaves',
+    'country-profile', 'contact', 'about', 'terms', 'country',
+]);
+let currentRoutePage = null;
+
+function readRouteFromHash() {
+    const raw = (location.hash || '').replace(/^#\/?/, '').trim();
+    if (!raw) return null;
+    const [page, id] = raw.split('/');
+    if (!ROUTABLE_PAGES.has(page)) return null;
+    return {page, countryId: page === 'country' ? (id || null) : null};
+}
+
+function writeRouteToHash(page, countryId, replace) {
+    const hash = '#/' + page + (page === 'country' && countryId ? '/' + countryId : '');
+    if (location.hash === hash) return;
+    // replaceState on first load so the entry point does not leave a dead
+    // history step behind the user's first Back press.
+    if (replace && history.replaceState) history.replaceState(null, '', hash);
+    else location.hash = hash;
+}
+
+function navigateToPage(page, countryId = null, opts = {}) {
     if (page !== 'energy-meter') {
         teardownEnergyRealtimeSubscription();
     }
@@ -496,6 +538,11 @@ function navigateToPage(page, countryId = null) {
         document.querySelector('[data-page="gas-meter"]')?.classList.add('active');
         document.getElementById('pageTitle').textContent = 'EU gas meter';
         loadGasMeterPage();
+    } else if (page === 'heatwaves') {
+        document.getElementById('heatwavesPage')?.classList.add('active');
+        document.querySelector('[data-page="heatwaves"]')?.classList.add('active');
+        document.getElementById('pageTitle').textContent = 'Heatwaves';
+        loadHeatwavesPage();
     } else if (page === 'country-profile') {
         document.getElementById('countryProfilePage')?.classList.add('active');
         document.querySelector('[data-page="country-profile"]')?.classList.add('active');
@@ -525,10 +572,14 @@ function navigateToPage(page, countryId = null) {
         document.getElementById('pageTitle').textContent = 'National renovation building plans';
         loadDashboard();
         saveLastPageState('dashboard');
+        currentRoutePage = 'dashboard';
+        if (!opts.fromHash) writeRouteToHash('dashboard', null, opts.replaceHash);
         return;
     }
 
     saveLastPageState(page, countryId);
+    currentRoutePage = page;
+    if (!opts.fromHash) writeRouteToHash(page, countryId, opts.replaceHash);
 }
 
 async function loadEnergyMeterPage() {
@@ -12193,6 +12244,534 @@ function loadCountryProfilePage() {
     }
 
     cpLoadCountry(select.value);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Heatwaves page
+//
+// Reads the heatwave analysis views live. Those views were originally written
+// for ad-hoc SQL and re-aggregated the 15-minute tables on every call, which
+// is far too slow behind a page load; heatwave_fast_mvs.sql materializes the
+// daily grain so everything here returns in well under a second.
+//
+// Colour: chrome follows the E3G brand tokens, but the data marks keep the
+// validated categorical/diverging palette. An eight-hue categorical set has to
+// clear colour-vision-deficiency separation checks as a set, and deriving one
+// from two brand hues without re-running that validation would be guesswork.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const HW_NS = 'http://www.w3.org/2000/svg';
+const HW_FUEL_ORDER = ['solar', 'wind', 'hydro', 'nuclear', 'gas', 'coal', 'biomass', 'other'];
+const HW_FUEL_COLOR = {
+    solar: '#eda100', wind: '#2a78d6', hydro: '#1baf7a', nuclear: '#4a3aa7',
+    gas: '#eb6834', coal: '#e34948', biomass: '#008300', other: '#e87ba4',
+};
+const HW_POS = '#2a78d6';   // diverging cool pole
+const HW_NEG = '#c2562f';   // diverging warm pole
+const HW_ACCENT = '#262958';
+const HW_DEEMPH = '#d5d4cd';
+const HW_SEQ = ['#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'];
+
+let hwWired = false;
+let hwData = null;
+let hwLoadToken = 0;
+
+function hwEl(p, tag, attrs = {}, text) {
+    const n = document.createElementNS(HW_NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text !== undefined) n.textContent = text;
+    p.appendChild(n);
+    return n;
+}
+function hwClear(s) { while (s && s.firstChild) s.removeChild(s.firstChild); }
+function hwName(cc) { return CB_COUNTRY_NAMES[cc] || cc; }
+function hwFmt(v, d = 0) {
+    if (v === null || v === undefined || v === '') return '—';
+    return Number(v).toLocaleString('en-GB', {minimumFractionDigits: d, maximumFractionDigits: d});
+}
+function hwSign(v, d = 0) { return (Number(v) > 0 ? '+' : '') + hwFmt(v, d); }
+function hwCap(s) { return String(s).charAt(0).toUpperCase() + String(s).slice(1); }
+
+function hwTip(node, html) {
+    let tip = document.getElementById('hwTip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'hwTip';
+        tip.className = 'hw-tip';
+        document.body.appendChild(tip);
+    }
+    node.addEventListener('mousemove', (e) => {
+        tip.innerHTML = html;
+        tip.style.opacity = 1;
+        const r = tip.getBoundingClientRect();
+        let x = e.clientX + 14, y = e.clientY - 10;
+        if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+        if (y + r.height > window.innerHeight - 8) y = window.innerHeight - r.height - 8;
+        tip.style.left = x + 'px';
+        tip.style.top = Math.max(8, y) + 'px';
+    });
+    node.addEventListener('mouseleave', () => { tip.style.opacity = 0; });
+}
+
+function hwTable(hostId, cols, rows) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    host.innerHTML = `<table class="hw-table"><thead><tr>${
+        cols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${
+        rows.map(r => `<tr>${r.map(v => `<td>${escapeHtml(String(v))}</td>`).join('')}</tr>`).join('')
+    }</tbody></table>`;
+}
+
+function hwLegend(hostId, items) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    host.innerHTML = items.map(i =>
+        `<span class="hw-lg"><span class="hw-sw" style="background:${i.c}"></span>${escapeHtml(i.t)}</span>`
+    ).join('');
+}
+
+// Shared horizontal diverging bar — used by fuels, renewable, price, balance.
+function hwDiverging(svgId, rows, opts) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+    hwClear(svg);
+    if (!rows.length) {
+        svg.setAttribute('height', 60);
+        hwEl(svg, 'text', {x: 12, y: 32, class: 'hw-lbl'}, opts.empty || 'No data for this selection.');
+        return;
+    }
+    const rowH = opts.rowH || 22;
+    const H = rows.length * rowH + 34;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 640;
+    const m = {t: 8, r: opts.right || 62, b: 22, l: opts.left || 92};
+    const iw = Math.max(80, W - m.l - m.r);
+    const mx = Math.max(...rows.map(r => Math.abs(r.v)), 0.001) * 1.12;
+    const X = v => m.l + iw / 2 + (v / mx) * (iw / 2);
+    const bh = Math.min(14, rowH - 8);
+
+    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * rowH - 6,
+        stroke: '#c3c2b7', 'stroke-width': 1});
+
+    rows.forEach((r, i) => {
+        const y = m.t + i * rowH;
+        const neg = r.v < 0;
+        const x = neg ? X(r.v) : X(0);
+        const w = Math.max(2, Math.abs(X(r.v) - X(0)));
+        if (r.lo !== undefined && r.hi !== undefined) {
+            hwEl(svg, 'line', {x1: X(r.lo), x2: X(r.hi), y1: y + bh / 2, y2: y + bh / 2,
+                stroke: '#c3c2b7', 'stroke-width': 1});
+            [r.lo, r.hi].forEach(b => hwEl(svg, 'line', {x1: X(b), x2: X(b),
+                y1: y + 2, y2: y + bh - 2, stroke: '#c3c2b7', 'stroke-width': 1}));
+        }
+        hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4,
+            fill: neg ? (opts.negColor || HW_NEG) : (opts.posColor || HW_POS)});
+        hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 1, class: 'hw-lbl', 'text-anchor': 'end'}, r.label);
+        hwEl(svg, 'text', {x: neg ? x - 7 : x + w + 7, y: y + bh - 1, class: 'hw-val',
+            'text-anchor': neg ? 'end' : 'start'}, r.vlabel);
+        const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
+        hwTip(hit, r.tip);
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 5, class: 'hw-lbl', 'text-anchor': 'middle'}, opts.axis);
+}
+
+// ── Europe: renewable share vs how much of the continent is hot ────────────
+// A dot plot, not bars: the y-axis is truncated (the values sit in a 44-50%
+// band) and bar LENGTH must be read from zero, so bars here would overstate
+// the difference. Position encodes the value instead, which a truncated scale
+// supports honestly.
+function hwRenderEu() {
+    const svg = document.getElementById('hwEu');
+    if (!svg) return;
+    hwClear(svg);
+    const order = ['0', '1-3', '4-7', '8+'];
+    const rows = order.map(b => hwData.eu.find(r => r.bucket === b)).filter(Boolean);
+    if (!rows.length) return;
+
+    const W = svg.clientWidth || 800, H = 300;
+    svg.setAttribute('height', H);
+    const m = {t: 20, r: 28, b: 66, l: 54};
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const vals = rows.map(r => +r.mean_renewable_pct);
+    const y0 = Math.floor(Math.min(...vals) - 2), y1 = Math.ceil(Math.max(...vals) + 2);
+    const X = i => m.l + (i + 0.5) * (iw / rows.length);
+    const Y = v => m.t + ih - (v - y0) / (y1 - y0) * ih;
+
+    for (let k = 0; k <= 4; k++) {
+        const v = y0 + (y1 - y0) * k / 4;
+        hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v), stroke: '#e1e0d9', 'stroke-width': 1});
+        hwEl(svg, 'text', {x: m.l - 8, y: Y(v) + 4, class: 'hw-tick', 'text-anchor': 'end'},
+            hwFmt(v, 0) + '%');
+    }
+
+    hwEl(svg, 'polyline', {
+        points: rows.map((r, i) => `${X(i)},${Y(+r.mean_renewable_pct)}`).join(' '),
+        fill: 'none', stroke: HW_ACCENT, 'stroke-width': 2, 'stroke-linejoin': 'round',
+    });
+
+    rows.forEach((r, i) => {
+        const v = +r.mean_renewable_pct;
+        hwEl(svg, 'circle', {cx: X(i), cy: Y(v), r: 7, fill: HW_ACCENT,
+            stroke: '#ffffff', 'stroke-width': 2});
+        hwEl(svg, 'text', {x: X(i), y: Y(v) - 15, class: 'hw-val', 'text-anchor': 'middle'},
+            hwFmt(v, 1) + '%');
+        hwEl(svg, 'text', {x: X(i), y: m.t + ih + 22, class: 'hw-lbl', 'text-anchor': 'middle'}, r.bucket);
+        // Sample size sits with the category, not hidden in a tooltip: the
+        // buckets range from 299 days to 51 and that governs how much weight
+        // each point can carry.
+        hwEl(svg, 'text', {x: X(i), y: m.t + ih + 38, class: 'hw-tick', 'text-anchor': 'middle'},
+            hwFmt(r.days) + ' days');
+        const hit = hwEl(svg, 'circle', {cx: X(i), cy: Y(v), r: 18, fill: 'transparent'});
+        hwTip(hit, `<b>${r.bucket} countries in a heatwave</b><br>Renewable share ${hwFmt(v, 1)}%<br>
+            EU demand ${hwFmt(r.mean_eu_load_mw)} MW<br>${hwFmt(r.days)} days`);
+    });
+
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 8, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Number of countries in a heatwave on the same day');
+
+    hwTable('hwEuTbl', ['Countries hot', 'Days', 'Renewable share %', 'EU demand MW'],
+        rows.map(r => [r.bucket, r.days, r.mean_renewable_pct, hwFmt(r.mean_eu_load_mw)]));
+}
+
+function hwRenderFuels() {
+    const rows = hwData.fuels.slice().sort((a, b) => b.avg - a.avg).map(r => ({
+        label: hwCap(r.fuel), v: r.avg, lo: r.worst, hi: r.best,
+        vlabel: hwSign(r.avg, 1) + '%',
+        tip: `<b>${hwCap(r.fuel)}</b><br>Mean ${hwSign(r.avg, 1)}%<br>
+              Range ${hwFmt(r.worst, 1)}% to ${hwFmt(r.best, 1)}%<br>${r.countries} countries`,
+    }));
+    hwDiverging('hwFuels', rows, {axis: 'Change in output during heatwaves (%)', rowH: 30, left: 76});
+    hwTable('hwFuelsTbl', ['Fuel', 'Mean %', 'Worst %', 'Best %', 'Countries'],
+        rows.map((r, i) => {
+            const s = hwData.fuels.slice().sort((a, b) => b.avg - a.avg)[i];
+            return [hwCap(s.fuel), hwFmt(s.avg, 1), hwFmt(s.worst, 1), hwFmt(s.best, 1), s.countries];
+        }));
+}
+
+function hwRenderRenewable() {
+    const src = hwData.renewable.slice().sort((a, b) => a.delta_pp - b.delta_pp).slice(0, 14);
+    hwDiverging('hwRen', src.map(r => ({
+        label: hwName(r.country_code), v: +r.delta_pp, vlabel: hwSign(r.delta_pp, 1),
+        tip: `<b>${hwName(r.country_code)}</b><br>Normal ${r.normal_renewable_pct}% →
+              heatwave ${r.heatwave_renewable_pct}%<br>${r.heatwave_days} heatwave days`,
+    })), {axis: 'Change in renewable share (percentage points)'});
+    hwTable('hwRenTbl', ['Country', 'Normal %', 'Heatwave %', 'Δ pp'],
+        src.map(r => [hwName(r.country_code), r.normal_renewable_pct, r.heatwave_renewable_pct, r.delta_pp]));
+}
+
+function hwRenderPrice() {
+    const src = hwData.price.slice().sort((a, b) => b.change_pct - a.change_pct).slice(0, 14);
+    hwDiverging('hwPrice', src.map(r => ({
+        label: hwName(r.country_code), v: +r.change_pct, vlabel: hwSign(r.change_pct, 0) + '%',
+        tip: `<b>${hwName(r.country_code)}</b><br>€${r.normal_price_eur} → €${r.heatwave_price_eur}/MWh<br>
+              ${hwSign(r.delta_eur, 1)} €/MWh on ${r.heatwave_days} days`,
+    })), {axis: 'Change in average day-ahead price (%)', posColor: HW_NEG, negColor: '#1baf7a'});
+    hwTable('hwPriceTbl', ['Country', 'Normal €/MWh', 'Heatwave €/MWh', 'Δ €', 'Δ %'],
+        src.map(r => [hwName(r.country_code), r.normal_price_eur, r.heatwave_price_eur,
+            r.delta_eur, r.change_pct]));
+}
+
+function hwRenderGas() {
+    const svg = document.getElementById('hwGas');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.gas.slice().sort((a, b) => +b.delta_power_gwh - +a.delta_power_gwh).slice(0, 10);
+    const segs = [['delta_power_gwh', HW_FUEL_COLOR.gas, 'Power'],
+                  ['delta_household_gwh', HW_POS, 'Households'],
+                  ['delta_industry_gwh', '#4a3aa7', 'Industry']];
+    const H = rows.length * 30 + 36;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 640;
+    const m = {t: 8, r: 54, b: 24, l: 92};
+    const iw = Math.max(80, W - m.l - m.r);
+    const mx = Math.max(...rows.flatMap(r => segs.map(s => Math.abs(+r[s[0]] || 0))), 0.001) * 1.12;
+    const X = v => m.l + iw / 2 + (v / mx) * (iw / 2);
+
+    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 30 - 8,
+        stroke: '#c3c2b7', 'stroke-width': 1});
+    rows.forEach((r, i) => {
+        const y = m.t + i * 30;
+        segs.forEach(([key, col, nm], k) => {
+            const v = +r[key] || 0;
+            if (!v) return;
+            const x = v < 0 ? X(v) : X(0), w = Math.max(2, Math.abs(X(v) - X(0)));
+            const rect = hwEl(svg, 'rect', {x, y: y + k * 8, width: w, height: 7, rx: 2, fill: col});
+            hwTip(rect, `<b>${hwName(r.country_code)} · ${nm}</b><br>${hwSign(v, 1)} GWh/day`);
+        });
+        hwEl(svg, 'text', {x: m.l - 8, y: y + 14, class: 'hw-lbl', 'text-anchor': 'end'},
+            hwName(r.country_code));
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 5, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Change in gas demand by sector (GWh/day)');
+    hwLegend('hwGasLegend', segs.map(([, c, n]) => ({c, t: n})));
+    hwTable('hwGasTbl', ['Country', 'Δ power', 'Δ households', 'Δ industry', 'Power Δ%'],
+        rows.map(r => [hwName(r.country_code), r.delta_power_gwh, r.delta_household_gwh,
+            r.delta_industry_gwh, r.power_change_pct]));
+}
+
+function hwRenderHelp() {
+    const svg = document.getElementById('hwHelp');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.helpers.slice()
+        .filter(r => Math.abs(+r.extra_gwh_total) > 20)
+        .sort((a, b) => +b.extra_gwh_spare_capacity - +a.extra_gwh_spare_capacity).slice(0, 12);
+    const H = rows.length * 26 + 40;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 800;
+    const m = {t: 8, r: 66, b: 26, l: 100};
+    const iw = Math.max(80, W - m.l - m.r);
+    const vals = rows.flatMap(r => [+r.extra_gwh_spare_capacity, +r.extra_gwh_shared_stress]);
+    const mx = Math.max(...vals.map(Math.abs), 0.001) * 1.1;
+    const X = v => m.l + iw / 2 + (v / mx) * (iw / 2);
+
+    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 26 - 8,
+        stroke: '#c3c2b7', 'stroke-width': 1});
+    rows.forEach((r, i) => {
+        const y = m.t + i * 26;
+        [[+r.extra_gwh_spare_capacity, '#1baf7a', 'Spare capacity', 0],
+         [+r.extra_gwh_shared_stress, HW_FUEL_COLOR.gas, 'Shared stress', 1]].forEach(([v, col, nm, k]) => {
+            if (!v) return;
+            const x = v < 0 ? X(v) : X(0), w = Math.max(2, Math.abs(X(v) - X(0)));
+            const rect = hwEl(svg, 'rect', {x, y: y + k * 9, width: w, height: 8, rx: 2, fill: col});
+            hwTip(rect, `<b>${hwName(r.country_code)} · ${nm}</b><br>${hwFmt(v, 1)} GWh`);
+        });
+        hwEl(svg, 'text', {x: m.l - 8, y: y + 13, class: 'hw-lbl', 'text-anchor': 'end'},
+            hwName(r.country_code));
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 5, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Extra energy sent to neighbours in heatwaves (GWh)');
+    hwLegend('hwHelpLegend', [
+        {c: '#1baf7a', t: 'Exporter not in a heatwave (spare capacity)'},
+        {c: HW_FUEL_COLOR.gas, t: 'Exporter also in a heatwave (contested supply)'},
+    ]);
+    hwTable('hwHelpTbl', ['Country', 'Spare capacity GWh', 'Shared stress GWh', 'Total GWh'],
+        rows.map(r => [hwName(r.country_code), r.extra_gwh_spare_capacity,
+            r.extra_gwh_shared_stress, r.extra_gwh_total]));
+}
+
+function hwRenderResponse(sel) {
+    const svg = document.getElementById('hwResp');
+    if (!svg) return;
+    hwClear(svg);
+    const by = {};
+    hwData.response.forEach(r => { (by[r.country_code] ||= []).push(r); });
+    Object.values(by).forEach(a => a.sort((p, q) => p.tmax_bin - q.tmax_bin));
+
+    const W = svg.clientWidth || 800, H = 340;
+    svg.setAttribute('height', H);
+    const m = {t: 14, r: 52, b: 44, l: 46};
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const xs = hwData.response.map(r => +r.tmax_bin), ys = hwData.response.map(r => +r.demand_index);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.floor(Math.min(...ys) / 10) * 10, y1 = Math.ceil(Math.max(...ys) / 10) * 10;
+    const X = v => m.l + (v - x0) / (x1 - x0) * iw;
+    const Y = v => m.t + ih - (v - y0) / (y1 - y0) * ih;
+
+    for (let v = y0; v <= y1; v += 10) {
+        hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v), stroke: '#e1e0d9', 'stroke-width': 1});
+        hwEl(svg, 'text', {x: m.l - 8, y: Y(v) + 4, class: 'hw-tick', 'text-anchor': 'end'}, v);
+    }
+    hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(100), y2: Y(100), stroke: '#c3c2b7', 'stroke-width': 1.5});
+    for (let v = x0; v <= x1; v += 3)
+        hwEl(svg, 'text', {x: X(v), y: m.t + ih + 20, class: 'hw-tick', 'text-anchor': 'middle'}, v + '°');
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Daily maximum temperature (°C)');
+
+    const line = pts => pts.map((p, i) =>
+        (i ? 'L' : 'M') + X(+p.tmax_bin) + ' ' + Y(+p.demand_index)).join(' ');
+
+    Object.entries(by).forEach(([cc, pts]) => {
+        if (cc === sel || pts.length < 2) return;
+        hwEl(svg, 'path', {d: line(pts), fill: 'none', stroke: HW_DEEMPH, 'stroke-width': 1.4});
+    });
+    const pts = by[sel] || [];
+    if (pts.length > 1) {
+        hwEl(svg, 'path', {d: line(pts), fill: 'none', stroke: HW_ACCENT, 'stroke-width': 2.5,
+            'stroke-linejoin': 'round', 'stroke-linecap': 'round'});
+        pts.forEach(p => {
+            hwEl(svg, 'circle', {cx: X(+p.tmax_bin), cy: Y(+p.demand_index), r: 4.5,
+                fill: HW_ACCENT, stroke: '#ffffff', 'stroke-width': 2});
+            const hit = hwEl(svg, 'circle', {cx: X(+p.tmax_bin), cy: Y(+p.demand_index), r: 13,
+                fill: 'transparent'});
+            hwTip(hit, `<b>${hwName(sel)}</b><br>${p.tmax_bin}°C band<br>
+                Demand index ${hwFmt(p.demand_index, 1)}<br>${hwFmt(p.days)} days`);
+        });
+    }
+    hwLegend('hwRespLegend', [{c: HW_ACCENT, t: hwName(sel)}, {c: HW_DEEMPH, t: 'Other countries'}]);
+    hwTable('hwRespTbl', ['Temperature band', 'Demand index', 'Days'],
+        pts.map(p => [p.tmax_bin + '°C', p.demand_index, p.days]));
+}
+
+function hwRenderBalance(sel) {
+    const row = hwData.balance.find(r => r.country_code === sel);
+    const title = document.getElementById('hwBalTitle');
+    if (!row) {
+        if (title) title.textContent = 'What covered the gap';
+        hwDiverging('hwBal', [], {axis: '', empty: `Not enough matched heatwave days for ${hwName(sel)}.`});
+        hwTable('hwBalTbl', ['Fuel', 'Δ MW'], []);
+        return;
+    }
+    if (title) {
+        title.textContent = `What covered the gap — ${hwName(sel)}: demand ${hwSign(row.demand_delta_mw)} MW ` +
+            `(${hwSign(row.demand_change_pct, 1)}%) over ${row.heatwave_days} heatwave days`;
+    }
+    const items = HW_FUEL_ORDER
+        .map(f => ({f, v: Number(row[f + '_delta_mw'])}))
+        .filter(d => Number.isFinite(d.v) && Math.abs(d.v) >= 1);
+    items.push({f: 'net imports*', v: Number(row.implied_net_import_delta_mw) || 0});
+    items.sort((a, b) => a.v - b.v);
+
+    hwDiverging('hwBal', items.map(d => ({
+        label: hwCap(d.f), v: d.v, vlabel: hwSign(d.v),
+        tip: `<b>${hwCap(d.f)}</b><br>${hwSign(d.v)} MW during heatwaves`,
+    })), {axis: 'Change in average output (MW) — * net imports is a residual', rowH: 26, left: 96});
+
+    hwLegend('hwBalLegend', [{c: HW_POS, t: 'More output / imports'}, {c: HW_NEG, t: 'Less output'}]);
+    hwTable('hwBalTbl', ['Fuel', 'Δ MW'],
+        items.map(d => [hwCap(d.f), hwSign(d.v)]).concat([['Demand', hwSign(row.demand_delta_mw)]]));
+}
+
+function hwRenderKpis() {
+    const k = hwData.kpi;
+    const cells = [
+        ['🗓️', hwFmt(k.calendar_days), 'Days with a heatwave in Europe (2026)'],
+        ['🌍', hwFmt(k.countries) + ' / 30', 'Countries affected'],
+        ['🔥', hwFmt(k.max_simultaneous), 'Most countries hot at once'],
+        ['🌡️', hwFmt(k.peak_tmax, 1) + '°C', 'Highest temperature'],
+    ];
+    document.getElementById('hwKpis').innerHTML = cells.map(([icon, v, l]) => `
+        <div class="stat-card">
+            <div class="stat-icon">${icon}</div>
+            <div class="stat-content">
+                <div class="stat-value">${escapeHtml(v)}</div>
+                <div class="stat-label">${escapeHtml(l)}</div>
+            </div>
+        </div>`).join('');
+}
+
+async function hwFetchAll() {
+    const sb = supabase;
+    // The two big ones must be paged: PostgREST caps a response at 1000 rows,
+    // and these run to ~7k and ~15k. Unpaged they silently truncate, which
+    // showed up as a response curve with two countries in it instead of thirty.
+    const [eu, fuels, renewable, price, gas, helpers, balance, weatherRows, loadRows] = await Promise.all([
+        sb.from('v_eu_heatwave_response').select('*'),
+        sb.from('v_heatwave_fuel_resilience').select('*'),
+        sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', 15),
+        sb.from('v_heatwave_price').select('*').gte('heatwave_days', 20),
+        sb.from('v_heatwave_gas_sector').select('*').gte('heatwave_days', 20),
+        sb.from('v_heatwave_helpers').select('*'),
+        sb.from('v_heatwave_country_balance').select('*').gte('heatwave_days', 20),
+        gasFetchAllPaged(() => sb.from('weather_country_daily')
+            .select('country_code, date, tmax_c, heatwave_id, heatwave_length')
+            .gte('date', '2026-01-01').order('date', {ascending: true}), 1000, 40000),
+        sb.from('v_heatwave_response_curve').select('*'),
+    ]);
+    const err = [eu, fuels, renewable, price, gas, helpers, balance, loadRows].find(r => r && r.error);
+    if (err) throw new Error(err.error.message);
+
+    // KPIs, from the weather rows already fetched.
+    const w = weatherRows || [];
+    const hwRows = w.filter(r => r.heatwave_id);
+    const byDate = {};
+    hwRows.forEach(r => { byDate[r.date] = (byDate[r.date] || 0) + 1; });
+    const kpi = {
+        calendar_days: Object.keys(byDate).length,
+        country_days: hwRows.length,
+        countries: new Set(hwRows.map(r => r.country_code)).size,
+        max_simultaneous: Math.max(0, ...Object.values(byDate)),
+        peak_tmax: Math.max(...w.map(r => Number(r.tmax_c) || 0)),
+    };
+
+    // Fuel resilience is per country; roll it up for the EU-wide chart.
+    const fg = {};
+    (fuels.data || []).forEach(r => {
+        const v = Number(r.output_change_pct);
+        if (!Number.isFinite(v)) return;
+        (fg[r.fuel] ||= []).push(v);
+    });
+    const fuelRows = Object.entries(fg).map(([fuel, arr]) => ({
+        fuel,
+        avg: arr.reduce((s, v) => s + v, 0) / arr.length,
+        worst: Math.min(...arr), best: Math.max(...arr), countries: arr.length,
+    }));
+
+    const response = (loadRows.data || []).slice()
+        .sort((a, b) => a.country_code.localeCompare(b.country_code) || a.tmax_bin - b.tmax_bin);
+
+    return {
+        kpi, eu: eu.data || [], fuels: fuelRows, renewable: renewable.data || [],
+        price: price.data || [], gas: gas.data || [], helpers: helpers.data || [],
+        balance: balance.data || [], response,
+    };
+}
+
+function hwRenderScoped() {
+    const sel = document.getElementById('hwCountry')?.value;
+    if (!sel) return;
+    hwRenderResponse(sel);
+    hwRenderBalance(sel);
+}
+
+function hwRenderAll() {
+    if (!hwData) return;
+    hwRenderKpis();
+    hwRenderEu();
+    hwRenderFuels();
+    hwRenderRenewable();
+    hwRenderPrice();
+    hwRenderGas();
+    hwRenderHelp();
+    hwRenderScoped();
+}
+
+async function loadHeatwavesPage() {
+    const token = ++hwLoadToken;
+    const fresh = document.getElementById('hwFreshness');
+
+    if (!hwWired) {
+        document.querySelectorAll('[data-hwt]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const t = document.getElementById(btn.getAttribute('data-hwt'));
+                if (!t) return;
+                const hidden = t.classList.toggle('hw-hidden');
+                btn.textContent = hidden ? 'Show data table' : 'Hide data table';
+            });
+        });
+        document.getElementById('hwCountry')?.addEventListener('change', hwRenderScoped);
+        let rt;
+        window.addEventListener('resize', () => {
+            if (!document.getElementById('heatwavesPage')?.classList.contains('active')) return;
+            clearTimeout(rt);
+            rt = setTimeout(hwRenderAll, 180);
+        });
+        hwWired = true;
+    }
+
+    if (hwData) { hwRenderAll(); return; }
+
+    if (fresh) fresh.textContent = 'Loading…';
+    try {
+        const data = await hwFetchAll();
+        if (token !== hwLoadToken) return;
+        hwData = data;
+
+        const sel = document.getElementById('hwCountry');
+        if (sel) {
+            const ccs = [...new Set(hwData.response.map(r => r.country_code))]
+                .sort((a, b) => hwName(a).localeCompare(hwName(b)));
+            sel.innerHTML = ccs.map(c =>
+                `<option value="${escapeHtml(c)}">${escapeHtml(cbCountryFlag(c) + ' ' + hwName(c))}</option>`
+            ).join('');
+            sel.value = ccs.includes('FR') ? 'FR' : ccs[0];
+        }
+        if (fresh) fresh.textContent = '';
+        hwRenderAll();
+    } catch (e) {
+        console.error('Heatwaves page failed:', e);
+        if (fresh) fresh.textContent = 'Could not load heatwave data: ' + e.message;
+    }
 }
 
 })(); // End IIFE
