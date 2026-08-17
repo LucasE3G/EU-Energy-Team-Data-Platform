@@ -975,6 +975,12 @@ function mapFallbackNote(container, err) {
     container.prepend(note);
 }
 
+// Countries with no data must still read as present-but-empty. The old value
+// (rgba(148,163,184,0.18)) was 18% opacity on a white card, so the UK - which
+// has had no ENTSO-E data since June 2021 - looked like it had been left off
+// the map rather than simply having nothing to show.
+const NO_DATA_FILL = 'rgba(148,163,184,0.42)';
+
 function fetchEntsoeZonesGeoJsonOnce() {
     if (__energyEntsoeZonesGeoJsonPromise) return __energyEntsoeZonesGeoJsonPromise;
     // Electricity Maps zone geometry: the bidding-zone splits for DK/SE/NO.
@@ -1216,6 +1222,7 @@ async function renderEnergyGeoMap(container, rows) {
         // able to reject the Promise.all and take the base map down with it.
         fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
+    const hasZoneOverlay = Array.isArray(zoneGeo?.features) && zoneGeo.features.length > 0;
 
     const byCountry = aggregateByCountry(rows);
     const byZone = {};
@@ -1286,13 +1293,15 @@ async function renderEnergyGeoMap(container, rows) {
         const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
         if (!iso2) continue;
         if (iso2 === 'RU' || iso2 === 'BY') continue;
-        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+        // Only cede these to the bidding-zone overlay if that overlay actually
+        // loaded; otherwise DK/SE/NO would be drawn by nobody and vanish.
+        if (hasZoneOverlay && (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO')) continue;
         // GB rendered via zone overlay below (same as DK/SE/NO); skip base layer to avoid double-draw
         if (iso2 === 'GB' || iso2 === 'UK') continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const val = byCountry[dataKey]?.pct;
-        const fill = Number.isFinite(val) ? mixColorRedToGreen(val) : 'rgba(148,163,184,0.18)';
+        const fill = Number.isFinite(val) ? mixColorRedToGreen(val) : NO_DATA_FILL;
 
         const geom = f.geometry;
         if (!geom) continue;
@@ -1359,7 +1368,7 @@ async function renderEnergyGeoMap(container, rows) {
         if (!geom) continue;
 
         const val = byZone[zoneId];
-        const fill = Number.isFinite(val) ? mixColorRedToGreen(val) : 'rgba(148,163,184,0.18)';
+        const fill = Number.isFinite(val) ? mixColorRedToGreen(val) : NO_DATA_FILL;
 
         const type = geom.type;
         const coords = geom.coordinates;
@@ -2578,6 +2587,7 @@ async function renderLoadGeoMap(container, rows) {
         // able to reject the Promise.all and take the base map down with it.
         fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
+    const hasZoneOverlay = Array.isArray(zoneGeo?.features) && zoneGeo.features.length > 0;
 
     const { byZone, byCountry } = aggregateLoadMw(rows);
     const countryMax = Math.max(0, ...Object.values(byCountry).map(v => Number(v.mw)).filter(Number.isFinite));
@@ -2641,12 +2651,14 @@ async function renderLoadGeoMap(container, rows) {
         const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
         if (!iso2) continue;
         if (iso2 === 'RU' || iso2 === 'BY') continue;
-        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+        // Only cede these to the bidding-zone overlay if that overlay actually
+        // loaded; otherwise DK/SE/NO would be drawn by nobody and vanish.
+        if (hasZoneOverlay && (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO')) continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const mw = byCountry[dataKey]?.mw;
         const t = Number.isFinite(mw) && countryMax > 0 ? Math.max(0, Math.min(1, mw / countryMax)) : null;
-        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+        const fill = t == null ? NO_DATA_FILL : gasBlueScale(t);
 
         const geom = f.geometry;
         if (!geom) continue;
@@ -2703,7 +2715,7 @@ async function renderLoadGeoMap(container, rows) {
 
         const mw = byZone[zoneId];
         const t = Number.isFinite(mw) && zoneMax > 0 ? Math.max(0, Math.min(1, mw / zoneMax)) : null;
-        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+        const fill = t == null ? NO_DATA_FILL : gasBlueScale(t);
 
         const type = geom.type;
         const coords = geom.coordinates;
@@ -3551,6 +3563,7 @@ async function renderCarbonGeoMap(container, zoneIntensity) {
         // able to reject the Promise.all and take the base map down with it.
         fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
+    const hasZoneOverlay = Array.isArray(zoneGeo?.features) && zoneGeo.features.length > 0;
 
     // Build lookup maps
     const byZone = {};
@@ -3626,10 +3639,14 @@ async function renderCarbonGeoMap(container, zoneIntensity) {
     for (const f of countryFeatures) {
         const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
         if (!iso2 || iso2 === 'RU' || iso2 === 'BY') continue;
-        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO' || iso2 === 'GB' || iso2 === 'UK') continue;
+        // Same as the other renderers, plus GB/UK which this map also ceded to
+        // the overlay — which is why the United Kingdom was absent from the
+        // carbon map entirely rather than drawn in the no-data fill.
+        if (hasZoneOverlay && (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO'
+            || iso2 === 'GB' || iso2 === 'UK')) continue;
         const dataKey = iso2GeoToDataKey(iso2);
         const val = byCountry[dataKey];
-        const fill = Number.isFinite(val) ? carbonIntensityColor(val) : 'rgba(148,163,184,0.18)';
+        const fill = Number.isFinite(val) ? carbonIntensityColor(val) : NO_DATA_FILL;
         const geom = f.geometry;
         if (!geom) continue;
         const paths = [];
@@ -3667,7 +3684,7 @@ async function renderCarbonGeoMap(container, zoneIntensity) {
         const geom = filterGeometryToBbox(f?.geometry, europeBbox);
         if (!geom) continue;
         const val = byZone[zoneId];
-        const fill = Number.isFinite(val) ? carbonIntensityColor(val) : 'rgba(148,163,184,0.18)';
+        const fill = Number.isFinite(val) ? carbonIntensityColor(val) : NO_DATA_FILL;
         const paths = [];
         if (geom.type === 'Polygon') {
             paths.push(polygonToPath(geom.coordinates[0], width, height, bounds, padding));
@@ -4317,7 +4334,7 @@ async function renderStorageGeoMap(container, latestFill) {
         const dataKey = iso2GeoToDataKey(iso2);
         const val = latestFill[dataKey];
         const hasData = Number.isFinite(val);
-        const fill = hasData ? mixColorRedToGreen(val) : 'rgba(148,163,184,0.18)';
+        const fill = hasData ? mixColorRedToGreen(val) : NO_DATA_FILL;
         const geom = f.geometry;
         if (!geom) continue;
         const paths = [];
@@ -4377,7 +4394,7 @@ function renderStorageCountryTable(rows) {
     if (dateEl && rows[0]?.gas_day) dateEl.textContent = `As of ${rows[0].gas_day}`;
     tbody.innerHTML = rows.map(r => {
         const pct = Number(r.full_pct);
-        const bg = Number.isFinite(pct) ? mixColorRedToGreen(pct) : 'rgba(148,163,184,0.18)';
+        const bg = Number.isFinite(pct) ? mixColorRedToGreen(pct) : NO_DATA_FILL;
         const inj = Number(r.injection_twh);
         const wit = Number(r.withdrawal_twh);
         const flowColor = Number.isFinite(inj) && Number.isFinite(wit)
@@ -5781,7 +5798,7 @@ async function renderPriceGeoMap(container, latestRows) {
         const agg = byCountry[dataKey];
         const v = agg && agg.n ? (agg.sum / agg.n) : null;
         const t = Number.isFinite(v) && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : null;
-        const fill = t == null ? 'rgba(148,163,184,0.18)' : `rgba(${Math.round(34 + t * (239-34))},${Math.round(197 + t * (68-197))},${Math.round(94 + t * (68-94))},${0.18 + t * 0.55})`;
+        const fill = t == null ? NO_DATA_FILL : `rgba(${Math.round(34 + t * (239-34))},${Math.round(197 + t * (68-197))},${Math.round(94 + t * (68-94))},${0.18 + t * 0.55})`;
 
         const geom = f.geometry;
         if (!geom) continue;
@@ -6214,6 +6231,7 @@ async function renderElectricityGeoMap(container, rows) {
         // able to reject the Promise.all and take the base map down with it.
         fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
+    const hasZoneOverlay = Array.isArray(zoneGeo?.features) && zoneGeo.features.length > 0;
 
     const { byZone, byCountry } = aggregateZoneMw(rows);
 
@@ -6281,14 +6299,16 @@ async function renderElectricityGeoMap(container, rows) {
         const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
         if (!iso2) continue;
         if (iso2 === 'RU' || iso2 === 'BY') continue;
-        if (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO') continue;
+        // Only cede these to the bidding-zone overlay if that overlay actually
+        // loaded; otherwise DK/SE/NO would be drawn by nobody and vanish.
+        if (hasZoneOverlay && (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO')) continue;
         // GB rendered via zone overlay below; skip base layer to avoid double-draw
         if (iso2 === 'GB' || iso2 === 'UK') continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const mw = byCountry[dataKey]?.mw;
         const t = Number.isFinite(mw) && countryMax > 0 ? Math.max(0, Math.min(1, mw / countryMax)) : null;
-        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+        const fill = t == null ? NO_DATA_FILL : gasBlueScale(t);
 
         const geom = f.geometry;
         if (!geom) continue;
@@ -6348,7 +6368,7 @@ async function renderElectricityGeoMap(container, rows) {
 
         const mw = byZone[zoneId];
         const t = Number.isFinite(mw) && zoneMax > 0 ? Math.max(0, Math.min(1, mw / zoneMax)) : null;
-        const fill = t == null ? 'rgba(148,163,184,0.18)' : gasBlueScale(t);
+        const fill = t == null ? NO_DATA_FILL : gasBlueScale(t);
 
         const type = geom.type;
         const coords = geom.coordinates;
