@@ -853,6 +853,7 @@ function renderEnergyMap(latestRows) {
     renderEnergyGeoMap(container, rows).catch((e) => {
         console.warn('Geo map render failed, falling back to grid:', e);
         renderEnergyTileGrid(container, rows);
+            mapFallbackNote(container, e);
     });
 }
 
@@ -963,6 +964,17 @@ function renderEnergyTileGrid(container, rows) {
 }
 
 let __energyEntsoeZonesGeoJsonPromise = null;
+// A geo map that silently swaps itself for a tile grid looks like a design
+// choice, not a failure: three maps sat broken for weeks because the only
+// signal was a console warning nobody was looking at. Say it on the page.
+function mapFallbackNote(container, err) {
+    if (!container || container.querySelector?.('.map-fallback-note')) return;
+    const note = document.createElement('div');
+    note.className = 'map-fallback-note';
+    note.textContent = `Map unavailable — showing tiles instead. ${err?.message || err || 'unknown error'}`;
+    container.prepend(note);
+}
+
 function fetchEntsoeZonesGeoJsonOnce() {
     if (__energyEntsoeZonesGeoJsonPromise) return __energyEntsoeZonesGeoJsonPromise;
     // Electricity Maps zone geometry: the bidding-zone splits for DK/SE/NO.
@@ -975,19 +987,33 @@ function fetchEntsoeZonesGeoJsonOnce() {
     //
     // The upstream path also moves: `geo/world.geojson` currently 404s on
     // jsDelivr, so the sources are tried in turn.
+    // Sources, in order. The local file is optional: drop a zones GeoJSON at
+    // that path and the overlay comes back automatically.
+    //
+    // Upstream is currently dead — electricitymaps moved the file, so
+    // geo/world.geojson 404s on jsDelivr, and raw.githubusercontent rate-limits
+    // with 429. Exactly the three maps that awaited this (renewable, carbon,
+    // generation) were the three still falling back to the tile grid while
+    // storage and flows, which never fetched it, rendered fine. The overlay is
+    // cosmetic — the DK/SE/NO/GB bidding-zone split — so it must never sit on
+    // the critical path for a base map again.
     const urls = [
+        'assets/geo/entsoe-zones.geojson',
         'https://cdn.jsdelivr.net/gh/electricitymaps/electricitymaps-contrib@master/geo/world.geojson',
-        'https://raw.githubusercontent.com/electricitymaps/electricitymaps-contrib/master/geo/world.geojson',
     ];
     __energyEntsoeZonesGeoJsonPromise = (async () => {
         for (const url of urls) {
             try {
                 const r = await fetch(url);
                 if (!r.ok) continue;
-                return await r.json();
+                const j = await r.json();
+                // The SPA rewrite returns index.html for a missing asset with
+                // HTTP 200, so check the shape rather than the status.
+                if (!j || !Array.isArray(j.features) || !j.features.length) continue;
+                return j;
             } catch (_) { /* try the next source */ }
         }
-        console.warn('Zone GeoJSON unavailable — drawing maps without the DK/SE/NO bidding-zone overlay.');
+        console.info('Zone overlay GeoJSON unavailable — maps render without the DK/SE/NO/GB bidding-zone split.');
         return null;
     })();
     return __energyEntsoeZonesGeoJsonPromise;
@@ -1186,7 +1212,9 @@ async function renderEnergyGeoMap(container, rows) {
     // - Overlay: bidding zones for DK/SE/NO (granularity where users expect it)
     const [countryGeo, zoneGeo] = await Promise.all([
         fetchEuropeCountriesGeoJsonOnce(),
-        fetchEntsoeZonesGeoJsonOnce(),
+        // .catch here as well as inside: a cosmetic overlay must never be
+        // able to reject the Promise.all and take the base map down with it.
+        fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
 
     const byCountry = aggregateByCountry(rows);
@@ -2470,6 +2498,7 @@ function renderLoadMap(latestRows) {
     renderLoadGeoMap(container, rows).catch((e) => {
         console.warn('Load geo map render failed, falling back to tile grid:', e);
         renderLoadTileGrid(container, rows);
+            mapFallbackNote(container, e);
     });
 }
 
@@ -2545,7 +2574,9 @@ function aggregateLoadMw(rows) {
 async function renderLoadGeoMap(container, rows) {
     const [countryGeo, zoneGeo] = await Promise.all([
         fetchEuropeCountriesGeoJsonOnce(),
-        fetchEntsoeZonesGeoJsonOnce(),
+        // .catch here as well as inside: a cosmetic overlay must never be
+        // able to reject the Promise.all and take the base map down with it.
+        fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
 
     const { byZone, byCountry } = aggregateLoadMw(rows);
@@ -3456,6 +3487,7 @@ async function loadCarbonCountryMap() {
 
         // Geo map (falls back to tile grid if GeoJSON unavailable)
         await renderCarbonGeoMap(mapEl, zoneIntensity).catch(e => {
+            mapFallbackNote(mapEl, e);
             console.warn('Carbon geo map failed, using tile grid:', e);
             renderCarbonTileGrid(mapEl, zoneIntensity);
         });
@@ -3515,7 +3547,9 @@ function renderCarbonTileGrid(mapEl, zoneIntensity) {
 async function renderCarbonGeoMap(container, zoneIntensity) {
     const [countryGeo, zoneGeo] = await Promise.all([
         fetchEuropeCountriesGeoJsonOnce(),
-        fetchEntsoeZonesGeoJsonOnce(),
+        // .catch here as well as inside: a cosmetic overlay must never be
+        // able to reject the Promise.all and take the base map down with it.
+        fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
 
     // Build lookup maps
@@ -5617,6 +5651,7 @@ async function loadPriceTabData(forceRefresh = false) {
         renderPriceGeoMap(container, latest).catch((e) => {
             console.warn('Price geo map render failed, falling back to tile grid:', e);
             renderPriceTileGrid(container, latest);
+            mapFallbackNote(container, e);
         });
         updatePriceEuRangeButtonActive();
         updatePriceZoneRangeButtonActive();
@@ -6096,13 +6131,7 @@ function renderElectricityMap(latestRows) {
     renderElectricityGeoMap(container, rows).catch((e) => {
         console.warn('Electricity geo map render failed, falling back to tile grid:', e);
         renderElectricityTileGrid(container, rows);
-        // Say why. This degraded silently for weeks — the grid looks like a
-        // deliberate design, so nobody knew the map had stopped rendering or
-        // what to fix.
-        const note = document.createElement('div');
-        note.className = 'map-fallback-note';
-        note.textContent = `Map unavailable — showing tiles instead. ${e?.message || e}`;
-        container.prepend(note);
+        mapFallbackNote(container, e);
     });
 }
 
@@ -6181,7 +6210,9 @@ function renderElectricityTileGrid(container, rows) {
 async function renderElectricityGeoMap(container, rows) {
     const [countryGeo, zoneGeo] = await Promise.all([
         fetchEuropeCountriesGeoJsonOnce(),
-        fetchEntsoeZonesGeoJsonOnce(),
+        // .catch here as well as inside: a cosmetic overlay must never be
+        // able to reject the Promise.all and take the base map down with it.
+        fetchEntsoeZonesGeoJsonOnce().catch(() => null),
     ]);
 
     const { byZone, byCountry } = aggregateZoneMw(rows);
@@ -8367,6 +8398,7 @@ function renderGasMap(latestRows) {
     renderGasGeoMap(container, rows, byIso, maxTotal).catch((e) => {
         console.warn('Gas geo map failed, fallback to tiles:', e);
         renderGasTileGrid(container, rows, maxTotal);
+            mapFallbackNote(container, e);
     });
 }
 
