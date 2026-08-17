@@ -13205,18 +13205,34 @@ function hwRenderCoverage(sel) {
     hwEl(svg, 'line', {x1: X(demand), x2: X(demand), y1: m.t - 4, y2: m.t + rows.length * 26 - 6,
         stroke: '#0b0b0b', 'stroke-width': 2});
 
+    // The trade bar is a CHANGE in net imports. Labelling it "Imports" made
+    // France — which exports right through a heatwave — look like it suddenly
+    // started importing, when what happened is that its exports fell. Name the
+    // bar after the country's actual position and put the levels in the tooltip.
+    const tp = hwData.trade.find(t => t.country_code === sel);
+    const isExporter = tp && Number(tp.normal_net_export_gwh) > 0;
+    const tradeLabel = isExporter ? 'Net exports (fall)' : 'Net imports (rise)';
+
     rows.forEach((r, i) => {
         const y = m.t + i * 26;
         const neg = r.v < 0;
         const x = neg ? X(r.v) : X(0);
         const w = Math.max(2, Math.abs(X(r.v) - X(0)));
+        const isTrade = r.c === 'imports';
         hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 3, fill: COMP_COLOR[r.c] || '#8a8f98'});
         hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 3, class: 'hw-lbl', 'text-anchor': 'end'},
-            hwCap(r.c));
+            isTrade ? tradeLabel : hwCap(r.c));
         hwEl(svg, 'text', {x: neg ? x - 7 : x + w + 7, y: y + bh - 3, class: 'hw-val',
             'text-anchor': neg ? 'end' : 'start'}, hwSign(r.v, 1));
         const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
-        hwTip(hit, `<b>${hwCap(r.c)}</b><br>${hwSign(r.v, 1)} GWh/day on heatwave days<br>
+        const levels = isTrade && tp
+            ? `<br>${isExporter ? 'Exports' : 'Imports'} ${hwFmt(Math.abs(Number(
+                  isExporter ? tp.normal_net_export_gwh : tp.normal_net_import_gwh)), 1)} → `
+              + `${hwFmt(Math.abs(Number(
+                  isExporter ? tp.heatwave_net_export_gwh : tp.heatwave_net_import_gwh)), 1)} GWh/day`
+            : '';
+        hwTip(hit, `<b>${isTrade ? tradeLabel : hwCap(r.c)}</b><br>
+            ${hwSign(r.v, 1)} GWh/day on heatwave days${levels}<br>
             Demand change ${hwSign(demand, 1)} GWh/day`);
     });
     hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},

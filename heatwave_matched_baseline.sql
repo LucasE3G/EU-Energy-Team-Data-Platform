@@ -58,7 +58,8 @@ drop view if exists public.v_heatwave_help_pairs       cascade;
 drop materialized view if exists public.mv_heatwave_matched_days cascade;
 create materialized view public.mv_heatwave_matched_days as
 with cal as (
-  select country_code, date, (heatwave_id is not null) as hw
+  select country_code, date, (heatwave_id is not null) as hw,
+         (extract(dow from date) in (0, 6))            as weekend
   from public.weather_country_daily
   where date >= date_trunc('year', current_date)
     and extract(month from date) between 5 and 9
@@ -71,7 +72,14 @@ cross join lateral (
   from cal n
   where n.country_code = h.country_code
     and not n.hw
-    and n.date between h.date - 45 and h.date + 45
+    -- Same day type. Germany's heatwave days were 40% weekends against 27% of
+    -- their reference days, and German weekend demand runs 9.5 GW below a
+    -- weekday — enough to manufacture the 2.3% demand DROP that Germany showed
+    -- during heatwaves. The window is wider for weekends because only two days
+    -- in seven qualify.
+    and n.weekend = h.weekend
+    and n.date between h.date - (case when h.weekend then 75 else 45 end)
+                   and h.date + (case when h.weekend then 75 else 45 end)
   order by abs(n.date - h.date), n.date
   limit 15
 ) b
