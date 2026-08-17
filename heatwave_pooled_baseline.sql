@@ -276,12 +276,27 @@ s as (
          count(*) filter (where hw) hw_n, count(*) filter (where not hw) ref_n
   from days group by 1, 2
 ),
-ok as (select * from s where hw_n > 0 and ref_n >= 3)
-select country_code, sum(hw_n)::int as heatwave_days,
-       round((sum(r*hw_n)/sum(hw_n))::numeric,1)     as normal_renewable_pct,
-       round((sum(h*hw_n)/sum(hw_n))::numeric,1)     as heatwave_renewable_pct,
-       round((sum((h-r)*hw_n)/sum(hw_n))::numeric,1) as delta_pp
-from ok group by 1;
+ok as (select * from s where hw_n > 0 and ref_n >= 3),
+core as (
+  select country_code, sum(hw_n)::int heatwave_days,
+         sum(r*hw_n)/sum(hw_n) r_pct, sum(h*hw_n)/sum(hw_n) h_pct
+  from ok group by 1
+),
+extremes as (
+  select country_code,
+         min(renewable_pct) filter (where not hw) nmin,
+         max(renewable_pct) filter (where not hw) nmax,
+         min(renewable_pct) filter (where hw)     hmin,
+         max(renewable_pct) filter (where hw)     hmax
+  from days group by 1
+)
+select c.country_code, c.heatwave_days,
+       round(c.r_pct::numeric,1)           as normal_renewable_pct,
+       round(c.h_pct::numeric,1)           as heatwave_renewable_pct,
+       round((c.h_pct - c.r_pct)::numeric,1) as delta_pp,
+       round(e.nmin::numeric,1) as normal_min_pct,  round(e.nmax::numeric,1) as normal_max_pct,
+       round(e.hmin::numeric,1) as heatwave_min_pct, round(e.hmax::numeric,1) as heatwave_max_pct
+from core c join extremes e on e.country_code = c.country_code;
 
 -- -- Day-ahead price --------------------------------------------------------
 create view public.v_heatwave_price as
@@ -297,15 +312,30 @@ s as (
          count(*) filter (where hw) hw_n, count(*) filter (where not hw) ref_n
   from days group by 1, 2
 ),
-ok as (select * from s where hw_n > 0 and ref_n >= 3)
-select country_code, sum(hw_n)::int as heatwave_days,
-       round((sum(r_a*hw_n)/sum(hw_n))::numeric,1)          as normal_price_eur,
-       round((sum(h_a*hw_n)/sum(hw_n))::numeric,1)          as heatwave_price_eur,
-       round((sum((h_a-r_a)*hw_n)/sum(hw_n))::numeric,1)    as delta_eur,
-       round((100.0*((sum(h_a*hw_n)/sum(hw_n))
-              / nullif(sum(r_a*hw_n)/sum(hw_n),0)-1))::numeric,1) as change_pct,
-       round((sum((h_p-r_p)*hw_n)/sum(hw_n))::numeric,1)    as peak_delta_eur
-from ok group by 1 having sum(r_a*hw_n)/sum(hw_n) > 1;
+ok as (select * from s where hw_n > 0 and ref_n >= 3),
+core as (
+  select country_code, sum(hw_n)::int heatwave_days,
+         sum(r_a*hw_n)/sum(hw_n) r_a, sum(h_a*hw_n)/sum(hw_n) h_a,
+         sum((h_p-r_p)*hw_n)/sum(hw_n) d_pk
+  from ok group by 1 having sum(r_a*hw_n)/sum(hw_n) > 1
+),
+extremes as (
+  select country_code,
+         min(avg_price) filter (where not hw) nmin,
+         max(avg_price) filter (where not hw) nmax,
+         min(avg_price) filter (where hw)     hmin,
+         max(avg_price) filter (where hw)     hmax
+  from days group by 1
+)
+select c.country_code, c.heatwave_days,
+       round(c.r_a::numeric,1)                       as normal_price_eur,
+       round(c.h_a::numeric,1)                       as heatwave_price_eur,
+       round((c.h_a - c.r_a)::numeric,1)             as delta_eur,
+       round((100.0*(c.h_a/nullif(c.r_a,0)-1))::numeric,1) as change_pct,
+       round(c.d_pk::numeric,1)                      as peak_delta_eur,
+       round(e.nmin::numeric,0) as normal_min_eur,  round(e.nmax::numeric,0) as normal_max_eur,
+       round(e.hmin::numeric,0) as heatwave_min_eur, round(e.hmax::numeric,0) as heatwave_max_eur
+from core c join extremes e on e.country_code = c.country_code;
 
 -- -- Gas demand by sector ---------------------------------------------------
 create view public.v_heatwave_gas_sector as

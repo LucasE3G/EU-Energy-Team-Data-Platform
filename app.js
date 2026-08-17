@@ -12491,6 +12491,16 @@ function hwDiverging(svgId, rows, opts) {
                 stroke: '#c3c2b7', 'stroke-width': 1});
             [r.lo, r.hi].forEach(b => hwEl(svg, 'line', {x1: X(b), x2: X(b),
                 y1: y + 2, y2: y + bh - 2, stroke: '#c3c2b7', 'stroke-width': 1}));
+            // The whisker ends carry their numbers on the chart, not only in
+            // the tooltip — skipped when the whisker is too short to fit them.
+            const rf = opts.rangeFmt || (v => hwFmt(v, 0));
+            if (Math.abs(X(r.v) - X(r.lo)) > 48) {
+                hwEl(svg, 'text', {x: X(r.lo) - 4, y: y + bh - 1, class: 'hw-tick',
+                    'text-anchor': 'end'}, rf(r.lo));
+            }
+            if (Math.abs(X(r.hi) - X(r.v)) > 48) {
+                hwEl(svg, 'text', {x: X(r.hi) + 4, y: y + bh - 1, class: 'hw-tick'}, rf(r.hi));
+            }
         }
         hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4,
             fill: neg ? (opts.negColor || HW_NEG) : (opts.posColor || HW_POS)});
@@ -12577,27 +12587,123 @@ function hwRenderFuels() {
             hwFmt(s.avg, 1), s.countries]));
 }
 
+// Min–mean–max strips: both day-pools drawn IN the chart — normal above,
+// heatwave below — band spanning min to max across days, dot at the mean.
+// This is the ranges made visible rather than hidden in tooltips and tables.
+function hwRangeStrip(svgId, rows, opts) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+    hwClear(svg);
+    if (!rows.length) {
+        svg.setAttribute('height', 60);
+        hwEl(svg, 'text', {x: 12, y: 32, class: 'hw-lbl'}, 'No data.');
+        return;
+    }
+    const rowH = 44;
+    const H = rows.length * rowH + 48;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 800;
+    const m = {t: 10, r: 86, b: 36, l: opts.left || 104};
+    const iw = Math.max(80, W - m.l - m.r);
+    const all = rows.flatMap(r => [...r.n, ...r.h]).filter(Number.isFinite);
+    let lo = Math.min(...all), hi = Math.max(...all);
+    const pad = (hi - lo) * 0.05 || 1;
+    lo -= pad; hi += pad;
+    const X = v => m.l + ((v - lo) / ((hi - lo) || 1)) * iw;
+    const fmt = opts.fmt || (v => Math.round(v));
+
+    const TICKS = 4;
+    for (let i = 0; i <= TICKS; i++) {
+        const v = lo + (hi - lo) * i / TICKS;
+        hwEl(svg, 'line', {x1: X(v), x2: X(v), y1: m.t - 2, y2: m.t + rows.length * rowH - 12,
+            stroke: '#eceae2', 'stroke-width': 1});
+        hwEl(svg, 'text', {x: X(v), y: H - 26, class: 'hw-tick', 'text-anchor': 'middle'}, fmt(v));
+    }
+
+    // Every point carries its number ON the chart: min at the left end of the
+    // band, max at the right end, mean at the dot — not only in hover or table.
+    const bandLabels = (vals, yBand, yText) => {
+        const [vMin, vMean, vMax] = vals;
+        hwEl(svg, 'text', {x: X(vMin) - 4, y: yText, class: 'hw-tick', 'text-anchor': 'end'}, fmt(vMin));
+        hwEl(svg, 'text', {x: X(vMax) + 4, y: yText, class: 'hw-tick'}, fmt(vMax));
+        // The mean label needs room on both sides of the dot or it collides
+        // with the min/max labels; when squeezed the dot and hover carry it.
+        if (X(vMean) - X(vMin) > 30 && X(vMax) - X(vMean) > 30) {
+            hwEl(svg, 'text', {x: X(vMean), y: yText, class: 'hw-tick',
+                'text-anchor': 'middle', 'font-weight': 600}, fmt(vMean));
+        }
+    };
+
+    rows.forEach((r, i) => {
+        const y = m.t + i * rowH;
+        hwEl(svg, 'text', {x: m.l - 8, y: y + 22, class: 'hw-lbl', 'text-anchor': 'end'}, r.label);
+        // Normal pool: band, dot, and its three numbers above.
+        hwEl(svg, 'rect', {x: X(r.n[0]), y: y + 10, height: 5, rx: 2.5, fill: '#c9c8bf',
+            width: Math.max(2, X(r.n[2]) - X(r.n[0]))});
+        hwEl(svg, 'circle', {cx: X(r.n[1]), cy: y + 12.5, r: 4, fill: '#6b6a62',
+            stroke: '#ffffff', 'stroke-width': 1.5});
+        bandLabels(r.n, y + 10, y + 6);
+        // Heatwave pool: band, dot, numbers below.
+        hwEl(svg, 'rect', {x: X(r.h[0]), y: y + 22, height: 5, rx: 2.5, fill: 'rgba(194,86,47,0.30)',
+            width: Math.max(2, X(r.h[2]) - X(r.h[0]))});
+        hwEl(svg, 'circle', {cx: X(r.h[1]), cy: y + 24.5, r: 4, fill: HW_NEG,
+            stroke: '#ffffff', 'stroke-width': 1.5});
+        bandLabels(r.h, y + 22, y + 38);
+        hwEl(svg, 'text', {x: m.l + iw + 10, y: y + 22, class: 'hw-val'}, r.vlabel);
+        const hit = hwEl(svg, 'rect', {x: m.l, y, width: iw + 78, height: rowH - 4, fill: 'transparent'});
+        hwTip(hit, r.tip);
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 8, class: 'hw-lbl', 'text-anchor': 'middle'}, opts.axis);
+}
+
+const HW_RANGE_LEGEND = [
+    {c: '#6b6a62', t: 'Normal days — band min–max, dot mean'},
+    {c: HW_NEG, t: 'Heatwave days — band min–max, dot mean'},
+];
+
 function hwRenderRenewable() {
     const src = hwData.renewable.slice().sort((a, b) => a.delta_pp - b.delta_pp).slice(0, 14);
-    hwDiverging('hwRen', src.map(r => ({
-        label: hwName(r.country_code), v: +r.delta_pp, vlabel: hwSign(r.delta_pp, 1),
-        tip: `<b>${hwName(r.country_code)}</b><br>Normal ${r.normal_renewable_pct}% →
-              heatwave ${r.heatwave_renewable_pct}%<br>${r.heatwave_days} heatwave days`,
-    })), {axis: 'Change in renewable share (percentage points)'});
-    hwTable('hwRenTbl', ['Country', 'Normal %', 'Heatwave %', 'Δ pp'],
-        src.map(r => [hwName(r.country_code), r.normal_renewable_pct, r.heatwave_renewable_pct, r.delta_pp]));
+    hwRangeStrip('hwRen', src.map(r => ({
+        label: hwName(r.country_code),
+        n: [+r.normal_min_pct, +r.normal_renewable_pct, +r.normal_max_pct],
+        h: [+r.heatwave_min_pct, +r.heatwave_renewable_pct, +r.heatwave_max_pct],
+        vlabel: hwSign(r.delta_pp, 1) + ' pp',
+        tip: `<b>${hwName(r.country_code)}</b><br>
+              Normal: min ${r.normal_min_pct} · mean ${r.normal_renewable_pct} ·
+              max ${r.normal_max_pct}%<br>
+              Heatwave: min ${r.heatwave_min_pct} · mean ${r.heatwave_renewable_pct} ·
+              max ${r.heatwave_max_pct}%<br>${r.heatwave_days} heatwave days`,
+    })), {axis: 'Renewable share of generation (%) — daily min · mean · max', fmt: v => Math.round(v) + '%'});
+    hwLegend('hwRenLegend', HW_RANGE_LEGEND);
+    hwTable('hwRenTbl',
+        ['Country', 'Normal min %', 'Normal mean %', 'Normal max %',
+         'Heatwave min %', 'Heatwave mean %', 'Heatwave max %', 'Δ pp'],
+        src.map(r => [hwName(r.country_code), r.normal_min_pct, r.normal_renewable_pct,
+            r.normal_max_pct, r.heatwave_min_pct, r.heatwave_renewable_pct,
+            r.heatwave_max_pct, r.delta_pp]));
 }
 
 function hwRenderPrice() {
     const src = hwData.price.slice().sort((a, b) => b.change_pct - a.change_pct).slice(0, 14);
-    hwDiverging('hwPrice', src.map(r => ({
-        label: hwName(r.country_code), v: +r.change_pct, vlabel: hwSign(r.change_pct, 0) + '%',
-        tip: `<b>${hwName(r.country_code)}</b><br>€${r.normal_price_eur} → €${r.heatwave_price_eur}/MWh<br>
+    hwRangeStrip('hwPrice', src.map(r => ({
+        label: hwName(r.country_code),
+        n: [+r.normal_min_eur, +r.normal_price_eur, +r.normal_max_eur],
+        h: [+r.heatwave_min_eur, +r.heatwave_price_eur, +r.heatwave_max_eur],
+        vlabel: hwSign(r.change_pct, 0) + '%',
+        tip: `<b>${hwName(r.country_code)}</b><br>
+              Normal: min €${r.normal_min_eur} · mean €${r.normal_price_eur} ·
+              max €${r.normal_max_eur}<br>
+              Heatwave: min €${r.heatwave_min_eur} · mean €${r.heatwave_price_eur} ·
+              max €${r.heatwave_max_eur}<br>
               ${hwSign(r.delta_eur, 1)} €/MWh on ${r.heatwave_days} days`,
-    })), {axis: 'Change in average day-ahead price (%)', posColor: HW_NEG, negColor: '#1baf7a'});
-    hwTable('hwPriceTbl', ['Country', 'Normal €/MWh', 'Heatwave €/MWh', 'Δ €', 'Δ %'],
-        src.map(r => [hwName(r.country_code), r.normal_price_eur, r.heatwave_price_eur,
-            r.delta_eur, r.change_pct]));
+    })), {axis: 'Day-ahead price (€/MWh) — daily min · mean · max', fmt: v => '€' + Math.round(v)});
+    hwLegend('hwPriceLegend', HW_RANGE_LEGEND);
+    hwTable('hwPriceTbl',
+        ['Country', 'Normal min €', 'Normal mean €', 'Normal max €',
+         'Heatwave min €', 'Heatwave mean €', 'Heatwave max €', 'Δ €', 'Δ %'],
+        src.map(r => [hwName(r.country_code), r.normal_min_eur, r.normal_price_eur,
+            r.normal_max_eur, r.heatwave_min_eur, r.heatwave_price_eur,
+            r.heatwave_max_eur, r.delta_eur, r.change_pct]));
 }
 
 function hwRenderGas() {
@@ -13102,62 +13208,35 @@ function hwRenderGasShare() {
 
 // ── Which countries' demand rises most ─────────────────────────────────────
 function hwRenderUplift() {
-    const svg = document.getElementById('hwUplift');
-    if (!svg) return;
-    hwClear(svg);
-    const demByCc = {};
-    hwData.trade.forEach(r => { demByCc[r.country_code] = Number(r.extra_demand_gwh); });
     const rows = hwData.uplift.slice()
-        .filter(r => Number.isFinite(Number(r.mean_demand_uplift_pct)) && Number(r.heatwave_days) >= 20)
-        .sort((a, b) => Number(b.mean_demand_uplift_pct) - Number(a.mean_demand_uplift_pct))
-        .slice(0, 18);
-    if (!rows.length) { svg.setAttribute('height', 50); return; }
+        .filter(r => Number.isFinite(Number(r.mean_demand_uplift_pct))
+                  && Number(r.normal_mean_mw) > 0)
+        .sort((a, b) => Number(b.mean_demand_uplift_pct) - Number(a.mean_demand_uplift_pct));
 
-    const H = rows.length * 20 + 40;
-    svg.setAttribute('height', H);
-    const W = svg.clientWidth || 800;
-    const m = {t: 8, r: 160, b: 26, l: 104};
-    const iw = Math.max(80, W - m.l - m.r);
-    const vals = rows.map(r => Number(r.mean_demand_uplift_pct));
-    const lo = Math.min(0, ...vals), hi = Math.max(...vals);
-    const X = v => m.l + ((v - lo) / ((hi - lo) || 1)) * iw;
-    const bh = 12;
-
-    [0, 5, 10, 15].filter(v => v >= lo && v <= hi).forEach(v => {
-        hwEl(svg, 'line', {x1: X(v), x2: X(v), y1: m.t - 4, y2: m.t + rows.length * 20 - 8,
-            stroke: v === 0 ? '#c3c2b7' : '#e1e0d9', 'stroke-width': 1});
-        hwEl(svg, 'text', {x: X(v), y: H - 8, class: 'hw-tick', 'text-anchor': 'middle'}, v + '%');
-    });
-
-    rows.forEach((r, i) => {
-        const y = m.t + i * 20;
-        const v = Number(r.mean_demand_uplift_pct);
-        const x = v < 0 ? X(v) : X(0);
-        const w = Math.max(2, Math.abs(X(v) - X(0)));
-        // Sequential ramp: this is magnitude, with no identity to encode.
-        const step = HW_SEQ[Math.min(HW_SEQ.length - 1,
-            Math.max(0, Math.floor((v / (hi || 1)) * HW_SEQ.length)))];
-        hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4, fill: v < 0 ? '#9a9a93' : step});
-        // A dagger marks a country whose reference days are distant and all on
-        // one side, so its figure is an upper bound rather than a measurement.
+    // Indexed to each country's normal-day mean (=100): Cyprus runs 0.9 GW and
+    // France 45 GW, so raw MW on one axis would flatten every small country to
+    // a sliver. Indexed, the two bands and the gap between the dots read the
+    // same way for every row, and the ranges stay honest.
+    hwRangeStrip('hwUplift', rows.map(r => {
+        const f = 100 / Number(r.normal_mean_mw);
         const weak = hwBaselineNote(r.country_code);
-        hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 1, class: 'hw-lbl', 'text-anchor': 'end'},
-            hwName(r.country_code) + (weak ? ' †' : ''));
-        hwEl(svg, 'text', {x: x + w + 8, y: y + bh - 1, class: 'hw-val'}, v.toFixed(1) + '%');
-        const gwh = demByCc[r.country_code];
-        if (Number.isFinite(gwh)) {
-            hwEl(svg, 'text', {x: x + w + 52, y: y + bh - 1, class: 'hw-tick'},
-                `${hwSign(gwh, 1)} GWh/day`);
-        }
-        const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
-        hwTip(hit, `<b>${hwName(r.country_code)}</b><br>Mean demand ${hwSign(v, 1)}%<br>
-            Normal: min ${hwFmt(r.normal_min_mw)} · mean ${hwFmt(r.normal_mean_mw)} ·
-            max ${hwFmt(r.normal_max_mw)} MW (${r.normal_days} days)<br>
-            Heatwave: min ${hwFmt(r.heatwave_min_mw)} · mean ${hwFmt(r.heatwave_mean_mw)} ·
-            max ${hwFmt(r.heatwave_max_mw)} MW (${r.heatwave_days} days)<br>
-            Peak demand ${hwSign(r.peak_demand_uplift_pct, 1)}%
-            ${weak ? '<br><br>† ' + weak : ''}`);
-    });
+        return {
+            label: hwName(r.country_code) + (weak ? ' †' : ''),
+            n: [Number(r.normal_min_mw) * f, 100, Number(r.normal_max_mw) * f],
+            h: [Number(r.heatwave_min_mw) * f, Number(r.heatwave_mean_mw) * f,
+                Number(r.heatwave_max_mw) * f],
+            vlabel: hwSign(r.mean_demand_uplift_pct, 1) + '%',
+            tip: `<b>${hwName(r.country_code)}</b><br>Mean demand ${hwSign(r.mean_demand_uplift_pct, 1)}%<br>
+                Normal: min ${hwFmt(r.normal_min_mw)} · mean ${hwFmt(r.normal_mean_mw)} ·
+                max ${hwFmt(r.normal_max_mw)} MW (${r.normal_days} days)<br>
+                Heatwave: min ${hwFmt(r.heatwave_min_mw)} · mean ${hwFmt(r.heatwave_mean_mw)} ·
+                max ${hwFmt(r.heatwave_max_mw)} MW (${r.heatwave_days} days)<br>
+                Peak demand ${hwSign(r.peak_demand_uplift_pct, 1)}%
+                ${weak ? '<br><br>† ' + weak : ''}`,
+        };
+    }), {axis: 'Daily demand, indexed — each country’s normal-day mean = 100',
+         fmt: v => Math.round(v)});
+    hwLegend('hwUpliftLegend', HW_RANGE_LEGEND);
 
     const flagged = rows.filter(r => hwBaselineNote(r.country_code))
         .map(r => hwName(r.country_code));
