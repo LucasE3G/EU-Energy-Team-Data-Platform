@@ -2534,6 +2534,15 @@ body.sidebar-collapsed #sidebarReveal {
 
 /* Full-width panel: the old version was a 90ch paragraph adrift in a wide
    column, which read as a stray note rather than part of the page. */
+/* Footnote under a chart: qualifies specific marks without competing with them. */
+.hw-foot {
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+}
+.hw-foot:empty { display: none; }
+
 .hw-caveat {
     padding: 22px 26px;
     background: var(--bg-primary);

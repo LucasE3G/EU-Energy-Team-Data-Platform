@@ -25,7 +25,9 @@ begin
   refresh materialized view concurrently public.mv_heatwave_daily_balance;
   refresh materialized view concurrently public.mv_heatwave_component_daily;
 
-  -- 4. Paired deltas that the page reads directly.
+  -- 4. The matched day set, then the paired deltas that read it. Order matters:
+  --    both deltas resolve their baselines through the matched days.
+  refresh materialized view public.mv_heatwave_matched_days;
   refresh materialized view concurrently public.mv_heatwave_component_delta;
   refresh materialized view concurrently public.mv_heatwave_coverage_delta;
 end;

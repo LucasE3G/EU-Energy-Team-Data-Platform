@@ -1,3 +1,8 @@
+-- SUPERSEDED by heatwave_matched_baseline.sql. Do not run this file: it still
+-- pairs heatwave days against non-heatwave days in the same CALENDAR MONTH,
+-- which deletes July and August for Spain and Italy (they were in heatwave
+-- every day of both). The ratio-of-means fix below was carried across.
+--
 -- Two fixes to the per-fuel deltas.
 --
 -- 1. change_pct was avg(hw/base - 1) across month groups: a mean of ratios. One

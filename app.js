@@ -13102,8 +13102,11 @@ function hwRenderUplift() {
         const step = HW_SEQ[Math.min(HW_SEQ.length - 1,
             Math.max(0, Math.floor((v / (hi || 1)) * HW_SEQ.length)))];
         hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4, fill: v < 0 ? '#9a9a93' : step});
+        // A dagger marks a country whose reference days are distant and all on
+        // one side, so its figure is an upper bound rather than a measurement.
+        const weak = hwBaselineNote(r.country_code);
         hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 1, class: 'hw-lbl', 'text-anchor': 'end'},
-            hwName(r.country_code));
+            hwName(r.country_code) + (weak ? ' †' : ''));
         hwEl(svg, 'text', {x: x + w + 8, y: y + bh - 1, class: 'hw-val'}, v.toFixed(1) + '%');
         const gwh = demByCc[r.country_code];
         if (Number.isFinite(gwh)) {
@@ -13114,8 +13117,20 @@ function hwRenderUplift() {
         hwTip(hit, `<b>${hwName(r.country_code)}</b><br>Mean demand ${hwSign(v, 1)}%<br>
             Peak demand ${hwSign(r.peak_demand_uplift_pct, 1)}%<br>
             ${Number.isFinite(gwh) ? hwSign(gwh, 1) + ' GWh/day<br>' : ''}
-            over ${r.heatwave_days} heatwave days`);
+            over ${r.heatwave_days} heatwave days
+            ${weak ? '<br><br>† ' + weak : ''}`);
     });
+
+    const flagged = rows.filter(r => hwBaselineNote(r.country_code))
+        .map(r => hwName(r.country_code));
+    const foot = document.getElementById('hwUpliftFoot');
+    if (foot) {
+        foot.textContent = flagged.length
+            ? `† ${flagged.join(', ')}: no non-heatwave day in mid-summer 2026, so the `
+              + `reference comes from a cooler part of the season and part of what shows here `
+              + `is ordinary seasonal warming. Upper bounds.`
+            : '';
+    }
 
     hwTable('hwUpliftTbl', ['Country', 'Mean demand %', 'Peak demand %', 'Extra GWh/day', 'Heatwave days'],
         rows.map(r => [hwName(r.country_code), r.mean_demand_uplift_pct, r.peak_demand_uplift_pct,
@@ -13165,6 +13180,8 @@ function hwRenderCoverage(sel) {
               + `change of ${hwFmt(demand, 1)}, a discrepancy of ${gapPct}%. The difference is `
               + `pumped-storage consumption (counted as generation but never netted off), transmission `
               + `losses, and plant that reports on some days but not others.`;
+        const bn = hwBaselineNote(sel);
+        if (bn) note.textContent += ' ' + bn;
     }
 
     const COMP_COLOR = Object.assign({}, HW_FUEL_COLOR, {imports: '#1baf7a'});
@@ -13234,7 +13251,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         // Ten-day floor: Sweden and Ireland had 3 heatwave days in 2026, Latvia 4,
         // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
@@ -13253,6 +13270,7 @@ async function hwFetchAll() {
         sb.from('v_heatwave_demand_sources').select('*').gte('heatwave_days', 20),
         sb.from('v_heatwave_demand_uplift').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_gap_coverage').select('*').gte('heatwave_days', HW_MIN_DAYS),
+        sb.from('v_heatwave_baseline_quality').select('*'),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
@@ -13304,9 +13322,27 @@ async function hwFetchAll() {
         sources: sources.data || [],
         uplift: uplift.data || [],
         coverage: coverage.data || [],
+        // Keyed by country so any chart can qualify its own figure.
+        quality: Object.fromEntries((quality.data || []).map(r => [r.country_code, r])),
         events: events.data || [],
         eventSeries: eventSeries || [],
     };
+}
+
+// How far away a country's reference days are, and whether they all sit on one
+// side of the heatwave. Italy and Spain had no non-heatwave day after 15 June
+// 2026, so their reference days come from a cooler part of the summer and part
+// of what reads as a heat effect is ordinary seasonal warming. Countries whose
+// reference days are close agree with the stricter same-month method to within
+// two points; these four diverge by four to fourteen, so they are marked.
+function hwBaselineNote(cc) {
+    const q = hwData.quality?.[cc];
+    if (!q) return '';
+    const gap = Number(q.avg_ref_gap_days), oneSided = Number(q.pct_ref_before);
+    if (!(gap >= 15 && oneSided >= 75)) return '';
+    return `Reference days average ${gap} days away and ${oneSided}% of them fall before `
+         + `the heatwave — ${hwName(cc)} had no non-heatwave day in mid-summer 2026. `
+         + `Treat this as an upper bound.`;
 }
 
 function hwRenderScoped() {

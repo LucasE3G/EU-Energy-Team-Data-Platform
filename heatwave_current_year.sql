@@ -1,3 +1,8 @@
+-- SUPERSEDED by heatwave_matched_baseline.sql, which keeps the current-year
+-- scoping below but replaces calendar-month pairing with nearest-neighbour
+-- matching. Do not run this file: month pairing left Spain and Italy with no
+-- reference day in July or August 2026, silently discarding their hottest days.
+--
 -- Scope the whole Heatwaves analysis to the current year.
 --
 -- Pooling 2021-2026 kept producing numbers about systems that no longer exist.
