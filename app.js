@@ -13040,16 +13040,28 @@ function hwRenderGasShare() {
         hwEl(svg, 'text', {x: X(v), y: H - 10, class: 'hw-tick', 'text-anchor': 'middle'}, v + '%');
     });
 
+    // "Net imports 113%" under France — which never imported on a single
+    // heatwave day — read as a false statement. The green segment is the
+    // TRADE response: extra imports for an importer, an export cut for an
+    // exporter. Name it per country from the country's actual position.
+    const tradeName = (cc, v) => {
+        const tp = hwData.trade.find(t => t.country_code === cc);
+        const exporter = tp && Number(tp.normal_net_export_gwh) > 0;
+        if (exporter) return v >= 0 ? 'Exports cut' : 'Exports raised';
+        return v >= 0 ? 'Extra imports' : 'Imports cut';
+    };
+
     rows.forEach((r, i) => {
         const y = m.t + i * 24;
         const gasPct = Number(r.gas_pct_of_extra_demand);
         const impPct = Math.round(100 * Number(r.extra_imports_gwh) / Number(r.extra_demand_gwh));
         const total = gasPct + impPct;
-        // Stack gas and imports from zero, each on its own side. Gas alone made
-        // Portugal's falling bar look like an unexplained win; it fell because
-        // imports rose in its place, and only the pair shows that.
+        const tn = tradeName(r.country_code, impPct);
+        // Stack gas and trade from zero, each on its own side. Gas alone made
+        // a falling bar look like an unexplained win when the trade response
+        // rose in its place, and only the pair shows that.
         let accPos = 0, accNeg = 0;
-        [[gasPct, HW_FUEL_COLOR.gas, 'Gas'], [impPct, '#1baf7a', 'Net imports']].forEach(([v, col, nm]) => {
+        [[gasPct, HW_FUEL_COLOR.gas, 'Gas'], [impPct, '#1baf7a', tn]].forEach(([v, col, nm]) => {
             if (!v) return;
             const from = v > 0 ? accPos : accNeg + v;
             const w = Math.max(2, Math.abs(X(v) - X(0)) - 1);
@@ -13068,22 +13080,23 @@ function hwRenderGasShare() {
         const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
         hwTip(hit, `<b>${hwName(r.country_code)}</b><br>
             Extra demand ${hwFmt(r.extra_demand_gwh, 1)} GWh/day<br>
-            Gas ${hwSign(gasPct, 0)}% · Imports ${hwSign(impPct, 0)}%<br>
+            Gas ${hwSign(gasPct, 0)}% · ${tn} ${hwSign(impPct, 0)}%<br>
             Together ${hwSign(total, 0)}% of the increase`);
     });
     hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 26, class: 'hw-lbl', 'text-anchor': 'middle'},
-        'Extra gas generation as a share of the extra demand');
+        'Share of the extra demand met by gas and by the trade response');
 
     hwLegend('hwGasShareLegend', [
         {c: HW_FUEL_COLOR.gas, t: 'Gas'},
-        {c: '#1baf7a', t: 'Net imports'},
+        {c: '#1baf7a', t: 'Trade — extra imports, or exports cut'},
     ]);
     hwTable('hwGasShareTbl',
-        ['Country', 'Extra demand GWh/d', 'Gas %', 'Imports %', 'Together %'],
+        ['Country', 'Extra demand GWh/d', 'Gas %', 'Trade %', 'Trade means', 'Together %'],
         rows.map(r => {
             const g = Number(r.gas_pct_of_extra_demand);
             const im = Math.round(100 * Number(r.extra_imports_gwh) / Number(r.extra_demand_gwh));
-            return [hwName(r.country_code), r.extra_demand_gwh, g + '%', im + '%', (g + im) + '%'];
+            return [hwName(r.country_code), r.extra_demand_gwh, g + '%', im + '%',
+                tradeName(r.country_code, im).toLowerCase(), (g + im) + '%'];
         }));
 }
 
