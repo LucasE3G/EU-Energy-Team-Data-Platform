@@ -12474,7 +12474,14 @@ function hwDiverging(svgId, rows, opts) {
     const W = svg.clientWidth || 640;
     const m = {t: 8, r: opts.right || 62, b: 22, l: opts.left || 92};
     const iw = Math.max(80, W - m.l - m.r);
-    const mx = Math.max(...rows.map(r => Math.abs(r.v)), 0.001) * 1.12;
+    // The scale must cover the whiskers too — they used to run straight off
+    // the plot — but one extreme national outcome must not crush every mean
+    // bar to a sliver. So the domain stretches to at most 3x the largest mean;
+    // whiskers beyond that are clamped and drawn as an arrow with the true
+    // value printed at the cut.
+    const maxV = Math.max(...rows.map(r => Math.abs(r.v)), 0.001);
+    const maxW = Math.max(0, ...rows.flatMap(r => [Math.abs(r.lo ?? 0), Math.abs(r.hi ?? 0)]));
+    const mx = Math.max(maxV * 1.12, Math.min(maxW * 1.06, maxV * 3));
     const X = v => m.l + iw / 2 + (v / mx) * (iw / 2);
     const bh = Math.min(14, rowH - 8);
 
@@ -12487,19 +12494,31 @@ function hwDiverging(svgId, rows, opts) {
         const x = neg ? X(r.v) : X(0);
         const w = Math.max(2, Math.abs(X(r.v) - X(0)));
         if (r.lo !== undefined && r.hi !== undefined) {
-            hwEl(svg, 'line', {x1: X(r.lo), x2: X(r.hi), y1: y + bh / 2, y2: y + bh / 2,
+            const clamp = v => Math.max(-mx * 0.995, Math.min(mx * 0.995, v));
+            const loC = clamp(r.lo), hiC = clamp(r.hi);
+            const loCut = loC !== r.lo, hiCut = hiC !== r.hi;
+            hwEl(svg, 'line', {x1: X(loC), x2: X(hiC), y1: y + bh / 2, y2: y + bh / 2,
                 stroke: '#c3c2b7', 'stroke-width': 1});
-            [r.lo, r.hi].forEach(b => hwEl(svg, 'line', {x1: X(b), x2: X(b),
-                y1: y + 2, y2: y + bh - 2, stroke: '#c3c2b7', 'stroke-width': 1}));
+            [[loC, loCut], [hiC, hiCut]].forEach(([b, cut]) => {
+                if (cut) return;   // a cut end gets its arrow label, not a tick
+                hwEl(svg, 'line', {x1: X(b), x2: X(b), y1: y + 2, y2: y + bh - 2,
+                    stroke: '#c3c2b7', 'stroke-width': 1});
+            });
             // The whisker ends carry their numbers on the chart, not only in
             // the tooltip — skipped when the whisker is too short to fit them.
             const rf = opts.rangeFmt || (v => hwFmt(v, 0));
-            if (Math.abs(X(r.v) - X(r.lo)) > 48) {
-                hwEl(svg, 'text', {x: X(r.lo) - 4, y: y + bh - 1, class: 'hw-tick',
+            if (loCut) {
+                hwEl(svg, 'text', {x: X(loC) - 2, y: y + bh - 1, class: 'hw-tick',
+                    'text-anchor': 'end'}, '« ' + rf(r.lo));
+            } else if (Math.abs(X(r.v) - X(loC)) > 48) {
+                hwEl(svg, 'text', {x: X(loC) - 4, y: y + bh - 1, class: 'hw-tick',
                     'text-anchor': 'end'}, rf(r.lo));
             }
-            if (Math.abs(X(r.hi) - X(r.v)) > 48) {
-                hwEl(svg, 'text', {x: X(r.hi) + 4, y: y + bh - 1, class: 'hw-tick'}, rf(r.hi));
+            if (hiCut) {
+                hwEl(svg, 'text', {x: X(hiC) + 2, y: y + bh - 1, class: 'hw-tick'},
+                    rf(r.hi) + ' »');
+            } else if (Math.abs(X(hiC) - X(r.v)) > 48) {
+                hwEl(svg, 'text', {x: X(hiC) + 4, y: y + bh - 1, class: 'hw-tick'}, rf(r.hi));
             }
         }
         hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4,
