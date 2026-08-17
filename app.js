@@ -12985,8 +12985,13 @@ function hwRenderGasShare() {
     // 60.8. Countries below the floor are dropped, and the magnitude is printed
     // beside every bar so the reader can weight what remains.
     const MIN_DEMAND_GWH = 3;
+    // Also require the demand rise to be material in RELATIVE terms: Germany's
+    // demand barely moves in a heatwave (+0.6%), so "X% of the extra demand"
+    // is a share of nothing and produced a 509% bar.
+    const MIN_UPLIFT_PCT = 2;
     const rows = hwData.sources.slice()
         .filter(r => Number(r.extra_demand_gwh) >= MIN_DEMAND_GWH
+                  && Number(r.uplift_pct) >= MIN_UPLIFT_PCT
                   && Number.isFinite(Number(r.gas_pct_of_extra_demand)))
         .sort((a, b) => (Number(b.gas_pct_of_extra_demand) + 100*Number(b.extra_imports_gwh)/Number(b.extra_demand_gwh))
                       - (Number(a.gas_pct_of_extra_demand) + 100*Number(a.extra_imports_gwh)/Number(a.extra_demand_gwh)))
@@ -13115,9 +13120,10 @@ function hwRenderUplift() {
         }
         const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
         hwTip(hit, `<b>${hwName(r.country_code)}</b><br>Mean demand ${hwSign(v, 1)}%<br>
-            Peak demand ${hwSign(r.peak_demand_uplift_pct, 1)}%<br>
-            ${Number.isFinite(gwh) ? hwSign(gwh, 1) + ' GWh/day<br>' : ''}
-            over ${r.heatwave_days} heatwave days
+            Normal ${hwFmt(r.normal_mean_mw)} MW (${r.normal_days} days) →
+            heatwave ${hwFmt(r.heatwave_mean_mw)} MW (${r.heatwave_days} days)<br>
+            Peak demand ${hwSign(r.peak_demand_uplift_pct, 1)}%
+            ${Number.isFinite(gwh) ? '<br>' + hwSign(gwh, 1) + ' GWh/day' : ''}
             ${weak ? '<br><br>† ' + weak : ''}`);
     });
 
@@ -13126,16 +13132,23 @@ function hwRenderUplift() {
     const foot = document.getElementById('hwUpliftFoot');
     if (foot) {
         foot.textContent = flagged.length
-            ? `† ${flagged.join(', ')}: no non-heatwave day in mid-summer 2026, so the reference `
-              + `comes from three to four weeks earlier. The temperature contrast is normal `
-              + `(7–8 °C, the same as Germany and Poland), but seasonal factors other than heat — `
-              + `holidays, industrial shutdown, tourism — are not controlled.`
+            ? `† ${flagged.join(', ')}: nearly all reference days fall before July — after that, `
+              + `every day was a heatwave. The heat contrast is normal, but non-heat seasonal `
+              + `effects (holidays, shutdowns, tourism) are uncontrolled for these countries.`
             : '';
     }
 
-    hwTable('hwUpliftTbl', ['Country', 'Mean demand %', 'Peak demand %', 'Extra GWh/day', 'Heatwave days'],
+    // Min / mean / max of both pools, so every percentage can be checked
+    // against the raw levels it came from.
+    hwTable('hwUpliftTbl',
+        ['Country', 'Mean %', 'Peak %',
+         'Normal MW min', 'Normal MW mean', 'Normal MW max',
+         'Heatwave MW min', 'Heatwave MW mean', 'Heatwave MW max',
+         'Normal days', 'Heatwave days'],
         rows.map(r => [hwName(r.country_code), r.mean_demand_uplift_pct, r.peak_demand_uplift_pct,
-            Number.isFinite(demByCc[r.country_code]) ? demByCc[r.country_code] : '—', r.heatwave_days]));
+            hwFmt(r.normal_min_mw), hwFmt(r.normal_mean_mw), hwFmt(r.normal_max_mw),
+            hwFmt(r.heatwave_min_mw), hwFmt(r.heatwave_mean_mw), hwFmt(r.heatwave_max_mw),
+            r.normal_days, r.heatwave_days]));
 }
 
 // ── How the gap was covered, fuel by fuel — ONE country ────────────────────
@@ -13346,29 +13359,20 @@ async function hwFetchAll() {
     };
 }
 
-// Italy, Spain, Greece and Cyprus had no non-heatwave day after mid-June 2026,
-// so their reference days sit three to four weeks earlier in the season.
-//
-// That is NOT a cold-reference problem, which is what this note first claimed.
-// The window picks the warmest available reference days, so the temperature
-// contrast comes out normal: Italy's July heatwave days average 34.1 °C against
-// a 26.7 °C reference, a 7.4 °C gap, against Germany's 7.9 °C and Poland's
-// 8.6 °C. The reference temperature tracks the season properly (Italy 24.2 °C
-// in May rising to 28.3 °C in August).
-//
-// What is genuinely uncontrolled is everything seasonal that is NOT temperature
-// — industrial shutdown, tourism, holidays — because the reference comes from a
-// different part of the summer. The direction of that is unknown, not upward:
-// Italian industry largely closes in August, which would understate the uplift.
+// Cyprus, Italy and Spain have 100% of their reference days before July, and
+// Greece 90% — after that, every day was a heatwave. Their temperature contrast
+// is normal (the reference pool is the warm end of what exists), but seasonal
+// factors other than heat — holidays, industrial shutdown, tourism — are not
+// controlled for them, in either direction.
 function hwBaselineNote(cc) {
     const q = hwData.quality?.[cc];
     if (!q) return '';
-    const gap = Number(q.avg_ref_gap_days), oneSided = Number(q.pct_ref_before);
-    if (!(gap >= 15 && oneSided >= 75)) return '';
-    return `Reference days average ${gap} days away and ${oneSided}% fall before the heatwave — `
-         + `${hwName(cc)} had no non-heatwave day in mid-summer 2026. The temperature contrast `
-         + `is normal, but seasonal factors other than heat (holidays, industrial shutdown, `
-         + `tourism) are not controlled here.`;
+    const early = Number(q.pct_ref_before_jul);
+    if (!(early >= 85)) return '';
+    return `${early}% of ${hwName(cc)}'s reference days fall before July — after that, `
+         + `every day was a heatwave. Heat contrast vs the reference is `
+         + `${hwFmt(q.temp_gap_c, 1)} °C (normal), but non-heat seasonal effects `
+         + `(holidays, shutdowns, tourism) are uncontrolled.`;
 }
 
 function hwRenderScoped() {

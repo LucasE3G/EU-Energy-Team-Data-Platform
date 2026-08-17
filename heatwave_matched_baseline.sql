@@ -1,3 +1,9 @@
+-- SUPERSEDED by heatwave_pooled_baseline.sql. Do not run this file: the
+-- nearest-neighbour matching below was replaced by a plain pooled average
+-- (all heatwave days vs all non-heatwave days, May-September, same country,
+-- weekday-vs-weekday / weekend-vs-weekend), which answers the same question
+-- and can be explained in one sentence.
+--
 -- Replace calendar-month pairing with a nearest-neighbour baseline.
 --
 -- THE PROBLEM

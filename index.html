@@ -1617,7 +1617,7 @@
                     <div class="hw-card">
                         <div class="hw-card-head">
                             <h3>Renewable share during heatwaves</h3>
-                            <p>Change in the renewable share of generation, in percentage points, against the nearest non-heatwave days in the same country.</p>
+                            <p>Change in the renewable share of generation, in percentage points, against all non-heatwave days in the same country and season.</p>
                         </div>
                         <svg id="hwRen" height="300" role="img" aria-label="Change in renewable share during heatwaves"></svg>
                         <button class="hw-tbl-btn" data-hwt="hwRenTbl">Show data table</button>
@@ -1651,7 +1651,7 @@
                 <div class="hw-card">
                     <div class="hw-card-head">
                         <h3>Which countries&rsquo; demand rises most in a heatwave</h3>
-                        <p>Average electricity demand on heatwave days against the fifteen nearest non-heatwave days of the same type &mdash; weekday against weekday, weekend against weekend &mdash; in the same country. The bar is the percentage; the figure beside it is the same change in absolute terms, because a large percentage on a small system is a different fact from a small one on a large system.</p>
+                        <p>Average demand across all 2026 heatwave days against the average across all 2026 non-heatwave days, May&ndash;September, weekdays against weekdays and weekends against weekends. The bar is the percentage; the figure beside it is the same change in absolute terms, and the data table carries the min, mean and max of both pools.</p>
                     </div>
                     <svg id="hwUplift" height="380" role="img" aria-label="Demand increase during heatwaves by country"></svg>
                     <p id="hwUpliftFoot" class="hw-foot"></p>
@@ -1789,8 +1789,8 @@
                         </div>
                         <div>
                             <strong>Matching</strong>
-                            <p>Every comparison matches each heatwave day against its fifteen nearest non-heatwave days in the same country and year, of the same day type &mdash; weekday against weekday, weekend against weekend &mdash; so the figures measure heat rather than the working week or the difference between spring and August. Two corrections got it here. Calendar-month matching was used until it emerged that Spain and Italy were in heatwave every day of July and August 2026, leaving those months no reference day at all and quietly reducing Spain&rsquo;s 78 heatwave days to the 25 that fell in May and June. Day type was then added after Germany appeared to use <em>less</em> electricity in a heatwave: 40% of its heatwave days were weekends against 27% of their reference days, and German weekend demand runs 9.5&nbsp;GW below a weekday, which was enough to invent the entire decline.</p>
-                            <p>Cyprus, Italy, Greece and Spain had no non-heatwave day at all after mid-June 2026, so their reference days sit three to four weeks earlier and are marked &dagger;. The window picks the warmest available reference days, so the temperature contrast still comes out normal &mdash; Italy&rsquo;s July heatwave days average 34.1&nbsp;&deg;C against a 26.7&nbsp;&deg;C reference, a 7.4&nbsp;&deg;C gap, against Germany&rsquo;s 7.9 and Poland&rsquo;s 8.6. What is not controlled for those four is everything seasonal that is not temperature: holidays, industrial shutdown, tourism. That cuts both ways, so the figures are not biased in a known direction.</p>
+                            <p>One average against another: every heatwave day from May to September 2026 compared with every non-heatwave day over the same season, in the same country. The only adjustment kept is day type &mdash; weekdays are compared with weekdays and weekends with weekends, because 40% of Germany&rsquo;s heatwave days were weekends, German weekend demand runs 9.5&nbsp;GW below a weekday, and without the adjustment Germany appeared to use <em>less</em> electricity in a heatwave. Each chart&rsquo;s data table shows the min, mean and max of both pools, so every percentage can be checked against the levels it came from.</p>
+                            <p>Cyprus, Italy and Spain have 100% of their reference days before July, and Greece 90% &mdash; after that, every day was a heatwave. Their heat contrast is normal, but non-heat seasonal effects (holidays, industrial shutdown, tourism) are uncontrolled for those four; they are marked &dagger;. The Netherlands is excluded from the demand charts entirely: TenneT&rsquo;s reported load steps down 4.3&nbsp;GW overnight on 21 July 2026 and stays there &mdash; a reporting change in the source data, confirmed by both of our independent ingest paths agreeing on overlapping days &mdash; and any average built across that break measures the reporting change, not heat.</p>
                         </div>
                         <div>
                             <strong>Cross-border</strong>
