@@ -13126,9 +13126,10 @@ function hwRenderUplift() {
     const foot = document.getElementById('hwUpliftFoot');
     if (foot) {
         foot.textContent = flagged.length
-            ? `† ${flagged.join(', ')}: no non-heatwave day in mid-summer 2026, so the `
-              + `reference comes from a cooler part of the season and part of what shows here `
-              + `is ordinary seasonal warming. Upper bounds.`
+            ? `† ${flagged.join(', ')}: no non-heatwave day in mid-summer 2026, so the reference `
+              + `comes from three to four weeks earlier. The temperature contrast is normal `
+              + `(7–8 °C, the same as Germany and Poland), but seasonal factors other than heat — `
+              + `holidays, industrial shutdown, tourism — are not controlled.`
             : '';
     }
 
@@ -13345,20 +13346,29 @@ async function hwFetchAll() {
     };
 }
 
-// How far away a country's reference days are, and whether they all sit on one
-// side of the heatwave. Italy and Spain had no non-heatwave day after 15 June
-// 2026, so their reference days come from a cooler part of the summer and part
-// of what reads as a heat effect is ordinary seasonal warming. Countries whose
-// reference days are close agree with the stricter same-month method to within
-// two points; these four diverge by four to fourteen, so they are marked.
+// Italy, Spain, Greece and Cyprus had no non-heatwave day after mid-June 2026,
+// so their reference days sit three to four weeks earlier in the season.
+//
+// That is NOT a cold-reference problem, which is what this note first claimed.
+// The window picks the warmest available reference days, so the temperature
+// contrast comes out normal: Italy's July heatwave days average 34.1 °C against
+// a 26.7 °C reference, a 7.4 °C gap, against Germany's 7.9 °C and Poland's
+// 8.6 °C. The reference temperature tracks the season properly (Italy 24.2 °C
+// in May rising to 28.3 °C in August).
+//
+// What is genuinely uncontrolled is everything seasonal that is NOT temperature
+// — industrial shutdown, tourism, holidays — because the reference comes from a
+// different part of the summer. The direction of that is unknown, not upward:
+// Italian industry largely closes in August, which would understate the uplift.
 function hwBaselineNote(cc) {
     const q = hwData.quality?.[cc];
     if (!q) return '';
     const gap = Number(q.avg_ref_gap_days), oneSided = Number(q.pct_ref_before);
     if (!(gap >= 15 && oneSided >= 75)) return '';
-    return `Reference days average ${gap} days away and ${oneSided}% of them fall before `
-         + `the heatwave — ${hwName(cc)} had no non-heatwave day in mid-summer 2026. `
-         + `Treat this as an upper bound.`;
+    return `Reference days average ${gap} days away and ${oneSided}% fall before the heatwave — `
+         + `${hwName(cc)} had no non-heatwave day in mid-summer 2026. The temperature contrast `
+         + `is normal, but seasonal factors other than heat (holidays, industrial shutdown, `
+         + `tourism) are not controlled here.`;
 }
 
 function hwRenderScoped() {
