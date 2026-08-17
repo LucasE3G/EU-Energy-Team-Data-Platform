@@ -13151,10 +13151,11 @@ function hwRenderUplift() {
         }
         const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
         hwTip(hit, `<b>${hwName(r.country_code)}</b><br>Mean demand ${hwSign(v, 1)}%<br>
-            Normal ${hwFmt(r.normal_mean_mw)} MW (${r.normal_days} days) →
-            heatwave ${hwFmt(r.heatwave_mean_mw)} MW (${r.heatwave_days} days)<br>
+            Normal: min ${hwFmt(r.normal_min_mw)} · mean ${hwFmt(r.normal_mean_mw)} ·
+            max ${hwFmt(r.normal_max_mw)} MW (${r.normal_days} days)<br>
+            Heatwave: min ${hwFmt(r.heatwave_min_mw)} · mean ${hwFmt(r.heatwave_mean_mw)} ·
+            max ${hwFmt(r.heatwave_max_mw)} MW (${r.heatwave_days} days)<br>
             Peak demand ${hwSign(r.peak_demand_uplift_pct, 1)}%
-            ${Number.isFinite(gwh) ? '<br>' + hwSign(gwh, 1) + ' GWh/day' : ''}
             ${weak ? '<br><br>† ' + weak : ''}`);
     });
 
