@@ -75,6 +75,11 @@ PAIRS: list[tuple[str, str]] = [
     ("FI","SE1"),("SE1","FI"),("FI","EE"),("EE","FI"),
     ("EE","LV"),("LV","EE"),("LV","LT"),("LT","LV"),
     ("LT","PL"),("PL","LT"),
+    # Switzerland was missing entirely, which broke the supply/demand balance
+    # for its four neighbours — France looked like a net exporter during
+    # heatwaves when it is in fact a heavy importer.
+    ("CH","FR"),("FR","CH"),("CH","DE"),("DE","CH"),
+    ("CH","IT"),("IT","CH"),("CH","AT"),("AT","CH"),
 ]
 
 RES_MINUTES = {"PT15M": 15, "PT30M": 30, "PT60M": 60, "P1D": 1440}

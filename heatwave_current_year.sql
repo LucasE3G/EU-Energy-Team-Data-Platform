@@ -85,7 +85,10 @@ with agg as (
   select country_code, extract(year from date)::int yr, extract(month from date)::int mo,
          in_heatwave, avg(net_import_gwh) imp, avg(demand_gwh) dem, count(*) n
   from public.mv_heatwave_daily_balance
-  where date >= date_trunc('year', current_date)
+  -- flows_complete: these two views put imports and demand in one statement, so
+  -- they may only use days where every border reported. Charts that never touch
+  -- imports read the unrestricted day set instead.
+  where date >= date_trunc('year', current_date) and flows_complete
   group by 1,2,3,4
 ),
 paired as (
@@ -111,7 +114,10 @@ with agg as (
          in_heatwave, avg(demand_gwh) d, avg(gas_gwh) gas, avg(solar_gwh) solar,
          avg(wind_gwh) wind, avg(other_gwh) other, avg(net_import_gwh) imp, count(*) n
   from public.mv_heatwave_daily_balance
-  where date >= date_trunc('year', current_date)
+  -- flows_complete: these two views put imports and demand in one statement, so
+  -- they may only use days where every border reported. Charts that never touch
+  -- imports read the unrestricted day set instead.
+  where date >= date_trunc('year', current_date) and flows_complete
   group by 1,2,3,4
 ),
 paired as (

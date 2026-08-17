@@ -4541,6 +4541,10 @@ const TRANSMISSION_PAIRS = [
     {from:'FI',to:'SE1'},{from:'SE1',to:'FI'},{from:'FI',to:'EE'},{from:'EE',to:'FI'},
     {from:'EE',to:'LV'},{from:'LV',to:'EE'},{from:'LV',to:'LT'},{from:'LT',to:'LV'},
     {from:'LT',to:'PL'},{from:'PL',to:'LT'},
+    // Switzerland was absent from this list, so its four borders were never
+    // ingested and every balance that depends on them was short.
+    {from:'CH',to:'FR'},{from:'FR',to:'CH'},{from:'CH',to:'DE'},{from:'DE',to:'CH'},
+    {from:'CH',to:'IT'},{from:'IT',to:'CH'},{from:'CH',to:'AT'},{from:'AT',to:'CH'},
 ];
 
 function netFlowColor(netGwh, maxAbsGwh) {
@@ -12391,6 +12395,7 @@ const HW_FUEL_COLOR = {
 };
 const HW_POS = '#2a78d6';   // diverging cool pole
 const HW_NEG = '#c2562f';   // diverging warm pole
+const HW_MIN_DAYS = 10;     // fewest heatwave days a country may be charted on
 const HW_ACCENT = '#262958';
 const HW_DEEMPH = '#d5d4cd';
 const HW_SEQ = ['#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'];
@@ -12557,18 +12562,19 @@ function hwRenderEu() {
 }
 
 function hwRenderFuels() {
-    const rows = hwData.fuels.slice().sort((a, b) => b.avg - a.avg).map(r => ({
+    const src = hwData.fuels.slice().sort((a, b) => b.avg - a.avg);
+    const rows = src.map(r => ({
         label: hwCap(r.fuel), v: r.avg, lo: r.worst, hi: r.best,
         vlabel: hwSign(r.avg, 1) + '%',
-        tip: `<b>${hwCap(r.fuel)}</b><br>Mean ${hwSign(r.avg, 1)}%<br>
-              Range ${hwFmt(r.worst, 1)}% to ${hwFmt(r.best, 1)}%<br>${r.countries} countries`,
+        tip: `<b>${hwCap(r.fuel)}</b><br>EU-wide ${hwSign(r.avg, 1)}%<br>
+              ${hwFmt(r.normal_mw)} → ${hwFmt(r.heatwave_mw)} MW<br>
+              Per-country range ${hwFmt(r.worst, 1)}% to ${hwFmt(r.best, 1)}%<br>
+              ${r.countries} countries`,
     }));
     hwDiverging('hwFuels', rows, {axis: 'Change in output during heatwaves (%)', rowH: 30, left: 76});
-    hwTable('hwFuelsTbl', ['Fuel', 'Mean %', 'Worst %', 'Best %', 'Countries'],
-        rows.map((r, i) => {
-            const s = hwData.fuels.slice().sort((a, b) => b.avg - a.avg)[i];
-            return [hwCap(s.fuel), hwFmt(s.avg, 1), hwFmt(s.worst, 1), hwFmt(s.best, 1), s.countries];
-        }));
+    hwTable('hwFuelsTbl', ['Fuel', 'Normal MW', 'Heatwave MW', 'Change %', 'Countries'],
+        src.map(s => [hwCap(s.fuel), hwFmt(s.normal_mw), hwFmt(s.heatwave_mw),
+            hwFmt(s.avg, 1), s.countries]));
 }
 
 function hwRenderRenewable() {
@@ -13230,7 +13236,10 @@ async function hwFetchAll() {
     // showed up as a response curve with two countries in it instead of thirty.
     const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
-        sb.from('v_heatwave_fuel_resilience').select('*'),
+        // Ten-day floor: Sweden and Ireland had 3 heatwave days in 2026, Latvia 4,
+        // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
+        // those countries are excluded rather than drawn as if they were findings.
+        sb.from('v_heatwave_fuel_resilience').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', 15),
         sb.from('v_heatwave_price').select('*').gte('heatwave_days', 20),
         sb.from('v_heatwave_gas_sector').select('*').gte('heatwave_days', 20),
@@ -13242,8 +13251,8 @@ async function hwFetchAll() {
         sb.from('v_heatwave_burden').select('*'),
         sb.from('v_heatwave_trade_position').select('*').gte('heatwave_days', 20),
         sb.from('v_heatwave_demand_sources').select('*').gte('heatwave_days', 20),
-        sb.from('v_heatwave_demand_uplift').select('*'),
-        sb.from('v_heatwave_gap_coverage').select('*'),
+        sb.from('v_heatwave_demand_uplift').select('*').gte('heatwave_days', HW_MIN_DAYS),
+        sb.from('v_heatwave_gap_coverage').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
@@ -13265,16 +13274,22 @@ async function hwFetchAll() {
     };
 
     // Fuel resilience is per country; roll it up for the EU-wide chart.
+    // Weight by fleet size — averaging percentages lets a 200 MW fleet count as
+    // much as a 60 GW one, which put EU coal at +16% when the actual EU-wide
+    // change was +4.5%. Sum the MW, then take the ratio.
     const fg = {};
     (fuels.data || []).forEach(r => {
-        const v = Number(r.output_change_pct);
-        if (!Number.isFinite(v)) return;
-        (fg[r.fuel] ||= []).push(v);
+        const pct = Number(r.output_change_pct);
+        const nrm = Number(r.mean_mw_normal), hot = Number(r.mean_mw_heatwave);
+        if (!Number.isFinite(pct) || !Number.isFinite(nrm) || !Number.isFinite(hot)) return;
+        const g = (fg[r.fuel] ||= {pcts: [], normal: 0, heatwave: 0});
+        g.pcts.push(pct); g.normal += nrm; g.heatwave += hot;
     });
-    const fuelRows = Object.entries(fg).map(([fuel, arr]) => ({
+    const fuelRows = Object.entries(fg).map(([fuel, g]) => ({
         fuel,
-        avg: arr.reduce((s, v) => s + v, 0) / arr.length,
-        worst: Math.min(...arr), best: Math.max(...arr), countries: arr.length,
+        avg: g.normal > 0 ? 100 * (g.heatwave / g.normal - 1) : 0,
+        normal_mw: g.normal, heatwave_mw: g.heatwave,
+        worst: Math.min(...g.pcts), best: Math.max(...g.pcts), countries: g.pcts.length,
     }));
 
     const response = (loadRows.data || []).slice()
