@@ -12949,8 +12949,12 @@ function hwRenderGasImports() {
 
     hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(0), y2: Y(0), stroke: '#c3c2b7', 'stroke-width': 1});
     hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t, y2: m.t + ih, stroke: '#c3c2b7', 'stroke-width': 1});
+    // "imported more →" was wrong for exporters: France sat on that caption
+    // while never importing on a single day — its exports fell. "Kept more at
+    // home" is true in both cases: importing more, or exporting less.
     hwEl(svg, 'text', {x: m.l + iw, y: Y(0) + 16, class: 'hw-tick', 'text-anchor': 'end'},
-        'imported more →');
+        'kept more power at home →');
+    hwEl(svg, 'text', {x: m.l, y: Y(0) + 16, class: 'hw-tick'}, '← sent more abroad');
     hwEl(svg, 'text', {x: X(0) + 6, y: m.t + 10, class: 'hw-tick'}, '↑ burned more gas');
 
     rows.forEach(r => {
@@ -12972,7 +12976,7 @@ function hwRenderGasImports() {
             Gas ${hwSign(r.extra_gas_gwh, 1)} GWh/day<br>Extra demand ${hwFmt(r.extra_demand_gwh, 1)}`);
     });
     hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 8, class: 'hw-lbl', 'text-anchor': 'middle'},
-        'Change in net imports (GWh/day)');
+        'Change in net trade position (GWh/day) — right = imported more or exported less');
     hwEl(svg, 'text', {x: 14, y: m.t + ih / 2, class: 'hw-lbl', 'text-anchor': 'middle',
         transform: `rotate(-90 14 ${m.t + ih / 2})`}, 'Change in gas generation (GWh/day)');
 
