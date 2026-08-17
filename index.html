@@ -1658,6 +1658,51 @@
                     <div id="hwBurdenTbl" class="hw-hidden hw-scroll"></div>
                 </div>
 
+                <div class="hw-grid-2">
+                    <div class="hw-card">
+                        <div class="hw-card-head">
+                            <h3>Who leaned on imports during their heatwaves</h3>
+                            <p>Net imports on normal days versus their own heatwave days. The dot pair shows both the level a country normally sits at and how far it moved.</p>
+                        </div>
+                        <div id="hwImpLegend" class="hw-legend"></div>
+                        <svg id="hwImp" height="340" role="img" aria-label="Net imports, normal versus heatwave days"></svg>
+                        <button class="hw-tbl-btn" data-hwt="hwImpTbl">Show data table</button>
+                        <div id="hwImpTbl" class="hw-hidden hw-scroll"></div>
+                    </div>
+
+                    <div class="hw-card">
+                        <div class="hw-card-head">
+                            <h3>Who supplied more during others&rsquo; heatwaves</h3>
+                            <p>The same flows read from the export side. A country can move up here by exporting more or by importing less.</p>
+                        </div>
+                        <div id="hwExpLegend" class="hw-legend"></div>
+                        <svg id="hwExp" height="340" role="img" aria-label="Net exports, normal versus heatwave days"></svg>
+                        <button class="hw-tbl-btn" data-hwt="hwExpTbl">Show data table</button>
+                        <div id="hwExpTbl" class="hw-hidden hw-scroll"></div>
+                    </div>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>Where the extra demand came from</h3>
+                        <p>Each country&rsquo;s heatwave demand increase, decomposed into domestic generation by fuel plus net imports. Generation is measured <em>inside</em> the country (ENTSO-E actual generation per production type) and imports are measured separately, so the terms are independent and add up. The residual is drawn, not hidden: where it is large the country&rsquo;s reported generation is incomplete.</p>
+                    </div>
+                    <div id="hwSrcLegend" class="hw-legend"></div>
+                    <svg id="hwSrc" height="380" role="img" aria-label="Decomposition of the heatwave demand increase"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwSrcTbl">Show data table</button>
+                    <div id="hwSrcTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>Does interconnection displace gas?</h3>
+                        <p>Change in net imports against change in domestic gas generation, one dot per country. Bottom-right means a country imported more and burned less; top-left means it burned more while exporting. This is a correlation, not a causal claim &mdash; and note it is directional, not a single EU answer.</p>
+                    </div>
+                    <svg id="hwGasImp" height="380" role="img" aria-label="Change in net imports against change in gas generation"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwGasImpTbl">Show data table</button>
+                    <div id="hwGasImpTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
                 <div class="hw-card">
                     <div class="hw-card-head">
                         <h3>Did the interconnectors help?</h3>

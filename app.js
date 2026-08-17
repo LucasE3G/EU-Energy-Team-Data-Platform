@@ -12920,6 +12920,189 @@ function hwRenderEvent(sel) {
             .concat(fuels.map(f => hwFmt(r[f + '_mw'])))));
 }
 
+// ── Dumbbell: normal vs heatwave trade position ────────────────────────────
+// "Before → after per item" is a dumbbell. A bar of the delta alone would hide
+// the level, and the level is half the story: Italy already imports 64 GWh/day,
+// so its +2.9 means its interconnectors were near their normal ceiling, while
+// Portugal's +11.2 comes off a similar base and is a real swing.
+function hwRenderTradeDumbbell(svgId, tblId, legendId, mode) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+    hwClear(svg);
+    const key = mode === 'export' ? 'export' : 'import';
+    const rows = hwData.trade.slice()
+        .map(r => ({
+            cc: r.country_code,
+            normal: Number(r[`normal_net_${key}_gwh`]),
+            hw: Number(r[`heatwave_net_${key}_gwh`]),
+            delta: Number(r[`delta_net_${key}_gwh`]),
+        }))
+        .filter(r => Number.isFinite(r.normal) && Number.isFinite(r.hw))
+        .sort((a, b) => b.delta - a.delta)
+        .slice(0, 12);
+    if (!rows.length) { svg.setAttribute('height', 50); return; }
+
+    const H = rows.length * 25 + 42;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 520;
+    const m = {t: 10, r: 58, b: 28, l: 92};
+    const iw = Math.max(80, W - m.l - m.r);
+    const vals = rows.flatMap(r => [r.normal, r.hw]);
+    const lo = Math.min(...vals, 0), hi = Math.max(...vals, 0);
+    const pad = (hi - lo) * 0.08 || 1;
+    const X = v => m.l + ((v - lo + pad) / ((hi - lo) + pad * 2)) * iw;
+
+    if (lo < 0 && hi > 0) {
+        hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 25 - 8,
+            stroke: '#c3c2b7', 'stroke-width': 1});
+    }
+    rows.forEach((r, i) => {
+        const y = m.t + i * 25 + 8;
+        const up = r.delta >= 0;
+        const col = up ? HW_POS : HW_NEG;
+        hwEl(svg, 'line', {x1: X(r.normal), x2: X(r.hw), y1: y, y2: y,
+            stroke: col, 'stroke-width': 3, 'stroke-linecap': 'round'});
+        // Hollow dot = normal, filled = heatwave, so direction reads without colour.
+        hwEl(svg, 'circle', {cx: X(r.normal), cy: y, r: 5,
+            fill: '#ffffff', stroke: '#9a9a93', 'stroke-width': 2});
+        hwEl(svg, 'circle', {cx: X(r.hw), cy: y, r: 5.5,
+            fill: col, stroke: '#ffffff', 'stroke-width': 2});
+        hwEl(svg, 'text', {x: m.l - 8, y: y + 4, class: 'hw-lbl', 'text-anchor': 'end'}, hwName(r.cc));
+        hwEl(svg, 'text', {x: Math.max(X(r.normal), X(r.hw)) + 9, y: y + 4, class: 'hw-val'},
+            hwSign(r.delta, 1));
+        const hit = hwEl(svg, 'rect', {x: m.l, y: y - 11, width: iw, height: 22, fill: 'transparent'});
+        hwTip(hit, `<b>${hwName(r.cc)}</b><br>Normal ${hwFmt(r.normal, 1)} GWh/day<br>
+            Heatwave ${hwFmt(r.hw, 1)} GWh/day<br>Change ${hwSign(r.delta, 1)}`);
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},
+        `Net ${key}s (GWh/day)`);
+
+    hwLegend(legendId, [
+        {c: '#ffffff', t: 'Normal days'},
+        {c: HW_POS, t: `Heatwave days — ${key}s up`},
+        {c: HW_NEG, t: `Heatwave days — ${key}s down`},
+    ]);
+    hwTable(tblId, ['Country', `Normal net ${key}s`, `Heatwave net ${key}s`, 'Change'],
+        rows.map(r => [hwName(r.cc), hwFmt(r.normal, 1), hwFmt(r.hw, 1), hwSign(r.delta, 1)]));
+}
+
+// ── Where the extra demand came from (stacked, terms sum to the demand change)
+function hwRenderSources() {
+    const svg = document.getElementById('hwSrc');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.sources.slice()
+        .filter(r => Math.abs(Number(r.extra_demand_gwh)) > 2)
+        .sort((a, b) => Number(b.extra_demand_gwh) - Number(a.extra_demand_gwh))
+        .slice(0, 12);
+    if (!rows.length) { svg.setAttribute('height', 50); return; }
+
+    const segs = [
+        ['extra_gas_gwh', HW_FUEL_COLOR.gas, 'Gas'],
+        ['extra_solar_gwh', HW_FUEL_COLOR.solar, 'Solar'],
+        ['extra_wind_gwh', HW_FUEL_COLOR.wind, 'Wind'],
+        ['extra_other_gwh', '#8a8f98', 'Other domestic'],
+        ['extra_imports_gwh', HW_FUEL_COLOR.hydro, 'Net imports'],
+        ['residual_gwh', '#c9c7bf', 'Unexplained'],
+    ];
+    const H = rows.length * 30 + 44;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 800;
+    const m = {t: 10, r: 74, b: 28, l: 96};
+    const iw = Math.max(80, W - m.l - m.r);
+    const extent = rows.flatMap(r => {
+        let pos = 0, neg = 0;
+        segs.forEach(([k]) => { const v = Number(r[k]) || 0; if (v > 0) pos += v; else neg += v; });
+        return [pos, neg, Number(r.extra_demand_gwh)];
+    });
+    const lo = Math.min(...extent, 0), hi = Math.max(...extent, 0);
+    const span = Math.max(Math.abs(lo), Math.abs(hi)) * 1.08 || 1;
+    const X = v => m.l + iw / 2 + (v / span) * (iw / 2);
+
+    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 30 - 8,
+        stroke: '#c3c2b7', 'stroke-width': 1});
+
+    rows.forEach((r, i) => {
+        const y = m.t + i * 30;
+        let accPos = 0, accNeg = 0;
+        segs.forEach(([k, col, nm]) => {
+            const v = Number(r[k]) || 0;
+            if (!v) return;
+            const from = v > 0 ? accPos : accNeg + v;
+            const w = Math.max(1.5, Math.abs(X(v) - X(0)) - 1);
+            hwEl(svg, 'rect', {x: X(from), y, width: w, height: 13, rx: 2, fill: col})
+                .addEventListener('mousemove', () => {});
+            const rect = svg.lastChild;
+            hwTip(rect, `<b>${hwName(r.country_code)} · ${nm}</b><br>${hwSign(v, 1)} GWh/day`);
+            if (v > 0) accPos += v; else accNeg += v;
+        });
+        // The demand change as a marker: the bars should reach it.
+        const dem = Number(r.extra_demand_gwh);
+        hwEl(svg, 'line', {x1: X(dem), x2: X(dem), y1: y - 3, y2: y + 16,
+            stroke: '#0b0b0b', 'stroke-width': 2});
+        hwEl(svg, 'text', {x: m.l - 8, y: y + 11, class: 'hw-lbl', 'text-anchor': 'end'},
+            hwName(r.country_code));
+        hwEl(svg, 'text', {x: X(dem) + 7, y: y + 11, class: 'hw-val'}, hwSign(dem, 1));
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Change on heatwave days (GWh/day) — black bar marks the demand change');
+
+    hwLegend('hwSrcLegend', segs.map(([, c, n]) => ({c, t: n}))
+        .concat([{c: '#0b0b0b', t: 'Total extra demand'}]));
+    hwTable('hwSrcTbl',
+        ['Country', 'Extra demand', 'Gas', 'Solar', 'Wind', 'Other', 'Imports', 'Unexplained', 'Gas % of extra'],
+        rows.map(r => [hwName(r.country_code), r.extra_demand_gwh, r.extra_gas_gwh,
+            r.extra_solar_gwh, r.extra_wind_gwh, r.extra_other_gwh, r.extra_imports_gwh,
+            r.residual_gwh, r.gas_pct_of_extra_demand + '%']));
+}
+
+// ── Imports vs gas ─────────────────────────────────────────────────────────
+function hwRenderGasImports() {
+    const svg = document.getElementById('hwGasImp');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.sources.slice().filter(r =>
+        Number.isFinite(Number(r.extra_imports_gwh)) && Number.isFinite(Number(r.extra_gas_gwh)));
+    if (!rows.length) { svg.setAttribute('height', 50); return; }
+
+    const W = svg.clientWidth || 800, H = 380;
+    svg.setAttribute('height', H);
+    const m = {t: 20, r: 24, b: 52, l: 62};
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const xs = rows.map(r => Number(r.extra_imports_gwh));
+    const ys = rows.map(r => Number(r.extra_gas_gwh));
+    const xr = Math.max(...xs.map(Math.abs)) * 1.15 || 1;
+    const yr = Math.max(...ys.map(Math.abs)) * 1.15 || 1;
+    const X = v => m.l + iw / 2 + (v / xr) * (iw / 2);
+    const Y = v => m.t + ih / 2 - (v / yr) * (ih / 2);
+
+    hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(0), y2: Y(0), stroke: '#c3c2b7', 'stroke-width': 1});
+    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t, y2: m.t + ih, stroke: '#c3c2b7', 'stroke-width': 1});
+    hwEl(svg, 'text', {x: m.l + iw, y: Y(0) + 16, class: 'hw-tick', 'text-anchor': 'end'},
+        'imported more →');
+    hwEl(svg, 'text', {x: X(0) + 6, y: m.t + 10, class: 'hw-tick'}, '↑ burned more gas');
+
+    rows.forEach(r => {
+        const x = X(Number(r.extra_imports_gwh)), y = Y(Number(r.extra_gas_gwh));
+        // Bottom-right = imported more, burned less: interconnection displacing gas.
+        const displacing = Number(r.extra_imports_gwh) > 0 && Number(r.extra_gas_gwh) < 0;
+        hwEl(svg, 'circle', {cx: x, cy: y, r: 6,
+            fill: displacing ? '#1baf7a' : HW_POS, stroke: '#ffffff', 'stroke-width': 2});
+        hwEl(svg, 'text', {x: x + 9, y: y + 4, class: 'hw-tick'}, r.country_code);
+        const hit = hwEl(svg, 'circle', {cx: x, cy: y, r: 16, fill: 'transparent'});
+        hwTip(hit, `<b>${hwName(r.country_code)}</b><br>Imports ${hwSign(r.extra_imports_gwh, 1)} GWh/day<br>
+            Gas ${hwSign(r.extra_gas_gwh, 1)} GWh/day<br>Extra demand ${hwFmt(r.extra_demand_gwh, 1)}`);
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 8, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Change in net imports (GWh/day)');
+    hwEl(svg, 'text', {x: 14, y: m.t + ih / 2, class: 'hw-lbl', 'text-anchor': 'middle',
+        transform: `rotate(-90 14 ${m.t + ih / 2})`}, 'Change in gas generation (GWh/day)');
+
+    hwTable('hwGasImpTbl', ['Country', 'Δ net imports GWh/d', 'Δ gas GWh/d', 'Extra demand GWh/d'],
+        rows.slice().sort((a, b) => Number(a.extra_gas_gwh) - Number(b.extra_gas_gwh))
+            .map(r => [hwName(r.country_code), r.extra_imports_gwh, r.extra_gas_gwh, r.extra_demand_gwh]));
+}
+
 function hwRenderKpis() {
     const k = hwData.kpi;
     const cells = [
@@ -12943,7 +13126,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, balance, weatherRows, loadRows, burden, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, balance, weatherRows, loadRows, burden, trade, sources, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         sb.from('v_heatwave_fuel_resilience').select('*'),
         sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', 15),
@@ -12956,11 +13139,13 @@ async function hwFetchAll() {
             .gte('date', '2026-01-01').order('date', {ascending: true}), 1000, 40000),
         sb.from('v_heatwave_response_curve').select('*'),
         sb.from('v_heatwave_burden').select('*'),
+        sb.from('v_heatwave_trade_position').select('*').gte('heatwave_days', 20),
+        sb.from('v_heatwave_demand_sources').select('*').gte('heatwave_days', 20),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
     ]);
-    const err = [eu, fuels, renewable, price, gas, helpers, balance, loadRows, burden, events].find(r => r && r.error);
+    const err = [eu, fuels, renewable, price, gas, helpers, balance, loadRows, burden, trade, sources, events].find(r => r && r.error);
     if (err) throw new Error(err.error.message);
 
     // KPIs, from the weather rows already fetched.
@@ -12997,6 +13182,8 @@ async function hwFetchAll() {
         price: price.data || [], gas: gas.data || [], helpers: helpers.data || [],
         balance: balance.data || [], response,
         burden: burden.data || [],
+        trade: trade.data || [],
+        sources: sources.data || [],
         events: events.data || [],
         eventSeries: eventSeries || [],
     };
@@ -13020,6 +13207,10 @@ function hwRenderAll() {
     hwRenderGas();
     hwRenderHelp();
     hwRenderBurden();
+    hwRenderTradeDumbbell('hwImp', 'hwImpTbl', 'hwImpLegend', 'import');
+    hwRenderTradeDumbbell('hwExp', 'hwExpTbl', 'hwExpLegend', 'export');
+    hwRenderSources();
+    hwRenderGasImports();
     hwRenderScoped();
 }
 
