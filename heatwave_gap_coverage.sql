@@ -16,27 +16,17 @@
 -- travels with the row and the chart filters on it instead of drawing an
 -- "unexplained" block.
 
+-- Reads the materialized component table rather than rebuilding the union on
+-- every call: this view was 2.2 s against ~0.3 s for its neighbours, and with
+-- fourteen page queries running in parallel that was enough to trip the anon
+-- statement timeout.
 drop view if exists public.v_heatwave_gap_coverage;
 create view public.v_heatwave_gap_coverage as
-with gen as (
-  select country_code, date, fuel, avg_mw * 24.0 / 1000.0 as gwh
-  from public.mv_generation_daily_warm
-),
-imp as (
-  select to_country as country_code, date, sum(net_export_gwh) as gwh
-  from public.mv_crossborder_net_daily group by 1, 2
-),
--- One long table of every component, so imports sit alongside the fuels.
-comp as (
-  select g.country_code, g.date, g.fuel as component, g.gwh from gen g
-  union all
-  select i.country_code, i.date, 'imports', i.gwh from imp i
-),
-j as (
+with j as (
   select c.country_code, c.date, c.component, c.gwh,
          extract(month from c.date)::int as month,
          (w.heatwave_id is not null) as hw
-  from comp c
+  from public.mv_heatwave_component_daily c
   join public.weather_country_daily w
     on w.country_code = c.country_code and w.date = c.date
   join public.mv_load_daily_warm l
