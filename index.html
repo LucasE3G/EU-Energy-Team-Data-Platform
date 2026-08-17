@@ -1684,13 +1684,12 @@
 
                 <div class="hw-card">
                     <div class="hw-card-head">
-                        <h3>Where the extra demand came from</h3>
-                        <p>Each country&rsquo;s heatwave demand increase, decomposed into domestic generation by fuel plus net imports. Generation is measured <em>inside</em> the country (ENTSO-E actual generation per production type) and imports are measured separately, so the terms are independent and add up. The residual is drawn, not hidden: where it is large the country&rsquo;s reported generation is incomplete.</p>
+                        <h3>How much of the extra demand was met by gas</h3>
+                        <p>Extra gas generation on heatwave days as a share of the extra demand. Both terms are measured directly &mdash; gas is a single ENTSO-E production type and demand comes from metered load &mdash; so this needs no reconstruction of the rest of the mix. Above 100% means gas rose by more than demand did, covering lost output elsewhere as well; below zero means gas fell.</p>
                     </div>
-                    <div id="hwSrcLegend" class="hw-legend"></div>
-                    <svg id="hwSrc" height="380" role="img" aria-label="Decomposition of the heatwave demand increase"></svg>
-                    <button class="hw-tbl-btn" data-hwt="hwSrcTbl">Show data table</button>
-                    <div id="hwSrcTbl" class="hw-hidden hw-scroll"></div>
+                    <svg id="hwGasShare" height="360" role="img" aria-label="Share of the extra heatwave demand met by gas"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwGasShareTbl">Show data table</button>
+                    <div id="hwGasShareTbl" class="hw-hidden hw-scroll"></div>
                 </div>
 
                 <div class="hw-card">
@@ -1703,16 +1702,6 @@
                     <div id="hwGasImpTbl" class="hw-hidden hw-scroll"></div>
                 </div>
 
-                <div class="hw-card">
-                    <div class="hw-card-head">
-                        <h3>Did the interconnectors help?</h3>
-                        <p>Extra energy sent to neighbours during <em>their</em> heatwaves, against a same-month baseline. Split by whether the exporter was itself in a heatwave — power moving between two stressed systems is competition for scarce supply, not assistance.</p>
-                    </div>
-                    <div id="hwHelpLegend" class="hw-legend"></div>
-                    <svg id="hwHelp" height="380" role="img" aria-label="Interconnector assistance during heatwaves"></svg>
-                    <button class="hw-tbl-btn" data-hwt="hwHelpTbl">Show data table</button>
-                    <div id="hwHelpTbl" class="hw-hidden hw-scroll"></div>
-                </div>
             </div>
 
             <div class="section">

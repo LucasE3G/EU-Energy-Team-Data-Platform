@@ -12632,47 +12632,6 @@ function hwRenderGas() {
             r.delta_industry_gwh, r.power_change_pct]));
 }
 
-function hwRenderHelp() {
-    const svg = document.getElementById('hwHelp');
-    if (!svg) return;
-    hwClear(svg);
-    const rows = hwData.helpers.slice()
-        .filter(r => Math.abs(+r.extra_gwh_total) > 20)
-        .sort((a, b) => +b.extra_gwh_spare_capacity - +a.extra_gwh_spare_capacity).slice(0, 12);
-    const H = rows.length * 26 + 40;
-    svg.setAttribute('height', H);
-    const W = svg.clientWidth || 800;
-    const m = {t: 8, r: 66, b: 26, l: 100};
-    const iw = Math.max(80, W - m.l - m.r);
-    const vals = rows.flatMap(r => [+r.extra_gwh_spare_capacity, +r.extra_gwh_shared_stress]);
-    const mx = Math.max(...vals.map(Math.abs), 0.001) * 1.1;
-    const X = v => m.l + iw / 2 + (v / mx) * (iw / 2);
-
-    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 26 - 8,
-        stroke: '#c3c2b7', 'stroke-width': 1});
-    rows.forEach((r, i) => {
-        const y = m.t + i * 26;
-        [[+r.extra_gwh_spare_capacity, '#1baf7a', 'Spare capacity', 0],
-         [+r.extra_gwh_shared_stress, HW_FUEL_COLOR.gas, 'Shared stress', 1]].forEach(([v, col, nm, k]) => {
-            if (!v) return;
-            const x = v < 0 ? X(v) : X(0), w = Math.max(2, Math.abs(X(v) - X(0)));
-            const rect = hwEl(svg, 'rect', {x, y: y + k * 9, width: w, height: 8, rx: 2, fill: col});
-            hwTip(rect, `<b>${hwName(r.country_code)} · ${nm}</b><br>${hwFmt(v, 1)} GWh`);
-        });
-        hwEl(svg, 'text', {x: m.l - 8, y: y + 13, class: 'hw-lbl', 'text-anchor': 'end'},
-            hwName(r.country_code));
-    });
-    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 5, class: 'hw-lbl', 'text-anchor': 'middle'},
-        'Extra energy sent to neighbours in heatwaves (GWh)');
-    hwLegend('hwHelpLegend', [
-        {c: '#1baf7a', t: 'Exporter not in a heatwave (spare capacity)'},
-        {c: HW_FUEL_COLOR.gas, t: 'Exporter also in a heatwave (contested supply)'},
-    ]);
-    hwTable('hwHelpTbl', ['Country', 'Spare capacity GWh', 'Shared stress GWh', 'Total GWh'],
-        rows.map(r => [hwName(r.country_code), r.extra_gwh_spare_capacity,
-            r.extra_gwh_shared_stress, r.extra_gwh_total]));
-}
-
 function hwRenderResponse(sel) {
     const svg = document.getElementById('hwResp');
     if (!svg) return;
@@ -12987,75 +12946,6 @@ function hwRenderTradeDumbbell(svgId, tblId, legendId, mode) {
 }
 
 // ── Where the extra demand came from (stacked, terms sum to the demand change)
-function hwRenderSources() {
-    const svg = document.getElementById('hwSrc');
-    if (!svg) return;
-    hwClear(svg);
-    const rows = hwData.sources.slice()
-        .filter(r => Math.abs(Number(r.extra_demand_gwh)) > 2)
-        .sort((a, b) => Number(b.extra_demand_gwh) - Number(a.extra_demand_gwh))
-        .slice(0, 12);
-    if (!rows.length) { svg.setAttribute('height', 50); return; }
-
-    const segs = [
-        ['extra_gas_gwh', HW_FUEL_COLOR.gas, 'Gas'],
-        ['extra_solar_gwh', HW_FUEL_COLOR.solar, 'Solar'],
-        ['extra_wind_gwh', HW_FUEL_COLOR.wind, 'Wind'],
-        ['extra_other_gwh', '#8a8f98', 'Other domestic'],
-        ['extra_imports_gwh', HW_FUEL_COLOR.hydro, 'Net imports'],
-        ['residual_gwh', '#c9c7bf', 'Unexplained'],
-    ];
-    const H = rows.length * 30 + 44;
-    svg.setAttribute('height', H);
-    const W = svg.clientWidth || 800;
-    const m = {t: 10, r: 74, b: 28, l: 96};
-    const iw = Math.max(80, W - m.l - m.r);
-    const extent = rows.flatMap(r => {
-        let pos = 0, neg = 0;
-        segs.forEach(([k]) => { const v = Number(r[k]) || 0; if (v > 0) pos += v; else neg += v; });
-        return [pos, neg, Number(r.extra_demand_gwh)];
-    });
-    const lo = Math.min(...extent, 0), hi = Math.max(...extent, 0);
-    const span = Math.max(Math.abs(lo), Math.abs(hi)) * 1.08 || 1;
-    const X = v => m.l + iw / 2 + (v / span) * (iw / 2);
-
-    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 30 - 8,
-        stroke: '#c3c2b7', 'stroke-width': 1});
-
-    rows.forEach((r, i) => {
-        const y = m.t + i * 30;
-        let accPos = 0, accNeg = 0;
-        segs.forEach(([k, col, nm]) => {
-            const v = Number(r[k]) || 0;
-            if (!v) return;
-            const from = v > 0 ? accPos : accNeg + v;
-            const w = Math.max(1.5, Math.abs(X(v) - X(0)) - 1);
-            hwEl(svg, 'rect', {x: X(from), y, width: w, height: 13, rx: 2, fill: col})
-                .addEventListener('mousemove', () => {});
-            const rect = svg.lastChild;
-            hwTip(rect, `<b>${hwName(r.country_code)} · ${nm}</b><br>${hwSign(v, 1)} GWh/day`);
-            if (v > 0) accPos += v; else accNeg += v;
-        });
-        // The demand change as a marker: the bars should reach it.
-        const dem = Number(r.extra_demand_gwh);
-        hwEl(svg, 'line', {x1: X(dem), x2: X(dem), y1: y - 3, y2: y + 16,
-            stroke: '#0b0b0b', 'stroke-width': 2});
-        hwEl(svg, 'text', {x: m.l - 8, y: y + 11, class: 'hw-lbl', 'text-anchor': 'end'},
-            hwName(r.country_code));
-        hwEl(svg, 'text', {x: X(dem) + 7, y: y + 11, class: 'hw-val'}, hwSign(dem, 1));
-    });
-    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},
-        'Change on heatwave days (GWh/day) — black bar marks the demand change');
-
-    hwLegend('hwSrcLegend', segs.map(([, c, n]) => ({c, t: n}))
-        .concat([{c: '#0b0b0b', t: 'Total extra demand'}]));
-    hwTable('hwSrcTbl',
-        ['Country', 'Extra demand', 'Gas', 'Solar', 'Wind', 'Other', 'Imports', 'Unexplained', 'Gas % of extra'],
-        rows.map(r => [hwName(r.country_code), r.extra_demand_gwh, r.extra_gas_gwh,
-            r.extra_solar_gwh, r.extra_wind_gwh, r.extra_other_gwh, r.extra_imports_gwh,
-            r.residual_gwh, r.gas_pct_of_extra_demand + '%']));
-}
-
 // ── Imports vs gas ─────────────────────────────────────────────────────────
 function hwRenderGasImports() {
     const svg = document.getElementById('hwGasImp');
@@ -13101,6 +12991,66 @@ function hwRenderGasImports() {
     hwTable('hwGasImpTbl', ['Country', 'Δ net imports GWh/d', 'Δ gas GWh/d', 'Extra demand GWh/d'],
         rows.slice().sort((a, b) => Number(a.extra_gas_gwh) - Number(b.extra_gas_gwh))
             .map(r => [hwName(r.country_code), r.extra_imports_gwh, r.extra_gas_gwh, r.extra_demand_gwh]));
+}
+
+// ── Share of the extra demand met by gas ───────────────────────────────────
+// Replaces a stacked decomposition of the whole mix. That chart needed a
+// visible "unexplained" segment, which is not something to put in front of a
+// reader — and reconstructing every term invited error. Both terms here are
+// measured directly: gas is one ENTSO-E production type, demand is metered
+// load. Nothing is inferred, so nothing is left over.
+function hwRenderGasShare() {
+    const svg = document.getElementById('hwGasShare');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.sources.slice()
+        .filter(r => Number(r.extra_demand_gwh) > 1 && Number.isFinite(Number(r.gas_pct_of_extra_demand)))
+        .sort((a, b) => Number(b.gas_pct_of_extra_demand) - Number(a.gas_pct_of_extra_demand))
+        .slice(0, 14);
+    if (!rows.length) { svg.setAttribute('height', 50); return; }
+
+    const H = rows.length * 24 + 44;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 800;
+    const m = {t: 10, r: 96, b: 30, l: 104};
+    const iw = Math.max(80, W - m.l - m.r);
+    const vals = rows.map(r => Number(r.gas_pct_of_extra_demand));
+    const lo = Math.min(0, ...vals), hi = Math.max(100, ...vals);
+    const X = v => m.l + ((v - lo) / ((hi - lo) || 1)) * iw;
+    const bh = 14;
+
+    // 100% reference: gas alone covering the entire demand increase.
+    [0, 50, 100].filter(v => v >= lo && v <= hi).forEach(v => {
+        hwEl(svg, 'line', {x1: X(v), x2: X(v), y1: m.t - 4, y2: m.t + rows.length * 24 - 8,
+            stroke: v === 100 ? '#9a9a93' : '#e1e0d9', 'stroke-width': 1,
+            'stroke-dasharray': v === 100 ? '' : ''});
+        hwEl(svg, 'text', {x: X(v), y: H - 10, class: 'hw-tick', 'text-anchor': 'middle'}, v + '%');
+    });
+
+    rows.forEach((r, i) => {
+        const y = m.t + i * 24;
+        const v = Number(r.gas_pct_of_extra_demand);
+        const neg = v < 0;
+        const x = neg ? X(v) : X(0);
+        const w = Math.max(2, Math.abs(X(v) - X(0)));
+        hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4,
+            fill: neg ? '#1baf7a' : HW_FUEL_COLOR.gas});
+        hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 2, class: 'hw-lbl', 'text-anchor': 'end'},
+            hwName(r.country_code));
+        hwEl(svg, 'text', {x: (neg ? x : x + w) + 8, y: y + bh - 2, class: 'hw-val'}, v + '%');
+        const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
+        hwTip(hit, `<b>${hwName(r.country_code)}</b><br>
+            Extra demand ${hwFmt(r.extra_demand_gwh, 1)} GWh/day<br>
+            Extra gas ${hwSign(r.extra_gas_gwh, 1)} GWh/day<br>
+            Gas covered ${v}% of the increase`);
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 26, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Extra gas generation as a share of the extra demand');
+
+    hwTable('hwGasShareTbl',
+        ['Country', 'Extra demand GWh/d', 'Extra gas GWh/d', 'Gas share of increase'],
+        rows.map(r => [hwName(r.country_code), r.extra_demand_gwh, r.extra_gas_gwh,
+            r.gas_pct_of_extra_demand + '%']));
 }
 
 function hwRenderKpis() {
@@ -13205,11 +13155,10 @@ function hwRenderAll() {
     hwRenderRenewable();
     hwRenderPrice();
     hwRenderGas();
-    hwRenderHelp();
     hwRenderBurden();
     hwRenderTradeDumbbell('hwImp', 'hwImpTbl', 'hwImpLegend', 'import');
     hwRenderTradeDumbbell('hwExp', 'hwExpTbl', 'hwExpLegend', 'export');
-    hwRenderSources();
+    hwRenderGasShare();
     hwRenderGasImports();
     hwRenderScoped();
 }
