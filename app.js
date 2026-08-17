@@ -13011,7 +13011,8 @@ function hwRenderGasShare() {
     const rows = hwData.sources.slice()
         .filter(r => Number(r.extra_demand_gwh) >= MIN_DEMAND_GWH
                   && Number.isFinite(Number(r.gas_pct_of_extra_demand)))
-        .sort((a, b) => Number(b.gas_pct_of_extra_demand) - Number(a.gas_pct_of_extra_demand))
+        .sort((a, b) => (Number(b.gas_pct_of_extra_demand) + 100*Number(b.extra_imports_gwh)/Number(b.extra_demand_gwh))
+                      - (Number(a.gas_pct_of_extra_demand) + 100*Number(a.extra_imports_gwh)/Number(a.extra_demand_gwh)))
         .slice(0, 14);
     if (!rows.length) { svg.setAttribute('height', 50); return; }
 
@@ -13020,7 +13021,13 @@ function hwRenderGasShare() {
     const W = svg.clientWidth || 800;
     const m = {t: 10, r: 168, b: 30, l: 104};
     const iw = Math.max(80, W - m.l - m.r);
-    const vals = rows.map(r => Number(r.gas_pct_of_extra_demand));
+    // Scale has to cover each segment AND their stacked total: Portugal runs
+    // -121% gas against +260% imports.
+    const vals = rows.flatMap(r => {
+        const g = Number(r.gas_pct_of_extra_demand);
+        const im = 100 * Number(r.extra_imports_gwh) / Number(r.extra_demand_gwh);
+        return [g, im, Math.max(g, 0) + Math.max(im, 0), Math.min(g, 0) + Math.min(im, 0)];
+    });
     const lo = Math.min(0, ...vals), hi = Math.max(100, ...vals);
     const X = v => m.l + ((v - lo) / ((hi - lo) || 1)) * iw;
     const bh = 14;
@@ -13035,33 +13042,49 @@ function hwRenderGasShare() {
 
     rows.forEach((r, i) => {
         const y = m.t + i * 24;
-        const v = Number(r.gas_pct_of_extra_demand);
-        const neg = v < 0;
-        const x = neg ? X(v) : X(0);
-        const w = Math.max(2, Math.abs(X(v) - X(0)));
-        hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 4,
-            fill: neg ? '#1baf7a' : HW_FUEL_COLOR.gas});
+        const gasPct = Number(r.gas_pct_of_extra_demand);
+        const impPct = Math.round(100 * Number(r.extra_imports_gwh) / Number(r.extra_demand_gwh));
+        const total = gasPct + impPct;
+        // Stack gas and imports from zero, each on its own side. Gas alone made
+        // Portugal's falling bar look like an unexplained win; it fell because
+        // imports rose in its place, and only the pair shows that.
+        let accPos = 0, accNeg = 0;
+        [[gasPct, HW_FUEL_COLOR.gas, 'Gas'], [impPct, '#1baf7a', 'Net imports']].forEach(([v, col, nm]) => {
+            if (!v) return;
+            const from = v > 0 ? accPos : accNeg + v;
+            const w = Math.max(2, Math.abs(X(v) - X(0)) - 1);
+            const rect = hwEl(svg, 'rect', {x: X(from), y, width: w, height: bh, rx: 3, fill: col});
+            hwTip(rect, `<b>${hwName(r.country_code)} · ${nm}</b><br>${hwSign(v, 0)}% of the demand increase`);
+            if (v > 0) accPos += v; else accNeg += v;
+        });
         hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 2, class: 'hw-lbl', 'text-anchor': 'end'},
             hwName(r.country_code));
-        const endX = (neg ? x : x + w) + 8;
-        hwEl(svg, 'text', {x: endX, y: y + bh - 2, class: 'hw-val'}, v + '%');
-        // Magnitude beside the ratio: 88% of 60.8 GWh/day is a different fact
-        // from 90% of 2.1, and the bar length alone cannot say which is which.
-        hwEl(svg, 'text', {x: endX + 42, y: y + bh - 2, class: 'hw-tick'},
+        const endX = X(Math.max(accPos, 0)) + 8;
+        hwEl(svg, 'text', {x: endX, y: y + bh - 2, class: 'hw-val'}, total + '%');
+        // Magnitude beside the ratio: 92% of 60.8 GWh/day is a different fact
+        // from 117% of 4.7, and the bar length alone cannot say which is which.
+        hwEl(svg, 'text', {x: endX + 44, y: y + bh - 2, class: 'hw-tick'},
             `on ${hwFmt(r.extra_demand_gwh, 1)} GWh/day`);
         const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
         hwTip(hit, `<b>${hwName(r.country_code)}</b><br>
             Extra demand ${hwFmt(r.extra_demand_gwh, 1)} GWh/day<br>
-            Extra gas ${hwSign(r.extra_gas_gwh, 1)} GWh/day<br>
-            Gas covered ${v}% of the increase`);
+            Gas ${hwSign(gasPct, 0)}% · Imports ${hwSign(impPct, 0)}%<br>
+            Together ${hwSign(total, 0)}% of the increase`);
     });
     hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 26, class: 'hw-lbl', 'text-anchor': 'middle'},
         'Extra gas generation as a share of the extra demand');
 
+    hwLegend('hwGasShareLegend', [
+        {c: HW_FUEL_COLOR.gas, t: 'Gas'},
+        {c: '#1baf7a', t: 'Net imports'},
+    ]);
     hwTable('hwGasShareTbl',
-        ['Country', 'Extra demand GWh/d', 'Extra gas GWh/d', 'Gas share of increase'],
-        rows.map(r => [hwName(r.country_code), r.extra_demand_gwh, r.extra_gas_gwh,
-            r.gas_pct_of_extra_demand + '%']));
+        ['Country', 'Extra demand GWh/d', 'Gas %', 'Imports %', 'Together %'],
+        rows.map(r => {
+            const g = Number(r.gas_pct_of_extra_demand);
+            const im = Math.round(100 * Number(r.extra_imports_gwh) / Number(r.extra_demand_gwh));
+            return [hwName(r.country_code), r.extra_demand_gwh, g + '%', im + '%', (g + im) + '%'];
+        }));
 }
 
 // ── Which countries' demand rises most ─────────────────────────────────────
@@ -13122,78 +13145,86 @@ function hwRenderUplift() {
             Number.isFinite(demByCc[r.country_code]) ? demByCc[r.country_code] : '—', r.heatwave_days]));
 }
 
-// ── How the gap was covered, fuel by fuel ──────────────────────────────────
-function hwRenderCoverage() {
+// ── How the gap was covered, fuel by fuel — ONE country ────────────────────
+// Was a multi-country stack, but only six countries' terms closed tightly
+// enough to draw, which made it look arbitrary and left the rows too thin to
+// read. One country per view fits the country selector, gives every component
+// its own labelled row, and lets a country with a loose closure still be shown
+// with that closure stated rather than silently dropped.
+function hwRenderCoverage(sel) {
     const svg = document.getElementById('hwCover');
+    const title = document.getElementById('hwCoverTitle');
+    const note = document.getElementById('hwCoverClosure');
     if (!svg) return;
     hwClear(svg);
 
-    // Only countries whose terms add up. Drawing a decomposition that misses a
-    // third of its own total would be worse than omitting the country.
-    const MAX_GAP_PCT = 35, MIN_DEMAND = 3;
-    const byCc = {};
-    hwData.coverage.forEach(r => {
-        if (Math.abs(Number(r.extra_demand_gwh)) < MIN_DEMAND) return;
-        if (Number(r.gap_pct) > MAX_GAP_PCT) return;
-        (byCc[r.country_code] ||= {demand: Number(r.extra_demand_gwh),
-                                   gap: Number(r.gap_pct), parts: []});
-        byCc[r.country_code].parts.push({c: r.component, v: Number(r.delta_gwh)});
-    });
-    const rows = Object.entries(byCc)
-        .map(([cc, o]) => ({cc, ...o}))
-        .sort((a, b) => b.demand - a.demand);
-    if (!rows.length) { svg.setAttribute('height', 50); return; }
+    const parts = hwData.coverage.filter(r => r.country_code === sel);
+    if (!parts.length) {
+        svg.setAttribute('height', 50);
+        hwEl(svg, 'text', {x: 8, y: 28, class: 'hw-lbl'},
+            `No matched heatwave days for ${hwName(sel)}.`);
+        if (title) title.textContent = 'How the gap was covered, fuel by fuel';
+        if (note) note.textContent = '';
+        hwLegend('hwCoverLegend', []);
+        hwTable('hwCoverTbl', ['Component', 'Δ GWh/day'], []);
+        return;
+    }
+
+    const demand = Number(parts[0].extra_demand_gwh);
+    const gapPct = Number(parts[0].gap_pct);
+    if (title) {
+        title.textContent = `How the gap was covered — ${hwName(sel)}, demand ${hwSign(demand, 1)} GWh/day`;
+    }
+    if (note) {
+        note.textContent = gapPct <= 35
+            ? `The components account for ${100 - gapPct}% of the demand change.`
+            : `Treat with caution: the components account for only ${Math.max(0, 100 - gapPct)}% of the `
+              + `demand change. The difference is pumped-storage consumption (counted as generation but `
+              + `never netted off), transmission losses and patchily reported plant.`;
+    }
 
     const COMP_COLOR = Object.assign({}, HW_FUEL_COLOR, {imports: '#1baf7a'});
-    const ORDER = ['gas', 'coal', 'nuclear', 'other', 'biomass', 'hydro', 'solar', 'wind', 'imports'];
+    const rows = parts
+        .map(p => ({c: p.component, v: Number(p.delta_gwh)}))
+        .filter(p => Number.isFinite(p.v) && Math.abs(p.v) > 0.05)
+        .sort((a, b) => b.v - a.v);
 
-    const H = rows.length * 42 + 44;
+    const H = rows.length * 26 + 46;
     svg.setAttribute('height', H);
     const W = svg.clientWidth || 800;
-    const m = {t: 12, r: 78, b: 28, l: 104};
+    const m = {t: 10, r: 74, b: 28, l: 104};
     const iw = Math.max(80, W - m.l - m.r);
-    const extent = rows.flatMap(r => {
-        let pos = 0, neg = 0;
-        r.parts.forEach(p => { if (p.v > 0) pos += p.v; else neg += p.v; });
-        return [pos, neg, r.demand];
-    });
-    const span = Math.max(...extent.map(Math.abs)) * 1.06 || 1;
+    const span = Math.max(...rows.map(r => Math.abs(r.v)), Math.abs(demand)) * 1.12 || 1;
     const X = v => m.l + iw / 2 + (v / span) * (iw / 2);
+    const bh = 16;
 
-    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 42 - 12,
+    hwEl(svg, 'line', {x1: X(0), x2: X(0), y1: m.t - 4, y2: m.t + rows.length * 26 - 6,
         stroke: '#c3c2b7', 'stroke-width': 1});
+    // The demand increase to be met, spanning the whole plot.
+    hwEl(svg, 'line', {x1: X(demand), x2: X(demand), y1: m.t - 4, y2: m.t + rows.length * 26 - 6,
+        stroke: '#0b0b0b', 'stroke-width': 2});
 
     rows.forEach((r, i) => {
-        const y = m.t + i * 42;
-        const sorted = ORDER.map(c => r.parts.find(p => p.c === c)).filter(Boolean);
-        let accPos = 0, accNeg = 0;
-        sorted.forEach(p => {
-            if (!p.v) return;
-            const from = p.v > 0 ? accPos : accNeg + p.v;
-            const w = Math.max(1.5, Math.abs(X(p.v) - X(0)) - 1.5);
-            const rect = hwEl(svg, 'rect', {x: X(from), y, width: w, height: 16, rx: 2,
-                fill: COMP_COLOR[p.c] || '#8a8f98'});
-            hwTip(rect, `<b>${hwName(r.cc)} · ${hwCap(p.c)}</b><br>${hwSign(p.v, 1)} GWh/day`);
-            if (p.v > 0) accPos += p.v; else accNeg += p.v;
-        });
-        // The target: the demand increase the country had to meet.
-        hwEl(svg, 'line', {x1: X(r.demand), x2: X(r.demand), y1: y - 4, y2: y + 20,
-            stroke: '#0b0b0b', 'stroke-width': 2});
-        hwEl(svg, 'text', {x: m.l - 8, y: y + 12, class: 'hw-lbl', 'text-anchor': 'end'}, hwName(r.cc));
-        hwEl(svg, 'text', {x: X(Math.max(accPos, r.demand)) + 8, y: y + 12, class: 'hw-val'},
-            hwSign(r.demand, 1));
-        hwEl(svg, 'text', {x: m.l, y: y + 32, class: 'hw-tick'},
-            `terms account for ${100 - r.gap}% of the demand change`);
+        const y = m.t + i * 26;
+        const neg = r.v < 0;
+        const x = neg ? X(r.v) : X(0);
+        const w = Math.max(2, Math.abs(X(r.v) - X(0)));
+        hwEl(svg, 'rect', {x, y, width: w, height: bh, rx: 3, fill: COMP_COLOR[r.c] || '#8a8f98'});
+        hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 3, class: 'hw-lbl', 'text-anchor': 'end'},
+            hwCap(r.c));
+        hwEl(svg, 'text', {x: neg ? x - 7 : x + w + 7, y: y + bh - 3, class: 'hw-val',
+            'text-anchor': neg ? 'end' : 'start'}, hwSign(r.v, 1));
+        const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
+        hwTip(hit, `<b>${hwCap(r.c)}</b><br>${hwSign(r.v, 1)} GWh/day on heatwave days<br>
+            Demand change ${hwSign(demand, 1)} GWh/day`);
     });
     hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},
-        '← generation that fell    |    rose to cover the gap → (GWh/day)');
+        '← fell, had to be replaced    |    rose to cover the gap → (GWh/day)');
 
-    const used = ORDER.filter(c => rows.some(r => r.parts.some(p => p.c === c && p.v)));
-    hwLegend('hwCoverLegend', used.map(c => ({c: COMP_COLOR[c] || '#8a8f98', t: hwCap(c)}))
-        .concat([{c: '#0b0b0b', t: 'Demand increase to be met'}]));
-    hwTable('hwCoverTbl', ['Country', 'Component', 'Δ GWh/day', 'Demand change', 'Terms account for'],
-        rows.flatMap(r => ORDER.map(c => r.parts.find(p => p.c === c)).filter(Boolean)
-            .map(p => [hwName(r.cc), hwCap(p.c), hwFmt(p.v, 1), hwFmt(r.demand, 1), (100 - r.gap) + '%'])));
+    hwLegend('hwCoverLegend', [{c: '#0b0b0b', t: `Demand increase to be met (${hwSign(demand, 1)} GWh/day)`}]);
+    hwTable('hwCoverTbl', ['Component', 'Δ GWh/day', 'Share of demand change'],
+        rows.map(r => [hwCap(r.c), hwFmt(r.v, 1),
+            demand ? Math.round(100 * r.v / demand) + '%' : '—']));
 }
 
 function hwRenderKpis() {
@@ -13291,6 +13322,7 @@ function hwRenderScoped() {
     if (!sel) return;
     hwRenderResponse(sel);
     hwRenderBalance(sel);
+    hwRenderCoverage(sel);
     hwRenderEvent(sel);
 }
 
@@ -13306,7 +13338,6 @@ function hwRenderAll() {
     hwRenderTradeDumbbell('hwImp', 'hwImpTbl', 'hwImpLegend', 'import');
     hwRenderTradeDumbbell('hwExp', 'hwExpTbl', 'hwExpLegend', 'export');
     hwRenderUplift();
-    hwRenderCoverage();
     hwRenderGasShare();
     hwRenderGasImports();
     hwRenderScoped();

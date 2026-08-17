@@ -1660,29 +1660,6 @@
 
                 <div class="hw-card">
                     <div class="hw-card-head">
-                        <h3>How the gap was covered, fuel by fuel</h3>
-                        <p>
-                            Everything that changed on heatwave days, in GWh/day. To the right, what rose and
-                            covered the gap; to the left, generation that <em>fell</em> and had to be replaced
-                            as well. The black marker is the demand increase the country had to meet.
-                        </p>
-                        <p style="margin-top:8px">
-                            Only countries whose terms actually add up are shown. Generation plus imports
-                            should equal the demand change; where it does not, the difference is
-                            pumped-storage consumption (counted as generation but never netted off),
-                            transmission losses and patchily reported plant. France, Belgium, Poland and
-                            Germany fall outside that tolerance and are excluded rather than drawn with an
-                            unexplained block.
-                        </p>
-                    </div>
-                    <div id="hwCoverLegend" class="hw-legend"></div>
-                    <svg id="hwCover" height="340" role="img" aria-label="How the heatwave demand gap was covered, by fuel"></svg>
-                    <button class="hw-tbl-btn" data-hwt="hwCoverTbl">Show data table</button>
-                    <div id="hwCoverTbl" class="hw-hidden hw-scroll"></div>
-                </div>
-
-                <div class="hw-card">
-                    <div class="hw-card-head">
                         <h3>Heat burden this year</h3>
                         <p>Heatwave days per country so far this year, shaded by count, with the peak temperature reached.</p>
                     </div>
@@ -1717,23 +1694,25 @@
 
                 <div class="hw-card">
                     <div class="hw-card-head">
-                        <h3>How much of the extra demand was met by gas</h3>
+                        <h3>How much of the extra demand was met by gas and imports</h3>
                         <p>
-                            Extra gas generation on heatwave days as a share of the extra demand. Both terms
-                            are measured directly &mdash; gas is a single ENTSO-E production type and demand
-                            comes from metered load &mdash; so this needs no reconstruction of the rest of
-                            the mix.
+                            Extra gas generation and extra net imports on heatwave days, each as a share of
+                            the extra demand, stacked so the combined contribution is visible. Both are
+                            measured directly &mdash; gas is a single ENTSO-E production type, imports are
+                            metered cross-border flows &mdash; so nothing is reconstructed.
                         </p>
                         <p style="margin-top:8px">
-                            <strong>Above 100%</strong> means gas rose by more than demand did, for one of two
-                            reasons: other domestic generation fell and gas replaced it (Belgium, whose
-                            non-gas output dropped 17.9&nbsp;GWh/day with its nuclear fleet), or the country
-                            also exported more (Netherlands, +7.2&nbsp;GWh/day of extra net exports).
-                            <strong>Below zero</strong> means gas fell outright. The figure after each bar is
-                            the size of the demand change itself &mdash; a high share on a small change
-                            carries far less weight than Italy&rsquo;s 88% on 60.8&nbsp;GWh/day.
+                            Showing gas alone made a falling bar look like an unexplained good-news story.
+                            Portugal&rsquo;s gas fell <em>because</em> it imported instead: &minus;121% gas
+                            against +260% imports. Poland cut both and covered its demand domestically.
+                            <strong>Above 100%</strong> means the pair delivered more than the demand rise,
+                            also replacing generation lost elsewhere &mdash; Belgium&rsquo;s 199% offsets a
+                            nuclear fleet down 17.9&nbsp;GWh/day. The figure after each bar is the size of
+                            the demand change itself, since a large share of a small change carries little
+                            weight.
                         </p>
                     </div>
+                    <div id="hwGasShareLegend" class="hw-legend"></div>
                     <svg id="hwGasShare" height="360" role="img" aria-label="Share of the extra heatwave demand met by gas"></svg>
                     <button class="hw-tbl-btn" data-hwt="hwGasShareTbl">Show data table</button>
                     <div id="hwGasShareTbl" class="hw-hidden hw-scroll"></div>
@@ -1779,6 +1758,23 @@
                     <svg id="hwBal" height="300" role="img" aria-label="Change in generation by fuel during heatwaves"></svg>
                     <button class="hw-tbl-btn" data-hwt="hwBalTbl">Show data table</button>
                     <div id="hwBalTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3 id="hwCoverTitle">How the gap was covered, fuel by fuel</h3>
+                        <p>
+                            Everything that changed on heatwave days for the selected country, in GWh/day.
+                            To the right, what rose and covered the gap; to the left, generation that
+                            <em>fell</em> and had to be replaced as well. The black marker is the demand
+                            increase that had to be met.
+                        </p>
+                        <p style="margin-top:8px" id="hwCoverClosure"></p>
+                    </div>
+                    <div id="hwCoverLegend" class="hw-legend"></div>
+                    <svg id="hwCover" height="300" role="img" aria-label="How the heatwave demand gap was covered, by fuel"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwCoverTbl">Show data table</button>
+                    <div id="hwCoverTbl" class="hw-hidden hw-scroll"></div>
                 </div>
 
                 <div class="hw-card">
