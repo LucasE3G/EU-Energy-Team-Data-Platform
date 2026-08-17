@@ -13228,14 +13228,13 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, balance, weatherRows, loadRows, burden, trade, sources, uplift, coverage, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         sb.from('v_heatwave_fuel_resilience').select('*'),
         sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', 15),
         sb.from('v_heatwave_price').select('*').gte('heatwave_days', 20),
         sb.from('v_heatwave_gas_sector').select('*').gte('heatwave_days', 20),
         sb.from('v_heatwave_helpers').select('*'),
-        sb.from('v_heatwave_country_balance').select('*').gte('heatwave_days', 20),
         gasFetchAllPaged(() => sb.from('weather_country_daily')
             .select('country_code, date, tmax_c, heatwave_id, heatwave_length')
             .gte('date', '2026-01-01').order('date', {ascending: true}), 1000, 40000),
@@ -13249,7 +13248,7 @@ async function hwFetchAll() {
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
     ]);
-    const err = [eu, fuels, renewable, price, gas, helpers, balance, loadRows, burden, trade, sources, uplift, coverage, events].find(r => r && r.error);
+    const err = [eu, fuels, renewable, price, gas, helpers, loadRows, burden, trade, sources, uplift, coverage, events].find(r => r && r.error);
     if (err) throw new Error(err.error.message);
 
     // KPIs, from the weather rows already fetched.
@@ -13284,7 +13283,7 @@ async function hwFetchAll() {
     return {
         kpi, eu: eu.data || [], fuels: fuelRows, renewable: renewable.data || [],
         price: price.data || [], gas: gas.data || [], helpers: helpers.data || [],
-        balance: balance.data || [], response,
+        response,
         burden: burden.data || [],
         trade: trade.data || [],
         sources: sources.data || [],
