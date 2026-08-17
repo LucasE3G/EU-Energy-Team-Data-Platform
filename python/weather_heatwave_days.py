@@ -73,6 +73,17 @@ BASELINE_START, BASELINE_END = DEFAULT_BASELINE_START, DEFAULT_BASELINE_END
 WINDOW_DAYS = 7          # +/- days around the calendar day for the percentile
 PERCENTILE = 0.90
 MIN_RUN = 3              # consecutive hot days required to call it a heatwave
+
+# Absolute floor, applied ALONGSIDE the percentile: any day at or above this
+# counts as hot regardless of what the local percentile says.
+#
+# The percentile alone is purely relative, so in the hottest countries the bar
+# climbs past the point where heat stops being an energy-system problem —
+# Cyprus's mid-July p90 is 38.0 C and Spain's 36.0 C, meaning a 31 C day there
+# registers as unremarkable. The floor only ever ADDS days, and only in
+# countries whose threshold sits above it; where the p90 is already below 30 C
+# (Poland 29.5, Finland 25.4) nothing changes.
+ABSOLUTE_HOT_C = 30.0
 # CTX90pct is a warm-SPELL index, not a heatwave index. Run year-round it flags
 # any relative warm anomaly: a first pass gave Poland 26 "heatwave" days in
 # February and an event peaking at 15.1 C. Those are real anomalies but the
@@ -375,7 +386,8 @@ def main() -> int:
                 "tmean_c": round(vals["tmean"], 2) if vals["tmean"] is not None else None,
                 "threshold_p90_c": round(thr, 2),
                 "anomaly_c": round(tmax - thr, 2),
-                "is_hot_day": tmax > thr,
+                # Percentile OR the absolute floor.
+                "is_hot_day": tmax > thr or tmax >= ABSOLUTE_HOT_C,
                 "heatwave_id": None,
                 "heatwave_day": None,
                 "heatwave_length": None,

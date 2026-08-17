@@ -1014,7 +1014,15 @@ function fetchEuropeCountriesGeoJsonOnce() {
             try {
                 const r = await fetch(url);
                 if (!r.ok) { lastErr = new Error(`GeoJSON HTTP ${r.status} from ${url}`); continue; }
-                return await r.json();
+                const j = await r.json();
+                // vercel.json rewrites any unmatched path to index.html, so a
+                // not-yet-deployed asset comes back as HTML with HTTP 200.
+                // Check the shape rather than trusting the status code.
+                if (!j || !Array.isArray(j.features) || !j.features.length) {
+                    lastErr = new Error(`GeoJSON from ${url} has no features (wrong file served?)`);
+                    continue;
+                }
+                return j;
             } catch (e) { lastErr = e; }
         }
         // Do not leave a rejected promise in the cache: one transient failure
@@ -6088,6 +6096,13 @@ function renderElectricityMap(latestRows) {
     renderElectricityGeoMap(container, rows).catch((e) => {
         console.warn('Electricity geo map render failed, falling back to tile grid:', e);
         renderElectricityTileGrid(container, rows);
+        // Say why. This degraded silently for weeks — the grid looks like a
+        // deliberate design, so nobody knew the map had stopped rendering or
+        // what to fix.
+        const note = document.createElement('div');
+        note.className = 'map-fallback-note';
+        note.textContent = `Map unavailable — showing tiles instead. ${e?.message || e}`;
+        container.prepend(note);
     });
 }
 
