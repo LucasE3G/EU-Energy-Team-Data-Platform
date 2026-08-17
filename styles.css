@@ -2442,8 +2442,11 @@ body.sidebar-collapsed #sidebarReveal {
 }
 
 /* ── Heatwaves page ──────────────────────────────────────────────────────── */
+/* Full bleed to the content column. The 88ch cap left it as a narrow strip
+   with a large empty gutter beside it, which read as an unfinished layout
+   rather than an intro. Line length is held by the inner paragraph instead. */
 .hw-intro {
-    padding: 16px 20px;
+    padding: 18px 24px;
     margin-bottom: 24px;
     font-size: 14px;
     line-height: 1.65;
@@ -2452,8 +2455,9 @@ body.sidebar-collapsed #sidebarReveal {
     border: 1px solid var(--border-color);
     border-left: 3px solid var(--accent-color);
     border-radius: 0 12px 12px 0;
-    max-width: 88ch;
+    width: 100%;
 }
+.hw-intro p { margin: 0; max-width: 105ch; }
 .hw-fresh { display: block; margin-top: 6px; font-size: 12px; color: var(--text-tertiary); }
 
 .hw-card {
