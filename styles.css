@@ -2528,10 +2528,39 @@ body.sidebar-collapsed #sidebarReveal {
 }
 .hw-tip b { font-weight: 700; }
 
+/* Full-width panel: the old version was a 90ch paragraph adrift in a wide
+   column, which read as a stray note rather than part of the page. */
 .hw-caveat {
-    font-size: 12.5px; line-height: 1.65; color: var(--text-secondary);
-    padding: 14px 18px; margin-top: 8px;
-    background: var(--bg-tertiary); border-radius: 10px; max-width: 90ch;
+    padding: 22px 26px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+}
+.hw-caveat h4 {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+    margin-bottom: 16px;
+}
+.hw-caveat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 20px 28px;
+}
+.hw-caveat-grid strong {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 4px;
+}
+.hw-caveat-grid p {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
 }
 
 @media (max-width: 768px) {

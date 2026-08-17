@@ -1648,6 +1648,16 @@
 
                 <div class="hw-card">
                     <div class="hw-card-head">
+                        <h3>Heat burden this year</h3>
+                        <p>Heatwave days per country so far this year, shaded by count, with the peak temperature reached.</p>
+                    </div>
+                    <svg id="hwBurden" height="420" role="img" aria-label="Heatwave days by country this year"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwBurdenTbl">Show data table</button>
+                    <div id="hwBurdenTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
                         <h3>Did the interconnectors help?</h3>
                         <p>Extra energy sent to neighbours during <em>their</em> heatwaves, against a same-month baseline. Split by whether the exporter was itself in a heatwave — power moving between two stressed systems is competition for scarce supply, not assistance.</p>
                     </div>
@@ -1687,15 +1697,42 @@
                     <button class="hw-tbl-btn" data-hwt="hwBalTbl">Show data table</button>
                     <div id="hwBalTbl" class="hw-hidden hw-scroll"></div>
                 </div>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3 id="hwEventTitle">Anatomy of the largest event</h3>
+                        <p>The selected country&rsquo;s longest heatwave this year, with a week either side. Three panels share one time axis — they are deliberately not overlaid on a second y-scale, which would invent a correlation from an arbitrary alignment.</p>
+                    </div>
+                    <div id="hwEventLegend" class="hw-legend"></div>
+                    <svg id="hwEvent" height="620" role="img" aria-label="Temperature, demand and generation during the selected country's largest heatwave"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwEventTbl">Show data table</button>
+                    <div id="hwEventTbl" class="hw-hidden hw-scroll"></div>
+                </div>
             </div>
 
-            <p class="hw-caveat">
-                <strong>Known data gaps.</strong> Nine countries — Cyprus, Czechia, Finland, Greece, Ireland,
-                Lithuania, Malta, Slovakia and Sweden — have no daily national gas feed and are derived from
-                Eurostat monthly statistics, published roughly four months in arrears. They are excluded from
-                the gas chart rather than shown as zero. Cross-border figures are net physical flows: they
-                establish what moved, not why.
-            </p>
+            <div class="section">
+                <div class="hw-caveat">
+                    <h4>Method &amp; known gaps</h4>
+                    <div class="hw-caveat-grid">
+                        <div>
+                            <strong>Gas coverage</strong>
+                            <p>Nine countries — Cyprus, Czechia, Finland, Greece, Ireland, Lithuania, Malta, Slovakia and Sweden — have no daily national gas feed and are derived from Eurostat monthly statistics, published roughly four months in arrears. They are excluded from the gas chart rather than shown as zero.</p>
+                        </div>
+                        <div>
+                            <strong>Matching</strong>
+                            <p>Every comparison matches heatwave days against non-heatwave days in the same country, calendar month and day type, so the figures are not measuring summer or the working week.</p>
+                        </div>
+                        <div>
+                            <strong>Cross-border</strong>
+                            <p>Net physical flows from ENTSO-E. They establish what moved, not why — a neighbour exporting during a heatwave may be following price signals or simply have had wind.</p>
+                        </div>
+                        <div>
+                            <strong>Temperature</strong>
+                            <p>ERA5 via Open-Meteo, population-weighted over each country&rsquo;s largest metropolitan areas, because demand follows people rather than land area.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Country Profile Page -->

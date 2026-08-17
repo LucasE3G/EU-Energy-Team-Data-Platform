@@ -166,19 +166,33 @@ serve(async (req) => {
     const errors: Record<string, string> = {};
     const skipped: Record<string, string> = {};
 
-    for (const z of zones) {
-      const domain = DOMAINS[z];
-      if (!domain) continue;
-      try {
-        const r = await fetchZoneLoadLatest(entsoeToken, z, domain);
-        perZone.push({ zone: z, ts: r.ts, loadMw: r.loadMw });
-        if (!r.ts || r.loadMw == null || r.loadMw <= 0) skipped[z] = "no_usable_data";
-        if (r.ts && (!bestTs || Date.parse(r.ts) > Date.parse(bestTs))) bestTs = r.ts;
-      } catch (e) {
-        errors[z] = e?.message ?? String(e);
+    // Concurrency pool so this finishes under the 150s idle timeout.
+    //
+    // This walked all 37 zones sequentially while the caller was already
+    // sending `concurrency: 6` — which this function ignored, unlike the
+    // generation and price ingests. At roughly four seconds per ENTSO-E round
+    // trip plus the delay, the run landed at ~151s and Supabase killed it with
+    // a 504 IDLE_TIMEOUT, so the whole workflow failed on this step.
+    const concurrency = Math.max(1, Math.min(8, Number(body?.concurrency ?? 6)));
+    const queue = [...zones];
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (queue.length) {
+        const z = String(queue.shift());
+        const domain = DOMAINS[z];
+        if (!domain) continue;
+        try {
+          const r = await fetchZoneLoadLatest(entsoeToken, z, domain);
+          perZone.push({ zone: z, ts: r.ts, loadMw: r.loadMw });
+          if (!r.ts || r.loadMw == null || r.loadMw <= 0) skipped[z] = "no_usable_data";
+          if (r.ts && (!bestTs || Date.parse(r.ts) > Date.parse(bestTs))) bestTs = r.ts;
+        } catch (e) {
+          errors[z] = e?.message ?? String(e);
+        }
+        if (perRequestDelayMs > 0) await sleep(perRequestDelayMs);
       }
-      if (perRequestDelayMs > 0) await sleep(perRequestDelayMs);
-    }
+    });
+
+    await Promise.all(workers);
 
     const supabase = createClient(supabaseUrl, serviceRole, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -239,6 +253,7 @@ serve(async (req) => {
       zone_rows_upserted: rows.length,
       zones_skipped: Object.keys(skipped).length,
       errors: errorCount,
+      concurrency,
       error_sample: Object.entries(errors).slice(0, 5).map(([z, m]) => `${z}: ${m}`),
     });
   } catch (e) {

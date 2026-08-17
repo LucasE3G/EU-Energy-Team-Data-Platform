@@ -12680,6 +12680,163 @@ function hwRenderBalance(sel) {
         items.map(d => [hwCap(d.f), hwSign(d.v)]).concat([['Demand', hwSign(row.demand_delta_mw)]]));
 }
 
+// ── Heat burden this year (sequential: magnitude, no identity to encode) ───
+function hwRenderBurden() {
+    const svg = document.getElementById('hwBurden');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.burden.slice().sort((a, b) => b.heatwave_days - a.heatwave_days);
+    if (!rows.length) { svg.setAttribute('height', 50); return; }
+
+    const H = rows.length * 17 + 30;
+    svg.setAttribute('height', H);
+    const W = svg.clientWidth || 800;
+    const m = {t: 6, r: 118, b: 20, l: 96};
+    const iw = Math.max(80, W - m.l - m.r);
+    const mx = Math.max(...rows.map(r => +r.heatwave_days)) * 1.03;
+    const bh = 11;
+
+    rows.forEach((r, i) => {
+        const y = m.t + i * 17;
+        const w = Math.max(2, (+r.heatwave_days / mx) * iw);
+        const step = HW_SEQ[Math.min(HW_SEQ.length - 1,
+            Math.floor((+r.heatwave_days / mx) * HW_SEQ.length))];
+        hwEl(svg, 'rect', {x: m.l, y, width: w, height: bh, rx: 4, fill: step});
+        hwEl(svg, 'text', {x: m.l - 8, y: y + bh - 1, class: 'hw-lbl', 'text-anchor': 'end'},
+            hwName(r.country_code));
+        hwEl(svg, 'text', {x: m.l + w + 8, y: y + bh - 1, class: 'hw-val'},
+            `${r.heatwave_days} d · ${r.peak_tmax_c}°C`);
+        const hit = hwEl(svg, 'rect', {x: m.l, y: y - 3, width: iw, height: bh + 6, fill: 'transparent'});
+        hwTip(hit, `<b>${hwName(r.country_code)}</b><br>${r.heatwave_days} heatwave days in
+            ${r.events} events<br>Peak ${r.peak_tmax_c}°C (+${r.peak_anomaly_c}°C anomaly)`);
+    });
+    hwTable('hwBurdenTbl', ['Country', 'Heatwave days', 'Events', 'Peak °C', 'Peak anomaly °C'],
+        rows.map(r => [hwName(r.country_code), r.heatwave_days, r.events, r.peak_tmax_c, r.peak_anomaly_c]));
+}
+
+// ── Anatomy of one event: three panels on ONE shared time axis ─────────────
+function hwRenderEvent(sel) {
+    const svg = document.getElementById('hwEvent');
+    const title = document.getElementById('hwEventTitle');
+    if (!svg) return;
+    hwClear(svg);
+
+    const ev = hwData.events.find(e => e.country_code === sel);
+    const series = hwData.eventSeries.filter(r => r.country_code === sel)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    if (!ev || series.length < 3) {
+        svg.setAttribute('height', 50);
+        hwEl(svg, 'text', {x: 8, y: 28, class: 'hw-lbl'},
+            `No heatwave event recorded for ${hwName(sel)} this year.`);
+        if (title) title.textContent = 'Anatomy of the largest event';
+        hwLegend('hwEventLegend', []);
+        hwTable('hwEventTbl', ['Date'], []);
+        return;
+    }
+    if (title) {
+        title.textContent = `Anatomy of the largest event — ${hwName(sel)}, ` +
+            `${ev.start_date} to ${ev.end_date} (${ev.length_days} days, ` +
+            `peak ${ev.peak_tmax_c}°C, +${ev.peak_anomaly_c}°C above threshold)`;
+    }
+
+    const W = svg.clientWidth || 800;
+    const m = {t: 18, r: 18, b: 34, l: 54};
+    const iw = Math.max(80, W - m.l - m.r);
+    const n = series.length;
+    const bw = iw / n;
+    const X = i => m.l + i * bw + bw / 2;
+    const panelH = 148, gap = 36;
+
+    const fuels = HW_FUEL_ORDER.filter(f => series.some(r => Number(r[f + '_mw']) > 0));
+
+    function panel(top, label, y0, y1, unit, draw) {
+        hwEl(svg, 'text', {x: m.l, y: top - 6, class: 'hw-lbl'}, label);
+        const Y = v => top + panelH - (v - y0) / (y1 - y0 || 1) * panelH;
+        for (let k = 0; k <= 2; k++) {
+            const v = y0 + (y1 - y0) * k / 2;
+            hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v),
+                stroke: '#e1e0d9', 'stroke-width': 1});
+            hwEl(svg, 'text', {x: m.l - 8, y: Y(v) + 4, class: 'hw-tick', 'text-anchor': 'end'},
+                hwFmt(v) + (k === 2 ? ' ' + unit : ''));
+        }
+        draw(Y);
+    }
+
+    // 1 — temperature against the local threshold
+    const temps = series.map(r => Number(r.tmax_c));
+    const thr = Number(series[0].threshold_c);
+    panel(m.t, 'Daily maximum temperature',
+        Math.floor(Math.min(...temps, thr) - 3), Math.ceil(Math.max(...temps) + 2), '°C', Y => {
+        hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(thr), y2: Y(thr),
+            stroke: HW_NEG, 'stroke-width': 1.5});
+        hwEl(svg, 'text', {x: m.l + iw - 2, y: Y(thr) - 6, class: 'hw-tick',
+            'text-anchor': 'end', fill: HW_NEG}, `heatwave threshold ${thr}°C`);
+        hwEl(svg, 'polyline', {points: series.map((r, i) => `${X(i)},${Y(Number(r.tmax_c))}`).join(' '),
+            fill: 'none', stroke: HW_ACCENT, 'stroke-width': 2, 'stroke-linejoin': 'round'});
+        series.forEach((r, i) => {
+            hwEl(svg, 'circle', {cx: X(i), cy: Y(Number(r.tmax_c)), r: r.in_heatwave ? 5 : 3.5,
+                fill: r.in_heatwave ? HW_NEG : HW_ACCENT, stroke: '#ffffff', 'stroke-width': 2});
+            const hit = hwEl(svg, 'circle', {cx: X(i), cy: Y(Number(r.tmax_c)), r: 13, fill: 'transparent'});
+            hwTip(hit, `<b>${r.date}</b><br>${r.tmax_c}°C${r.in_heatwave ? '<br>in heatwave' : ''}`);
+        });
+    });
+
+    // 2 — demand
+    const top2 = m.t + panelH + gap;
+    const dem = series.map(r => Number(r.avg_load_mw)).filter(Number.isFinite);
+    if (dem.length) {
+        panel(top2, 'Average electricity demand',
+            Math.floor(Math.min(...dem) * 0.94), Math.ceil(Math.max(...dem) * 1.03), 'MW', Y => {
+            hwEl(svg, 'polyline', {
+                points: series.filter(r => Number.isFinite(Number(r.avg_load_mw)))
+                    .map(r => `${X(series.indexOf(r))},${Y(Number(r.avg_load_mw))}`).join(' '),
+                fill: 'none', stroke: '#1baf7a', 'stroke-width': 2, 'stroke-linejoin': 'round'});
+            series.forEach((r, i) => {
+                const v = Number(r.avg_load_mw);
+                if (!Number.isFinite(v)) return;
+                hwEl(svg, 'circle', {cx: X(i), cy: Y(v), r: 3.5, fill: '#1baf7a',
+                    stroke: '#ffffff', 'stroke-width': 2});
+                const hit = hwEl(svg, 'circle', {cx: X(i), cy: Y(v), r: 13, fill: 'transparent'});
+                hwTip(hit, `<b>${r.date}</b><br>${hwFmt(v)} MW average demand`);
+            });
+        });
+    }
+
+    // 3 — generation stack
+    const top3 = top2 + panelH + gap;
+    const totals = series.map(r => fuels.reduce((s, f) => s + (Number(r[f + '_mw']) || 0), 0));
+    panel(top3, 'Generation by source', 0, Math.ceil(Math.max(...totals, 1) * 1.06), 'MW', Y => {
+        series.forEach((r, i) => {
+            let acc = 0;
+            fuels.forEach(f => {
+                const v = Number(r[f + '_mw']) || 0;
+                if (!v) return;
+                // 2px surface gap so segments read as separate without a border
+                const h = Math.max(1, Y(acc) - Y(acc + v) - 2);
+                const rect = hwEl(svg, 'rect', {x: X(i) - bw * 0.34, y: Y(acc + v),
+                    width: bw * 0.68, height: h, rx: 2, fill: HW_FUEL_COLOR[f]});
+                hwTip(rect, `<b>${r.date}</b><br>${hwCap(f)}: ${hwFmt(v)} MW`);
+                acc += v;
+            });
+        });
+    });
+
+    series.forEach((r, i) => {
+        if (i % Math.ceil(n / 8)) return;
+        hwEl(svg, 'text', {x: X(i), y: top3 + panelH + 20, class: 'hw-tick', 'text-anchor': 'middle'},
+            String(r.date).slice(5));
+    });
+    svg.setAttribute('height', top3 + panelH + 34);
+
+    hwLegend('hwEventLegend', fuels.map(f => ({c: HW_FUEL_COLOR[f], t: hwCap(f)}))
+        .concat([{c: HW_NEG, t: 'Heatwave day'}]));
+    hwTable('hwEventTbl',
+        ['Date', 'Tmax °C', 'Demand MW'].concat(fuels.map(hwCap)),
+        series.map(r => [r.date, r.tmax_c, hwFmt(r.avg_load_mw)]
+            .concat(fuels.map(f => hwFmt(r[f + '_mw'])))));
+}
+
 function hwRenderKpis() {
     const k = hwData.kpi;
     const cells = [
@@ -12703,7 +12860,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, balance, weatherRows, loadRows] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, balance, weatherRows, loadRows, burden, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         sb.from('v_heatwave_fuel_resilience').select('*'),
         sb.from('v_heatwave_renewable').select('*').gte('heatwave_days', 15),
@@ -12715,8 +12872,12 @@ async function hwFetchAll() {
             .select('country_code, date, tmax_c, heatwave_id, heatwave_length')
             .gte('date', '2026-01-01').order('date', {ascending: true}), 1000, 40000),
         sb.from('v_heatwave_response_curve').select('*'),
+        sb.from('v_heatwave_burden').select('*'),
+        sb.from('v_heatwave_event_top').select('*'),
+        gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
+            .order('date', {ascending: true}), 1000, 20000),
     ]);
-    const err = [eu, fuels, renewable, price, gas, helpers, balance, loadRows].find(r => r && r.error);
+    const err = [eu, fuels, renewable, price, gas, helpers, balance, loadRows, burden, events].find(r => r && r.error);
     if (err) throw new Error(err.error.message);
 
     // KPIs, from the weather rows already fetched.
@@ -12752,6 +12913,9 @@ async function hwFetchAll() {
         kpi, eu: eu.data || [], fuels: fuelRows, renewable: renewable.data || [],
         price: price.data || [], gas: gas.data || [], helpers: helpers.data || [],
         balance: balance.data || [], response,
+        burden: burden.data || [],
+        events: events.data || [],
+        eventSeries: eventSeries || [],
     };
 }
 
@@ -12760,6 +12924,7 @@ function hwRenderScoped() {
     if (!sel) return;
     hwRenderResponse(sel);
     hwRenderBalance(sel);
+    hwRenderEvent(sel);
 }
 
 function hwRenderAll() {
@@ -12771,6 +12936,7 @@ function hwRenderAll() {
     hwRenderPrice();
     hwRenderGas();
     hwRenderHelp();
+    hwRenderBurden();
     hwRenderScoped();
 }
 
