@@ -965,23 +965,63 @@ function renderEnergyTileGrid(container, rows) {
 let __energyEntsoeZonesGeoJsonPromise = null;
 function fetchEntsoeZonesGeoJsonOnce() {
     if (__energyEntsoeZonesGeoJsonPromise) return __energyEntsoeZonesGeoJsonPromise;
-    // Electricity Maps zone geometry (includes bidding zones like NO1..NO5, SE1..SE4, DK1..DK2).
-    const url = 'https://raw.githubusercontent.com/electricitymaps/electricitymaps-contrib/master/geo/world.geojson';
-    __energyEntsoeZonesGeoJsonPromise = fetch(url).then(r => {
-        if (!r.ok) throw new Error(`Zone GeoJSON HTTP ${r.status}`);
-        return r.json();
-    });
+    // Electricity Maps zone geometry: the bidding-zone splits for DK/SE/NO.
+    //
+    // This is an OPTIONAL overlay — every consumer already guards with
+    // `Array.isArray(zoneGeo?.features) ? … : []`. It used to reject on
+    // failure, which rejected the Promise.all in all four map renderers and
+    // dropped the entire map to the tile-grid fallback. It now resolves to
+    // null so a missing overlay costs the overlay, not the map.
+    //
+    // The upstream path also moves: `geo/world.geojson` currently 404s on
+    // jsDelivr, so the sources are tried in turn.
+    const urls = [
+        'https://cdn.jsdelivr.net/gh/electricitymaps/electricitymaps-contrib@master/geo/world.geojson',
+        'https://raw.githubusercontent.com/electricitymaps/electricitymaps-contrib/master/geo/world.geojson',
+    ];
+    __energyEntsoeZonesGeoJsonPromise = (async () => {
+        for (const url of urls) {
+            try {
+                const r = await fetch(url);
+                if (!r.ok) continue;
+                return await r.json();
+            } catch (_) { /* try the next source */ }
+        }
+        console.warn('Zone GeoJSON unavailable — drawing maps without the DK/SE/NO bidding-zone overlay.');
+        return null;
+    })();
     return __energyEntsoeZonesGeoJsonPromise;
 }
 
 let __energyEuropeCountriesGeoJsonPromise = null;
 function fetchEuropeCountriesGeoJsonOnce() {
     if (__energyEuropeCountriesGeoJsonPromise) return __energyEuropeCountriesGeoJsonPromise;
-    const url = 'https://raw.githubusercontent.com/leakyMirror/map-of-europe/master/GeoJSON/europe.geojson';
-    __energyEuropeCountriesGeoJsonPromise = fetch(url).then(r => {
-        if (!r.ok) throw new Error(`GeoJSON HTTP ${r.status}`);
-        return r.json();
-    });
+    // Country outlines: the base layer every map needs.
+    //
+    // Served from the repo first. This used to be fetched straight from
+    // raw.githubusercontent.com on every page load, so whenever GitHub
+    // rate-limited the visitor's IP (HTTP 429) every map on the platform
+    // silently dropped to the tile-grid fallback — with nothing in the UI to
+    // say why. A ~1.6 MB file we control is not worth that exposure.
+    const urls = [
+        'assets/geo/europe-countries.geojson',
+        'https://cdn.jsdelivr.net/gh/leakyMirror/map-of-europe@master/GeoJSON/europe.geojson',
+        'https://raw.githubusercontent.com/leakyMirror/map-of-europe/master/GeoJSON/europe.geojson',
+    ];
+    __energyEuropeCountriesGeoJsonPromise = (async () => {
+        let lastErr = null;
+        for (const url of urls) {
+            try {
+                const r = await fetch(url);
+                if (!r.ok) { lastErr = new Error(`GeoJSON HTTP ${r.status} from ${url}`); continue; }
+                return await r.json();
+            } catch (e) { lastErr = e; }
+        }
+        // Do not leave a rejected promise in the cache: one transient failure
+        // would otherwise keep every map broken for the rest of the session.
+        __energyEuropeCountriesGeoJsonPromise = null;
+        throw lastErr || new Error('Country GeoJSON unavailable');
+    })();
     return __energyEuropeCountriesGeoJsonPromise;
 }
 
@@ -1862,6 +1902,14 @@ function switchElectricityMeterTab(target) {
         loadChartBuilder();
     } else {
         document.getElementById('renewableEmTab')?.classList.add('active');
+        // Every other tab above re-fetches when you switch to it. Renewable had
+        // no loader here at all, because its fetch lives inline in
+        // loadEnergyMeterPage — so its data only ever appeared on a full page
+        // load, and clicking back to the tab showed whatever was left on screen.
+        // Re-running that function is safe: every listener it attaches is
+        // guarded with dataset.bound, and it only delegates back here for
+        // non-renewable tabs, so this cannot recurse.
+        loadEnergyMeterPage();
     }
 }
 
