@@ -167,16 +167,34 @@ s as (
          count(*) filter (where hw) hw_n, count(*) filter (where not hw) ref_n
   from days group by 1, 2
 ),
-ok as (select * from s where hw_n > 0 and ref_n >= 3)
-select country_code, sum(hw_n)::int as heatwave_days,
-       round((sum(ref_imp*hw_n)/sum(hw_n))::numeric,1)          as normal_net_import_gwh,
-       round((sum(hw_imp*hw_n)/sum(hw_n))::numeric,1)           as heatwave_net_import_gwh,
-       round((sum((hw_imp-ref_imp)*hw_n)/sum(hw_n))::numeric,1) as delta_net_import_gwh,
-       round((-sum(ref_imp*hw_n)/sum(hw_n))::numeric,1)         as normal_net_export_gwh,
-       round((-sum(hw_imp*hw_n)/sum(hw_n))::numeric,1)          as heatwave_net_export_gwh,
-       round((-sum((hw_imp-ref_imp)*hw_n)/sum(hw_n))::numeric,1) as delta_net_export_gwh,
-       round((sum((hw_dem-ref_dem)*hw_n)/sum(hw_n))::numeric,1)  as extra_demand_gwh
-from ok group by 1;
+ok as (select * from s where hw_n > 0 and ref_n >= 3),
+core as (
+  select country_code, sum(hw_n)::int heatwave_days,
+         sum(ref_imp*hw_n)/sum(hw_n) r_imp, sum(hw_imp*hw_n)/sum(hw_n) h_imp,
+         sum((hw_dem-ref_dem)*hw_n)/sum(hw_n) d_dem
+  from ok group by 1
+),
+extremes as (
+  select country_code,
+         min(net_import_gwh) filter (where not hw) nmin,
+         max(net_import_gwh) filter (where not hw) nmax,
+         min(net_import_gwh) filter (where hw)     hmin,
+         max(net_import_gwh) filter (where hw)     hmax
+  from days group by 1
+)
+select c.country_code, c.heatwave_days,
+       round(c.r_imp::numeric,1)            as normal_net_import_gwh,
+       round(c.h_imp::numeric,1)            as heatwave_net_import_gwh,
+       round((c.h_imp - c.r_imp)::numeric,1) as delta_net_import_gwh,
+       round((-c.r_imp)::numeric,1)          as normal_net_export_gwh,
+       round((-c.h_imp)::numeric,1)          as heatwave_net_export_gwh,
+       round((-(c.h_imp - c.r_imp))::numeric,1) as delta_net_export_gwh,
+       round(c.d_dem::numeric,1)             as extra_demand_gwh,
+       round(e.nmin::numeric,1) as normal_min_net_import_gwh,
+       round(e.nmax::numeric,1) as normal_max_net_import_gwh,
+       round(e.hmin::numeric,1) as heatwave_min_net_import_gwh,
+       round(e.hmax::numeric,1) as heatwave_max_net_import_gwh
+from core c join extremes e on e.country_code = c.country_code;
 
 -- -- Where the extra demand went / came from --------------------------------
 create view public.v_heatwave_demand_sources as
@@ -439,6 +457,25 @@ from public.v_heatwave_days p
 join public.weather_country_daily w
   on w.country_code = p.country_code and w.date = p.date
 group by 1;
+
+-- -- EU-wide response by simultaneity bucket, with the day ranges ------------
+drop view if exists public.v_eu_heatwave_response;
+create view public.v_eu_heatwave_response as
+select case when countries_in_heatwave = 0 then '0'
+            when countries_in_heatwave between 1 and 3 then '1-3'
+            when countries_in_heatwave between 4 and 7 then '4-7'
+            else '8+' end as bucket,
+       count(*)                                 as days,
+       round(avg(eu_load_mw)::numeric,0)        as mean_eu_load_mw,
+       round(avg(eu_renewable_pct)::numeric,1)  as mean_renewable_pct,
+       round(min(eu_renewable_pct)::numeric,1)  as min_renewable_pct,
+       round(max(eu_renewable_pct)::numeric,1)  as max_renewable_pct,
+       round(avg(max_anomaly_c)::numeric,1)     as mean_max_anomaly_c
+from public.v_eu_heatwave_daily
+where eu_load_mw is not null and countries_reporting >= 25
+  and date >= date_trunc('year', current_date)
+group by 1;
+grant select on public.v_eu_heatwave_response  to anon;
 
 grant select on public.v_heatwave_days             to anon;
 grant select on public.mv_heatwave_component_delta to anon;
