@@ -979,7 +979,7 @@ function mapFallbackNote(container, err) {
 // (rgba(148,163,184,0.18)) was 18% opacity on a white card, so the UK - which
 // has had no ENTSO-E data since June 2021 - looked like it had been left off
 // the map rather than simply having nothing to show.
-const NO_DATA_FILL = 'rgba(148,163,184,0.42)';
+const NO_DATA_FILL = 'rgba(148,163,184,0.26)';
 
 function fetchEntsoeZonesGeoJsonOnce() {
     if (__energyEntsoeZonesGeoJsonPromise) return __energyEntsoeZonesGeoJsonPromise;
@@ -1297,7 +1297,11 @@ async function renderEnergyGeoMap(container, rows) {
         // loaded; otherwise DK/SE/NO would be drawn by nobody and vanish.
         if (hasZoneOverlay && (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO')) continue;
         // GB rendered via zone overlay below (same as DK/SE/NO); skip base layer to avoid double-draw
-        if (iso2 === 'GB' || iso2 === 'UK') continue;
+        // GB/UK were dropped from the country layer here because the overlay was
+        // meant to draw them. The load, storage and flows maps never did this,
+        // which is why the UK appears on those and vanished from these three.
+        // Only cede it when the overlay is actually available.
+        if (hasZoneOverlay && (iso2 === 'GB' || iso2 === 'UK')) continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const val = byCountry[dataKey]?.pct;
@@ -6303,7 +6307,11 @@ async function renderElectricityGeoMap(container, rows) {
         // loaded; otherwise DK/SE/NO would be drawn by nobody and vanish.
         if (hasZoneOverlay && (iso2 === 'DK' || iso2 === 'SE' || iso2 === 'NO')) continue;
         // GB rendered via zone overlay below; skip base layer to avoid double-draw
-        if (iso2 === 'GB' || iso2 === 'UK') continue;
+        // GB/UK were dropped from the country layer here because the overlay was
+        // meant to draw them. The load, storage and flows maps never did this,
+        // which is why the UK appears on those and vanished from these three.
+        // Only cede it when the overlay is actually available.
+        if (hasZoneOverlay && (iso2 === 'GB' || iso2 === 'UK')) continue;
 
         const dataKey = iso2GeoToDataKey(iso2);
         const mw = byCountry[dataKey]?.mw;
@@ -12837,8 +12845,16 @@ function hwRenderEvent(sel) {
         Math.floor(Math.min(...temps, thr) - 3), Math.ceil(Math.max(...temps) + 2), '°C', Y => {
         hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(thr), y2: Y(thr),
             stroke: HW_NEG, 'stroke-width': 1.5});
+        // `threshold_c` is the EFFECTIVE threshold — the lower of the local 90th
+        // percentile and the 30 C floor — so the line matches the rule that
+        // actually flags the orange days. Name which rule is binding, otherwise
+        // a France line at 30 C looks arbitrary next to a p90 of 31.6.
+        const p90 = Number(series[0].threshold_p90_c);
+        const label = Number.isFinite(p90) && p90 > thr
+            ? `heatwave threshold ${thr}°C (30°C floor; local p90 ${p90}°C)`
+            : `heatwave threshold ${thr}°C (local p90)`;
         hwEl(svg, 'text', {x: m.l + iw - 2, y: Y(thr) - 6, class: 'hw-tick',
-            'text-anchor': 'end', fill: HW_NEG}, `heatwave threshold ${thr}°C`);
+            'text-anchor': 'end', fill: HW_NEG}, label);
         hwEl(svg, 'polyline', {points: series.map((r, i) => `${X(i)},${Y(Number(r.tmax_c))}`).join(' '),
             fill: 'none', stroke: HW_ACCENT, 'stroke-width': 2, 'stroke-linejoin': 'round'});
         series.forEach((r, i) => {

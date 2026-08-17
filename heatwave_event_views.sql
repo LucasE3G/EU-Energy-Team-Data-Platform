@@ -1,17 +1,29 @@
--- Each country's largest heatwave of the current year, for the event-anatomy
--- panel. Ranked by duration then by peak anomaly, so the "largest" event is the
--- longest one rather than merely the hottest single day.
+-- Each country's largest heatwave of the current year, plus the daily series
+-- around it, for the event-anatomy panel.
+--
+-- Both views report the threshold that is ACTUALLY applied, not the raw 90th
+-- percentile. A day counts as hot when it exceeds the local percentile OR
+-- reaches the absolute floor, so the effective threshold is the lower of the
+-- two. Reporting the percentile alone drew France's line at 31.6 C while days
+-- at 30-31.6 C were correctly flagged as heatwave days but sat visibly below
+-- it — the chart contradicted its own rule.
+--
+-- ABSOLUTE_HOT_C is 30.0 in python/weather_heatwave_days.py; keep them in step.
 
-create or replace view public.v_heatwave_event_top as
+drop view if exists public.v_heatwave_event_series;
+drop view if exists public.v_heatwave_event_top;
+
+create view public.v_heatwave_event_top as
 with ev as (
   select
     country_code,
     heatwave_id,
-    min(date)                        as start_date,
-    max(date)                        as end_date,
-    max(heatwave_length)             as length_days,
-    round(max(tmax_c)::numeric, 1)   as peak_tmax_c,
-    round(max(anomaly_c)::numeric, 1) as peak_anomaly_c,
+    min(date)                                                          as start_date,
+    max(date)                                                          as end_date,
+    max(heatwave_length)                                               as length_days,
+    round(max(tmax_c)::numeric, 1)                                     as peak_tmax_c,
+    round(max(tmax_c - least(threshold_p90_c, 30.0))::numeric, 1)      as peak_anomaly_c,
+    round(min(least(threshold_p90_c, 30.0))::numeric, 1)               as threshold_c,
     row_number() over (
       partition by country_code
       order by max(heatwave_length) desc, max(anomaly_c) desc
@@ -22,21 +34,19 @@ with ev as (
   group by 1, 2
 )
 select country_code, heatwave_id, start_date, end_date,
-       length_days, peak_tmax_c, peak_anomaly_c
+       length_days, peak_tmax_c, peak_anomaly_c, threshold_c
 from ev
 where rn = 1;
 
--- Daily series for those event windows, with a week either side for context.
--- One row per country/day; generation is pivoted so the page fetches a single
--- compact result instead of one request per layer.
-create or replace view public.v_heatwave_event_series as
+create view public.v_heatwave_event_series as
 select
   w.country_code,
   w.date,
-  round(w.tmax_c::numeric, 1)          as tmax_c,
-  round(w.threshold_p90_c::numeric, 1) as threshold_c,
-  (w.heatwave_id is not null)          as in_heatwave,
-  round(l.avg_load_mw::numeric, 0)     as avg_load_mw,
+  round(w.tmax_c::numeric, 1)                        as tmax_c,
+  round(w.threshold_p90_c::numeric, 1)               as threshold_p90_c,
+  round(least(w.threshold_p90_c, 30.0)::numeric, 1)  as threshold_c,
+  (w.heatwave_id is not null)                        as in_heatwave,
+  round(l.avg_load_mw::numeric, 0)                   as avg_load_mw,
   round(sum(g.avg_mw) filter (where g.fuel = 'solar')::numeric, 0)   as solar_mw,
   round(sum(g.avg_mw) filter (where g.fuel = 'wind')::numeric, 0)    as wind_mw,
   round(sum(g.avg_mw) filter (where g.fuel = 'hydro')::numeric, 0)   as hydro_mw,
