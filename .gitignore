@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 python/zero_persistence_report.json
 python/mixed_months_rebudget_report.json
+# Raw ERA5 responses cached by weather_heatwave_days.py — ~16 MB of regenerable
+# JSON. The derived heatwave_country_daily.csv is committed instead.
+python/data/weather_cache/
