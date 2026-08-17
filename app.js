@@ -12685,35 +12685,6 @@ function hwRenderResponse(sel) {
         pts.map(p => [p.tmax_bin + '°C', p.demand_index, p.days]));
 }
 
-function hwRenderBalance(sel) {
-    const row = hwData.balance.find(r => r.country_code === sel);
-    const title = document.getElementById('hwBalTitle');
-    if (!row) {
-        if (title) title.textContent = 'What covered the gap';
-        hwDiverging('hwBal', [], {axis: '', empty: `Not enough matched heatwave days for ${hwName(sel)}.`});
-        hwTable('hwBalTbl', ['Fuel', 'Δ MW'], []);
-        return;
-    }
-    if (title) {
-        title.textContent = `What covered the gap — ${hwName(sel)}: demand ${hwSign(row.demand_delta_mw)} MW ` +
-            `(${hwSign(row.demand_change_pct, 1)}%) over ${row.heatwave_days} heatwave days`;
-    }
-    const items = HW_FUEL_ORDER
-        .map(f => ({f, v: Number(row[f + '_delta_mw'])}))
-        .filter(d => Number.isFinite(d.v) && Math.abs(d.v) >= 1);
-    items.push({f: 'net imports*', v: Number(row.implied_net_import_delta_mw) || 0});
-    items.sort((a, b) => a.v - b.v);
-
-    hwDiverging('hwBal', items.map(d => ({
-        label: hwCap(d.f), v: d.v, vlabel: hwSign(d.v),
-        tip: `<b>${hwCap(d.f)}</b><br>${hwSign(d.v)} MW during heatwaves`,
-    })), {axis: 'Change in average output (MW) — * net imports is a residual', rowH: 26, left: 96});
-
-    hwLegend('hwBalLegend', [{c: HW_POS, t: 'More output / imports'}, {c: HW_NEG, t: 'Less output'}]);
-    hwTable('hwBalTbl', ['Fuel', 'Δ MW'],
-        items.map(d => [hwCap(d.f), hwSign(d.v)]).concat([['Demand', hwSign(row.demand_delta_mw)]]));
-}
-
 // ── Heat burden this year (sequential: magnitude, no identity to encode) ───
 function hwRenderBurden() {
     const svg = document.getElementById('hwBurden');
@@ -13176,11 +13147,18 @@ function hwRenderCoverage(sel) {
         title.textContent = `How the gap was covered — ${hwName(sel)}, demand ${hwSign(demand, 1)} GWh/day`;
     }
     if (note) {
+        // Report the gap itself. "accounts for 0%" was the old wording whenever
+        // the gap exceeded 100%, which read as "nothing is explained" when the
+        // real statement is that the components miss the target by more than
+        // the target itself.
+        const sum = parts.reduce((s, p) => s + Number(p.delta_gwh || 0), 0);
         note.textContent = gapPct <= 35
-            ? `The components account for ${100 - gapPct}% of the demand change.`
-            : `Treat with caution: the components account for only ${Math.max(0, 100 - gapPct)}% of the `
-              + `demand change. The difference is pumped-storage consumption (counted as generation but `
-              + `never netted off), transmission losses and patchily reported plant.`;
+            ? `The components sum to ${hwFmt(sum, 1)} GWh/day against a demand change of `
+              + `${hwFmt(demand, 1)} — they account for it to within ${gapPct}%.`
+            : `Treat with caution: the components sum to ${hwFmt(sum, 1)} GWh/day against a demand `
+              + `change of ${hwFmt(demand, 1)}, a discrepancy of ${gapPct}%. The difference is `
+              + `pumped-storage consumption (counted as generation but never netted off), transmission `
+              + `losses, and plant that reports on some days but not others.`;
     }
 
     const COMP_COLOR = Object.assign({}, HW_FUEL_COLOR, {imports: '#1baf7a'});
@@ -13321,7 +13299,6 @@ function hwRenderScoped() {
     const sel = document.getElementById('hwCountry')?.value;
     if (!sel) return;
     hwRenderResponse(sel);
-    hwRenderBalance(sel);
     hwRenderCoverage(sel);
     hwRenderEvent(sel);
 }
