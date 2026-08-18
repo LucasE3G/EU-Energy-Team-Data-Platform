@@ -1581,9 +1581,11 @@
             <div class="hw-intro">
                 <p>
                     A heatwave is three or more consecutive days above the 90th percentile of daily maximum
-                    temperature for that calendar day, measured per country against a 2014&ndash;2025 baseline.
-                    The threshold is deliberately local — 29&nbsp;&deg;C in Poland, 36&nbsp;&deg;C in Spain — because
-                    the energy system responds to the local anomaly, not to an absolute number.
+                    temperature for that calendar day, measured per country against a 2014&ndash;2025 baseline
+                    &mdash; or above 30&nbsp;&deg;C outright, whichever is lower. The percentile keeps the
+                    threshold local (29&nbsp;&deg;C in Poland, 36&nbsp;&deg;C in Spain) because the energy system
+                    responds to the local anomaly; the 30&nbsp;&deg;C floor stops a mild spell in a hot climate
+                    from being called normal. Comparisons run over the warm season, May to September 2026.
                 </p>
                 <span id="hwFreshness" class="hw-fresh"></span>
             </div>
@@ -1596,7 +1598,7 @@
                 <div class="hw-card">
                     <div class="hw-card-head">
                         <h3>Renewable share falls as more of Europe bakes</h3>
-                        <p>Renewable share of EU generation, grouped by how many countries were in a heatwave on the same day. Each point is labelled with the number of days behind it.</p>
+                        <p>Renewable share of EU generation, grouped by how many countries were in a heatwave on the same day. Each point is the mean; the band behind it spans the min&ndash;max across that bucket&rsquo;s days, with both ends printed, and each is labelled with the number of days behind it.</p>
                     </div>
                     <svg id="hwEu" height="300" role="img" aria-label="EU renewable share by number of countries in a heatwave"></svg>
                     <button class="hw-tbl-btn" data-hwt="hwEuTbl">Show data table</button>
@@ -1607,7 +1609,7 @@
                     <div class="hw-card">
                         <div class="hw-card-head">
                             <h3>Which sources hold up under heat</h3>
-                            <p>Average change in output on heatwave days across all countries reporting each fuel. Whiskers show the best and worst national outcome.</p>
+                            <p>Average change in output on heatwave days across all countries reporting each fuel, weighted by fleet size. Whiskers span the best and worst national outcome with the values printed at the ends; an arrow (&raquo;) marks an outcome so extreme it is clamped to the edge, with its true value beside it.</p>
                         </div>
                         <svg id="hwFuels" height="300" role="img" aria-label="Output change by fuel during heatwaves"></svg>
                         <button class="hw-tbl-btn" data-hwt="hwFuelsTbl">Show data table</button>
