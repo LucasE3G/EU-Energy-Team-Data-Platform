@@ -45,6 +45,11 @@ binned as (
     g.fuel, g.mw, e.date
   from eu_temp e
   join gen g on g.date = e.date
+  -- Start at 22 C (first bin 23). Below that the bins hold three to eight days
+  -- each and are cool May weather rather than heat: they widened the axis
+  -- without telling us anything about how the system responds to temperature.
+  -- The floor keeps 85 of the 108 warm-season days, every bin at 9 or more.
+  where e.eu_tmax >= 22.0
 ),
 per_bin as (
   select bin_c, fuel, sum(mw) as fuel_mw, count(distinct date) as days
