@@ -12922,6 +12922,118 @@ function hwRenderEventProfile() {
              ...HW_EP_ORDER.map(k => by[cc][h][k] != null ? hwFmt(by[cc][h][k], 1) : '—')])));
 }
 
+// Two maps: what fell most in each country, and what rose most.
+//
+// Colour carries the FIRST-ranked component and a two-line label names both,
+// because a choropleth can only hold one categorical value per shape and the
+// question asks for two. Ranking is by absolute GWh/day within each country, so
+// it reads as "what moved most here", not "who moved most in Europe".
+async function hwRenderImpactMaps() {
+    const rows = hwData.impact || [];
+    if (!rows.length) return;
+    const geo = await fetchEuropeCountriesGeoJsonOnce().catch(() => null);
+    const feats = Array.isArray(geo?.features) ? geo.features : [];
+
+    const byCc = {};
+    rows.forEach(r => { (byCc[r.country_code] ||= []).push(r); });
+
+    [['down', 'hwMapDown'], ['up', 'hwMapUp']].forEach(([dir, hostId]) => {
+        const host = document.getElementById(hostId);
+        if (!host) return;
+        const W = 1000, H = 620, pad = 8;
+        const bounds = {minLon: -12, maxLon: 32, minLat: 34, maxLat: 62};
+
+        if (!feats.length) {
+            host.innerHTML = '<p class="hw-foot">Map outlines unavailable — see the data table below.</p>';
+            return;
+        }
+        host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" class="hw-impact-svg"
+            aria-label="Top two components ${dir === 'down' ? 'reduced' : 'increased'} per country"></svg>`;
+        const svg = host.querySelector('svg');
+
+        // Which components actually appear, so the legend lists only those.
+        const used = new Set();
+        const pick = cc => {
+            const list = (byCc[cc] || []).slice()
+                .sort((a, b) => dir === 'down'
+                    ? Number(a.delta_gwh) - Number(b.delta_gwh)
+                    : Number(b.delta_gwh) - Number(a.delta_gwh))
+                // Only genuine movement in the asked-for direction.
+                .filter(r => dir === 'down' ? Number(r.delta_gwh) < -0.05 : Number(r.delta_gwh) > 0.05);
+            return list.slice(0, 2);
+        };
+
+        feats.forEach(f => {
+            const iso2 = String(f?.properties?.ISO2 || '').toUpperCase();
+            if (!iso2) return;
+            const cc = iso2GeoToDataKey(iso2);
+            const top = pick(cc);
+            const geom = f.geometry;
+            if (!geom) return;
+            const paths = [];
+            if (geom.type === 'Polygon') paths.push(polygonToPath(geom.coordinates[0], W, H, bounds, pad));
+            else if (geom.type === 'MultiPolygon') {
+                geom.coordinates.forEach(p => { if (p?.[0]) paths.push(polygonToPath(p[0], W, H, bounds, pad)); });
+            } else return;
+
+            const first = top[0];
+            if (first) used.add(first.component);
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', paths.join(' '));
+            path.setAttribute('fill', first ? (HW_FUEL_COLOR[first.component] || '#8a8f98') : NO_DATA_FILL);
+            path.setAttribute('stroke', '#ffffff');
+            path.setAttribute('stroke-width', '0.8');
+            svg.appendChild(path);
+
+            if (!top.length) return;
+            // Label at the centroid of the country's largest ring.
+            let ring = geom.type === 'Polygon' ? geom.coordinates[0]
+                : geom.coordinates.map(p => p[0]).sort((a, b) => b.length - a.length)[0];
+            if (!ring || !ring.length) return;
+            let sx = 0, sy = 0;
+            ring.forEach(([lon, lat]) => {
+                const [x, y] = projectLonLat(lon, lat, W, H, bounds, pad);
+                sx += x; sy += y;
+            });
+            const cx = sx / ring.length, cy = sy / ring.length;
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            g.setAttribute('class', 'hw-map-label');
+            const mk = (txt, dy, cls) => {
+                const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                t.setAttribute('x', cx); t.setAttribute('y', cy + dy);
+                t.setAttribute('text-anchor', 'middle');
+                t.setAttribute('class', cls);
+                t.textContent = txt;
+                g.appendChild(t);
+            };
+            mk(hwName(cc), -6, 'hw-map-cc');
+            mk(`${hwCap(top[0].component)} ${hwFmt(top[0].delta_gwh, 1)}`, 5, 'hw-map-l1');
+            if (top[1]) mk(`${hwCap(top[1].component)} ${hwFmt(top[1].delta_gwh, 1)}`, 15, 'hw-map-l2');
+            svg.appendChild(g);
+
+            const tip = top.map(r => `${hwCap(r.component)} ${hwSign(r.delta_gwh, 1)} GWh/day`).join('<br>');
+            hwTip(path, `<b>${hwName(cc)}</b><br>${tip}`);
+        });
+
+        hwLegend(dir === 'down' ? 'hwMapDownLegend' : 'hwMapUpLegend',
+            [...used].sort().map(c => ({c: HW_FUEL_COLOR[c] || '#8a8f98', t: hwCap(c)})));
+    });
+
+    const tbl = (dir, id) => hwTable(id,
+        ['Country', 'Largest ' + (dir === 'down' ? 'fall' : 'rise'), 'GWh/day', 'Second', 'GWh/day'],
+        Object.keys(byCc).sort().map(cc => {
+            const list = byCc[cc].slice().sort((a, b) => dir === 'down'
+                ? Number(a.delta_gwh) - Number(b.delta_gwh)
+                : Number(b.delta_gwh) - Number(a.delta_gwh))
+                .filter(r => dir === 'down' ? Number(r.delta_gwh) < -0.05 : Number(r.delta_gwh) > 0.05);
+            return [hwName(cc),
+                list[0] ? hwCap(list[0].component) : '—', list[0] ? hwFmt(list[0].delta_gwh, 1) : '—',
+                list[1] ? hwCap(list[1].component) : '—', list[1] ? hwFmt(list[1].delta_gwh, 1) : '—'];
+        }).filter(r => r[1] !== '—'));
+    tbl('down', 'hwMapDownTbl');
+    tbl('up', 'hwMapUpTbl');
+}
+
 function hwRenderFuels() {
     const src = hwData.fuels.slice().sort((a, b) => b.avg - a.avg);
     const rows = src.map(r => ({
