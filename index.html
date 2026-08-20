@@ -1605,6 +1605,33 @@
                     <div id="hwEuTbl" class="hw-hidden hw-scroll"></div>
                 </div>
 
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>How the EU generation mix shifts with temperature</h3>
+                        <p>
+                            The whole EU mix as a share of generation, read against how hot Europe is.
+                            Each country&rsquo;s temperature is weighted by its own average electricity demand,
+                            so the index follows the load rather than the map &mdash; a plain average of thirty
+                            countries would mix Finland with Greece and describe nowhere. Bands are ordered so
+                            the two largest movers sit against the flat edges, where a changing width is easiest
+                            to judge: gas on the baseline, wind against the ceiling. The figure under each
+                            column is the number of days behind it; bins with fewer than three are not drawn.
+                        </p>
+                        <p style="margin-top:8px">
+                            Across 15&nbsp;&deg;C to 33&nbsp;&deg;C, <strong>solar rises from 16.7% to 21.4%</strong>
+                            and overtakes hydro and then nuclear to become the single largest source. But
+                            <strong>gas gains more</strong> &mdash; 9.3% to 16.1% &mdash; because
+                            <strong>wind nearly halves</strong>, 18.0% to 9.9%: the same stagnant anticyclone
+                            that brings the heat also stops the wind. Nuclear and coal hold their shares
+                            almost exactly.
+                        </p>
+                    </div>
+                    <div id="hwMixTempLegend" class="hw-legend"></div>
+                    <svg id="hwMixTemp" height="400" role="img" aria-label="EU generation mix by temperature"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwMixTempTbl">Show data table</button>
+                    <div id="hwMixTempTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
                 <div class="hw-grid-2">
                     <div class="hw-card">
                         <div class="hw-card-head">

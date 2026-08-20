@@ -12604,6 +12604,82 @@ function hwRenderEu() {
             r.max_renewable_pct, hwFmt(r.mean_eu_load_mw)]));
 }
 
+// EU generation mix as a 100% stacked area across temperature.
+//
+// Band order is chosen for readability, not taste: the two biggest movers sit
+// against the flat edges, where a changing width is easiest to judge. Gas is on
+// the baseline (rising), wind against the 100% ceiling (falling). The four that
+// barely move are buried in the middle where nothing is lost.
+const HW_MIX_ORDER = ['gas', 'coal', 'other', 'biomass', 'nuclear', 'hydro', 'solar', 'wind'];
+
+function hwRenderMixTemp() {
+    const svg = document.getElementById('hwMixTemp');
+    if (!svg) return;
+    hwClear(svg);
+    const rows = hwData.mixTemp || [];
+    if (!rows.length) { svg.setAttribute('height', 60); return; }
+
+    const bins = [...new Set(rows.map(r => Number(r.bin_c)))].sort((a, b) => a - b);
+    const byBin = {};
+    rows.forEach(r => {
+        (byBin[Number(r.bin_c)] ||= {})[r.fuel] = Number(r.share_pct);
+        byBin[Number(r.bin_c)].__days = Number(r.days);
+    });
+
+    const W = svg.clientWidth || 800, H = 400;
+    svg.setAttribute('height', H);
+    const m = {t: 14, r: 96, b: 62, l: 44};
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const X = i => m.l + (bins.length === 1 ? iw / 2 : (i / (bins.length - 1)) * iw);
+    const Y = v => m.t + ih - (v / 100) * ih;
+
+    [0, 25, 50, 75, 100].forEach(v => {
+        hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v),
+            stroke: '#e1e0d9', 'stroke-width': 1});
+        hwEl(svg, 'text', {x: m.l - 8, y: Y(v) + 4, class: 'hw-tick', 'text-anchor': 'end'}, v + '%');
+    });
+
+    // Cumulative bottoms per bin, stacked in the fixed order.
+    const base = bins.map(() => 0);
+    HW_MIX_ORDER.forEach(fuel => {
+        const top = bins.map((b, i) => base[i] + (byBin[b][fuel] || 0));
+        const fwd = bins.map((b, i) => `${X(i)},${Y(top[i])}`);
+        const back = bins.map((b, i) => `${X(i)},${Y(base[i])}`).reverse();
+        hwEl(svg, 'polygon', {points: [...fwd, ...back].join(' '),
+            fill: HW_FUEL_COLOR[fuel] || '#8a8f98', stroke: '#ffffff', 'stroke-width': 1});
+        // Direct label at the right edge for any band thick enough to hold text.
+        const last = top.length - 1;
+        const mid = (top[last] + base[last]) / 2, thick = top[last] - base[last];
+        if (thick >= 5) {
+            hwEl(svg, 'text', {x: m.l + iw + 8, y: Y(mid) + 4, class: 'hw-tick'},
+                `${hwCap(fuel)} ${hwFmt(byBin[bins[last]][fuel], 0)}%`);
+        }
+        bins.forEach((b, i) => { base[i] = top[i]; });
+    });
+
+    bins.forEach((b, i) => {
+        hwEl(svg, 'text', {x: X(i), y: m.t + ih + 20, class: 'hw-lbl', 'text-anchor': 'middle'},
+            b + '°');
+        hwEl(svg, 'text', {x: X(i), y: m.t + ih + 36, class: 'hw-tick', 'text-anchor': 'middle'},
+            byBin[b].__days + 'd');
+        const hit = hwEl(svg, 'rect', {x: X(i) - iw / (bins.length * 2), y: m.t,
+            width: iw / bins.length, height: ih, fill: 'transparent'});
+        const mix = HW_MIX_ORDER.slice().reverse()
+            .map(f => `${hwCap(f)} ${hwFmt(byBin[b][f] || 0, 1)}%`).join('<br>');
+        hwTip(hit, `<b>${b}°C — ${byBin[b].__days} days</b><br>${mix}`);
+    });
+
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 10, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'EU temperature (°C), weighted by each country’s electricity demand');
+
+    hwLegend('hwMixTempLegend', HW_MIX_ORDER.slice().reverse()
+        .map(f => ({c: HW_FUEL_COLOR[f] || '#8a8f98', t: hwCap(f)})));
+    hwTable('hwMixTempTbl',
+        ['EU temp °C', 'Days', ...HW_MIX_ORDER.slice().reverse().map(f => hwCap(f) + ' %')],
+        bins.map(b => [b, byBin[b].__days,
+            ...HW_MIX_ORDER.slice().reverse().map(f => hwFmt(byBin[b][f] || 0, 1))]));
+}
+
 function hwRenderFuels() {
     const src = hwData.fuels.slice().sort((a, b) => b.avg - a.avg);
     const rows = src.map(r => ({
@@ -13407,7 +13483,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         // Ten-day floor: Sweden and Ireland had 3 heatwave days in 2026, Latvia 4,
         // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
@@ -13430,6 +13506,7 @@ async function hwFetchAll() {
         sb.from('v_heatwave_demand_uplift').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_gap_coverage').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_baseline_quality').select('*'),
+        sb.from('v_eu_mix_by_temp').select('*').order('bin_c', {ascending: true}),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
@@ -13483,6 +13560,7 @@ async function hwFetchAll() {
         coverage: coverage.data || [],
         // Keyed by country so any chart can qualify its own figure.
         quality: Object.fromEntries((quality.data || []).map(r => [r.country_code, r])),
+        mixTemp: mixTemp.data || [],
         events: events.data || [],
         eventSeries: eventSeries || [],
     };
@@ -13516,6 +13594,7 @@ function hwRenderAll() {
     if (!hwData) return;
     hwRenderKpis();
     hwRenderEu();
+    hwRenderMixTemp();
     hwRenderFuels();
     hwRenderRenewable();
     hwRenderPrice();
