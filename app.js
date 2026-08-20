@@ -12823,19 +12823,25 @@ function hwRenderEventProfile() {
         const panel = document.createElement('div');
         panel.className = 'hw-ep-panel';
         const h3 = document.createElement('h4');
-        h3.textContent = hwName(cc);
+        const peak = Math.max(...Object.values(by[cc]).map(o => o.demand || 0));
+        h3.textContent = `${hwName(cc)} — peak ${hwFmt(peak, 1)} GWh`;
         panel.appendChild(h3);
+        // Fixed viewBox instead of measuring the panel: clientWidth is read
+        // before CSS grid has resolved, so the first panels drew far wider than
+        // their cell and bled across their neighbours. In a viewBox the
+        // coordinates are our own and the browser scales them to fit.
+        const W = 360, H = 230;
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('role', 'img');
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         svg.setAttribute('aria-label', `${hwName(cc)} hourly demand and generation`);
         panel.appendChild(svg);
         host.appendChild(panel);
 
         const hours = [...Array(24).keys()].filter(h => by[cc][h]);
-        const W = panel.clientWidth || 360, H = 250;
-        svg.setAttribute('height', H);
-        const m = {t: 10, r: 12, b: 30, l: 46};
-        const iw = Math.max(60, W - m.l - m.r), ih = H - m.t - m.b;
+        const m = {t: 10, r: 10, b: 24, l: 40};
+        const iw = W - m.l - m.r, ih = H - m.t - m.b;
 
         // Domain must hold the positive stack, the negative stack and demand.
         let hi = 0, lo = 0;
@@ -12854,13 +12860,17 @@ function hwRenderEventProfile() {
         const X = h => m.l + (h / 23) * iw;
         const Y = v => m.t + ih - ((v - lo) / ((hi - lo) || 1)) * ih;
 
-        const step = Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1)))) *
-            ((hi - lo) / Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1)))) > 5 ? 2 : 1);
+        // About four gridlines on a 1/2/5 scale, always including zero.
+        const raw = (hi - lo) / 4;
+        const mag = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-6))));
+        const norm = raw / mag;
+        const step = (norm > 5 ? 10 : norm > 2 ? 5 : norm > 1 ? 2 : 1) * mag;
         for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+            const zero = Math.abs(v) < step / 1000;
             hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v),
-                stroke: Math.abs(v) < 1e-9 ? '#b9b8ae' : '#eceae2', 'stroke-width': 1});
-            hwEl(svg, 'text', {x: m.l - 6, y: Y(v) + 4, class: 'hw-tick', 'text-anchor': 'end'},
-                hwFmt(v, 0));
+                stroke: zero ? '#b9b8ae' : '#eceae2', 'stroke-width': 1});
+            hwEl(svg, 'text', {x: m.l - 5, y: Y(v) + 3.5, class: 'hw-tick', 'text-anchor': 'end'},
+                zero ? '0' : hwFmt(v, 0));
         }
 
         // Positive bands stack up from zero, negative bands down.
@@ -12886,12 +12896,11 @@ function hwRenderEventProfile() {
             'stroke-linejoin': 'round',
             points: hours.map(h => `${X(h)},${Y(by[cc][h].demand || 0)}`).join(' ')});
 
+        // Hour labels only; the axis is named once on the card, not five times.
         [0, 6, 12, 18].forEach(h => {
-            hwEl(svg, 'text', {x: X(h), y: H - 14, class: 'hw-tick', 'text-anchor': 'middle'},
-                String(h).padStart(2, '0'));
+            hwEl(svg, 'text', {x: X(h), y: H - 8, class: 'hw-tick', 'text-anchor': 'middle'},
+                String(h).padStart(2, '0') + 'h');
         });
-        hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 2, class: 'hw-tick', 'text-anchor': 'middle'},
-            'hour (local)');
 
         hours.forEach(h => {
             const d = by[cc][h];

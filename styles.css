@@ -2534,12 +2534,19 @@ body.sidebar-collapsed #sidebarReveal {
 
 /* Full-width panel: the old version was a 90ch paragraph adrift in a wide
    column, which read as a stray note rather than part of the page. */
-/* Small multiples: one panel per country, wrapping to the available width. */
+/* Small multiples: one panel per country, wrapping to the available width.
+   minmax(0, 1fr) rather than minmax(300px, 1fr): a grid track's default
+   min-width is auto, which lets an oversized child push the track wider than
+   its share and shove the neighbouring panels off their columns. */
 .hw-ep-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
     gap: 18px 20px;
     margin-top: 6px;
+}
+.hw-ep-panel {
+    min-width: 0;
+    overflow: hidden;
 }
 .hw-ep-panel h4 {
     margin: 0 0 2px;
@@ -2547,7 +2554,12 @@ body.sidebar-collapsed #sidebarReveal {
     font-weight: 600;
     color: var(--text-primary);
 }
-.hw-ep-panel svg { width: 100%; display: block; }
+.hw-ep-panel svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    max-width: 100%;
+}
 
 /* Footnote under a chart: qualifies specific marks without competing with them. */
 .hw-foot {
