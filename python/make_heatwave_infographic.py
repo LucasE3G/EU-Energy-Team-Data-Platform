@@ -163,13 +163,10 @@ def build(data: dict):
 
     # Each line is kept under ~155 characters so none runs past the right edge.
     foot = [
-        (0.150, f"Heatwave days: 3 or more consecutive days above the local 90th-percentile daily maximum (2014{NDASH}2025 baseline), or above 30 {DEG}C."),
-        # The per-country day counts moved here off the panel headings, so the
-        # uneven sample is still disclosed without cluttering the charts.
-        (0.128, f"Days in this window: Italy 16, Greece 16, Hungary 14, Romania 13, France 8."),
-        (0.102, f"Storage is discharge only (ENTSO-E publishes pumping separately), so the band never dips below zero; Hungary and Romania report no pumped storage."),
-        (0.080, f"Demand and generation do not close exactly: distributed solar counts as generation but never crosses the load meter; Greece also trades outside ENTSO-E."),
-        (0.046, f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows) {MIDDOT} ERA5 via Open-Meteo, population-weighted (temperature)"),
+        (0.144, f"Heatwave days: 3 or more consecutive days above the local 90th-percentile daily maximum (2014{NDASH}2025 baseline), or above 30 {DEG}C, using each country{RSQUO}s own days."),
+        (0.118, f"Storage is discharge only (ENTSO-E publishes pumping separately), so the band never dips below zero; Hungary and Romania report no pumped storage."),
+        (0.096, f"Demand and generation do not close exactly: distributed solar counts as generation but never crosses the load meter; Greece also trades outside ENTSO-E."),
+        (0.058, f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows) {MIDDOT} ERA5 via Open-Meteo, population-weighted (temperature)"),
     ]
     for y, txt in foot:
         fig.text(0.055, y, txt, fontsize=7.7, color=MUTED, va="top")
