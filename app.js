@@ -12782,6 +12782,137 @@ function hwRenderSolarPrice() {
                 ? [by[cc][h].price_eur, by[cc][h].solar_share_pct] : ['—', '—'])]));
 }
 
+// Average hourly demand and generation by source during the 28 Jul - 12 Aug
+// 2026 heatwave, one panel per country. Generation stacks above zero, net
+// exports below it, demand rides on top as a line.
+const HW_EP_ORDER = ['nuclear', 'fossil', 'other_renewables', 'solar', 'storage', 'net_import'];
+const HW_EP_COLOR = {
+    solar: '#22c55e', storage: '#f5c542', nuclear: '#6b74a8',
+    other_renewables: '#a5e8e0', fossil: '#c4c4c4', net_import: '#7cc3ea',
+};
+const HW_EP_LABEL = {
+    solar: 'Solar', storage: 'Storage', nuclear: 'Nuclear',
+    other_renewables: 'Other renewables', fossil: 'Fossil', net_import: 'Net import',
+};
+const HW_EP_DEMAND = '#1e3a6d';
+
+function hwRenderEventProfile() {
+    const host = document.getElementById('hwEventProfile');
+    if (!host) return;
+    host.innerHTML = '';
+    const rows = hwData.eventProfile || [];
+    if (!rows.length) return;
+
+    const by = {};
+    rows.forEach(r => {
+        const cc = r.country_code, h = Number(r.hour);
+        ((by[cc] ||= {})[h] ||= {})[r.category] = Number(r.gwh);
+    });
+    // Biggest system first so the eye starts where the megawatts are.
+    const order = Object.keys(by).sort((a, b) => {
+        const pk = cc => Math.max(...Object.values(by[cc]).map(o => o.demand || 0));
+        return pk(b) - pk(a);
+    });
+
+    hwLegend('hwEventProfileLegend', [
+        {c: HW_EP_DEMAND, t: 'Demand'},
+        ...HW_EP_ORDER.slice().reverse().map(k => ({c: HW_EP_COLOR[k], t: HW_EP_LABEL[k]})),
+    ]);
+
+    order.forEach(cc => {
+        const panel = document.createElement('div');
+        panel.className = 'hw-ep-panel';
+        const h3 = document.createElement('h4');
+        h3.textContent = hwName(cc);
+        panel.appendChild(h3);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', `${hwName(cc)} hourly demand and generation`);
+        panel.appendChild(svg);
+        host.appendChild(panel);
+
+        const hours = [...Array(24).keys()].filter(h => by[cc][h]);
+        const W = panel.clientWidth || 360, H = 250;
+        svg.setAttribute('height', H);
+        const m = {t: 10, r: 12, b: 30, l: 46};
+        const iw = Math.max(60, W - m.l - m.r), ih = H - m.t - m.b;
+
+        // Domain must hold the positive stack, the negative stack and demand.
+        let hi = 0, lo = 0;
+        hours.forEach(h => {
+            const d = by[cc][h];
+            let p = 0, n = 0;
+            HW_EP_ORDER.forEach(k => {
+                const v = d[k] || 0;
+                if (v >= 0) p += v; else n += v;
+            });
+            hi = Math.max(hi, p, d.demand || 0);
+            lo = Math.min(lo, n);
+        });
+        const pad = (hi - lo) * 0.06 || 1;
+        hi += pad;
+        const X = h => m.l + (h / 23) * iw;
+        const Y = v => m.t + ih - ((v - lo) / ((hi - lo) || 1)) * ih;
+
+        const step = Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1)))) *
+            ((hi - lo) / Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1)))) > 5 ? 2 : 1);
+        for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+            hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v),
+                stroke: Math.abs(v) < 1e-9 ? '#b9b8ae' : '#eceae2', 'stroke-width': 1});
+            hwEl(svg, 'text', {x: m.l - 6, y: Y(v) + 4, class: 'hw-tick', 'text-anchor': 'end'},
+                hwFmt(v, 0));
+        }
+
+        // Positive bands stack up from zero, negative bands down.
+        const accP = {}, accN = {};
+        hours.forEach(h => { accP[h] = 0; accN[h] = 0; });
+        HW_EP_ORDER.forEach(k => {
+            const present = hours.some(h => Math.abs(by[cc][h][k] || 0) > 1e-9);
+            if (!present) return;
+            const pts = [], back = [];
+            hours.forEach(h => {
+                const v = by[cc][h][k] || 0;
+                const from = v >= 0 ? accP[h] : accN[h];
+                const to = from + v;
+                pts.push(`${X(h)},${Y(to)}`);
+                back.push(`${X(h)},${Y(from)}`);
+                if (v >= 0) accP[h] = to; else accN[h] = to;
+            });
+            hwEl(svg, 'polygon', {points: [...pts, ...back.reverse()].join(' '),
+                fill: HW_EP_COLOR[k], stroke: 'none'});
+        });
+
+        hwEl(svg, 'polyline', {fill: 'none', stroke: HW_EP_DEMAND, 'stroke-width': 2.5,
+            'stroke-linejoin': 'round',
+            points: hours.map(h => `${X(h)},${Y(by[cc][h].demand || 0)}`).join(' ')});
+
+        [0, 6, 12, 18].forEach(h => {
+            hwEl(svg, 'text', {x: X(h), y: H - 14, class: 'hw-tick', 'text-anchor': 'middle'},
+                String(h).padStart(2, '0'));
+        });
+        hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 2, class: 'hw-tick', 'text-anchor': 'middle'},
+            'hour (local)');
+
+        hours.forEach(h => {
+            const d = by[cc][h];
+            const hit = hwEl(svg, 'rect', {x: X(h) - iw / 46, y: m.t, width: iw / 23,
+                height: ih, fill: 'transparent'});
+            const lines = HW_EP_ORDER.slice().reverse()
+                .filter(k => Math.abs(d[k] || 0) > 1e-9)
+                .map(k => `${HW_EP_LABEL[k]} ${hwFmt(d[k], 1)}`).join('<br>');
+            hwTip(hit, `<b>${hwName(cc)} · ${String(h).padStart(2, '0')}:00</b><br>
+                Demand ${hwFmt(d.demand, 1)} GWh<br>${lines}`);
+        });
+    });
+
+    hwTable('hwEventProfileTbl',
+        ['Country', 'Hour', 'Demand', ...HW_EP_ORDER.map(k => HW_EP_LABEL[k])],
+        order.flatMap(cc => [...Array(24).keys()].filter(h => by[cc][h]).map(h =>
+            [hwName(cc), String(h).padStart(2, '0') + ':00',
+             hwFmt(by[cc][h].demand, 1),
+             ...HW_EP_ORDER.map(k => by[cc][h][k] != null ? hwFmt(by[cc][h][k], 1) : '—')])));
+}
+
 function hwRenderFuels() {
     const src = hwData.fuels.slice().sort((a, b) => b.avg - a.avg);
     const rows = src.map(r => ({
@@ -13585,7 +13716,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, solarPrice, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, solarPrice, eventProfile, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         // Ten-day floor: Sweden and Ireland had 3 heatwave days in 2026, Latvia 4,
         // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
@@ -13611,6 +13742,7 @@ async function hwFetchAll() {
         sb.from('v_eu_mix_by_temp').select('*').order('bin_c', {ascending: true}),
         sb.from('v_solar_price_intraday').select('*').eq('scope', 'heatwave')
             .order('hour', {ascending: true}),
+        sb.from('v_hw_event_profile').select('*').order('hour', {ascending: true}),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
@@ -13666,6 +13798,7 @@ async function hwFetchAll() {
         quality: Object.fromEntries((quality.data || []).map(r => [r.country_code, r])),
         mixTemp: mixTemp.data || [],
         solarPrice: solarPrice.data || [],
+        eventProfile: eventProfile.data || [],
         events: events.data || [],
         eventSeries: eventSeries || [],
     };
@@ -13701,6 +13834,7 @@ function hwRenderAll() {
     hwRenderEu();
     hwRenderMixTemp();
     hwRenderSolarPrice();
+    hwRenderEventProfile();
     hwRenderFuels();
     hwRenderRenewable();
     hwRenderPrice();

@@ -1807,6 +1807,34 @@
             </div>
 
             <div class="section">
+                <h2 class="section-title">The late-July heatwave, 28 July &ndash; 12 August 2026</h2>
+
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>Average hourly demand and generation by source</h3>
+                        <p>
+                            One panel per country, averaged over that country&rsquo;s heatwave days inside
+                            28&nbsp;July&ndash;12&nbsp;August 2026: Greece and Italy 16 days of 16, Hungary 14,
+                            Romania 13, France 8. Generation stacks above the zero line, net <em>exports</em>
+                            fall below it, and demand rides on top as the dark line. Hours are local, so
+                            Romania and Greece (EEST) are not shifted against the others (CEST) &mdash; midday
+                            means midday in every panel.
+                        </p>
+                        <p style="margin-top:8px">
+                            Two honest limits. <strong>Storage is discharge only</strong>: ENTSO-E publishes
+                            pumping as a separate consumption series we do not ingest, so unlike the Ember
+                            version this band never dips below zero, and Hungary and Romania report no pumped
+                            storage at all. And demand and generation do not close exactly &mdash; the residual
+                            is pumping that is never netted off, distributed generation outside the
+                            transmission data, and losses.
+                        </p>
+                    </div>
+                    <div id="hwEventProfileLegend" class="hw-legend"></div>
+                    <div id="hwEventProfile" class="hw-ep-grid"></div>
+                    <button class="hw-tbl-btn" data-hwt="hwEventProfileTbl">Show data table</button>
+                    <div id="hwEventProfileTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
                 <h2 class="section-title">Country detail</h2>
                 <div class="hw-filters">
                     <label for="hwCountry">Country</label>

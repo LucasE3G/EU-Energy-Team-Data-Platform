@@ -2534,6 +2534,21 @@ body.sidebar-collapsed #sidebarReveal {
 
 /* Full-width panel: the old version was a 90ch paragraph adrift in a wide
    column, which read as a stray note rather than part of the page. */
+/* Small multiples: one panel per country, wrapping to the available width. */
+.hw-ep-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px 20px;
+    margin-top: 6px;
+}
+.hw-ep-panel h4 {
+    margin: 0 0 2px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.hw-ep-panel svg { width: 100%; display: block; }
+
 /* Footnote under a chart: qualifies specific marks without competing with them. */
 .hw-foot {
     margin: 10px 0 0;
