@@ -12924,10 +12924,36 @@ function hwRenderEventProfile() {
 
 // Two maps: what fell most in each country, and what rose most.
 //
-// Colour carries the FIRST-ranked component and a two-line label names both,
-// because a choropleth can only hold one categorical value per shape and the
-// question asks for two. Ranking is by absolute GWh/day within each country, so
-// it reads as "what moved most here", not "who moved most in Europe".
+// Values are POWER, not percentages. A percentage is unusable here because the
+// imports component crosses zero: Bulgaria's net imports fall 4.9 GWh/day on a
+// negative base, which arithmetic reports as +36%. Gigawatts and megawatts are
+// unambiguous for every component and are the unit the subject is read in.
+//
+// Country fill is a light tint of the first-ranked component, so the map reads
+// as a soft categorical field rather than a saturated quilt; the numbers live
+// in a badge with its own ground so they stay legible over any fill.
+
+// Adaptive: 4,073 MW reads better as 4.1 GW, 155 MW as itself.
+function hwPower(mw) {
+    const v = Math.abs(Number(mw) || 0);
+    return v >= 1000 ? (v / 1000).toFixed(1) + ' GW' : Math.round(v) + ' MW';
+}
+
+// Centroid nudges, in projected units, for countries whose badge would sit on a
+// neighbour's. Small, dense western Europe needs them; the rest do not.
+// Desaturated companions to HW_FUEL_COLOR, for the map fill.
+const HW_FUEL_TINT = {
+    gas: '#f6d9cc', coal: '#ded9d3', other: '#e8d9ea', biomass: '#d5e8d5',
+    nuclear: '#dcdcef', hydro: '#d3e6e4', solar: '#f7ecc9', wind: '#d5e2f5',
+    imports: '#d2ece0',
+};
+
+const HW_MAP_NUDGE = {
+    BE: [-16, -6], NL: [-4, -16], CH: [-10, 8], AT: [10, 6], SI: [2, 12],
+    HR: [10, 10], CZ: [4, -6], SK: [12, 2], HU: [6, 6], PT: [-14, 0],
+    DK: [-2, -10], LU: [-18, 4],
+};
+
 async function hwRenderImpactMaps() {
     const rows = hwData.impact || [];
     if (!rows.length) return;
@@ -12980,13 +13006,15 @@ async function hwRenderImpactMaps() {
             if (first) used.add(first.component);
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             path.setAttribute('d', paths.join(' '));
-            path.setAttribute('fill', first ? (HW_FUEL_COLOR[first.component] || '#8a8f98') : NO_DATA_FILL);
+            // A light tint, not the full hue: the badge sits on top and needs a
+            // quiet ground, and twenty saturated fills read as a quilt.
+            path.setAttribute('fill', first ? (HW_FUEL_TINT[first.component] || '#e4e6ea') : NO_DATA_FILL);
             path.setAttribute('stroke', '#ffffff');
-            path.setAttribute('stroke-width', '0.8');
+            path.setAttribute('stroke-width', '0.9');
             svg.appendChild(path);
 
             if (!top.length) return;
-            // Label at the centroid of the country's largest ring.
+            // Badge at the centroid of the country's largest ring.
             let ring = geom.type === 'Polygon' ? geom.coordinates[0]
                 : geom.coordinates.map(p => p[0]).sort((a, b) => b.length - a.length)[0];
             if (!ring || !ring.length) return;
@@ -12995,23 +13023,49 @@ async function hwRenderImpactMaps() {
                 const [x, y] = projectLonLat(lon, lat, W, H, bounds, pad);
                 sx += x; sy += y;
             });
-            const cx = sx / ring.length, cy = sy / ring.length;
+            const nudge = HW_MAP_NUDGE[cc] || [0, 0];
+            const cx = sx / ring.length + nudge[0], cy = sy / ring.length + nudge[1];
+
+            const arrow = dir === 'down' ? '▼' : '▲';
+            const lines = top.map(r => ({
+                fuel: r.component === 'imports' ? 'Trade' : hwCap(r.component),
+                val: hwPower(r.delta_mw != null ? r.delta_mw : Number(r.delta_gwh) * 1000 / 24),
+                col: HW_FUEL_COLOR[r.component] || '#8a8f98',
+            }));
+            // Estimate the badge box from the longest row; SVG cannot measure
+            // text before it is laid out.
+            const widest = Math.max(hwName(cc).length,
+                ...lines.map(l => l.fuel.length + l.val.length + 3));
+            const bw = Math.max(52, widest * 4.9 + 16);
+            const bh = 15 + lines.length * 11;
+
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            g.setAttribute('class', 'hw-map-label');
-            const mk = (txt, dy, cls) => {
+            g.setAttribute('class', 'hw-map-badge');
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', cx - bw / 2); rect.setAttribute('y', cy - bh / 2);
+            rect.setAttribute('width', bw); rect.setAttribute('height', bh);
+            rect.setAttribute('rx', 4);
+            g.appendChild(rect);
+
+            const mk = (txt, x, y, cls, fill) => {
                 const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                t.setAttribute('x', cx); t.setAttribute('y', cy + dy);
-                t.setAttribute('text-anchor', 'middle');
+                t.setAttribute('x', x); t.setAttribute('y', y);
                 t.setAttribute('class', cls);
+                if (fill) t.setAttribute('fill', fill);
                 t.textContent = txt;
                 g.appendChild(t);
             };
-            mk(hwName(cc), -6, 'hw-map-cc');
-            mk(`${hwCap(top[0].component)} ${hwFmt(top[0].delta_gwh, 1)}`, 5, 'hw-map-l1');
-            if (top[1]) mk(`${hwCap(top[1].component)} ${hwFmt(top[1].delta_gwh, 1)}`, 15, 'hw-map-l2');
+            const left = cx - bw / 2 + 7;
+            mk(hwName(cc), left, cy - bh / 2 + 11, 'hw-map-cc');
+            lines.forEach((l, i) => {
+                const y = cy - bh / 2 + 22 + i * 11;
+                mk(arrow, left, y, 'hw-map-arrow', l.col);
+                mk(`${l.fuel} ${l.val}`, left + 9, y, i === 0 ? 'hw-map-l1' : 'hw-map-l2');
+            });
             svg.appendChild(g);
 
-            const tip = top.map(r => `${hwCap(r.component)} ${hwSign(r.delta_gwh, 1)} GWh/day`).join('<br>');
+            const tip = top.map(r => `${hwCap(r.component === 'imports' ? 'net trade' : r.component)} `
+                + `${hwSign(r.delta_gwh, 1)} GWh/day (${hwPower(r.delta_mw)})`).join('<br>');
             hwTip(path, `<b>${hwName(cc)}</b><br>${tip}`);
         });
 
@@ -13019,16 +13073,18 @@ async function hwRenderImpactMaps() {
             [...used].sort().map(c => ({c: HW_FUEL_COLOR[c] || '#8a8f98', t: hwCap(c)})));
     });
 
+    const label = c => (c === 'imports' ? 'Net trade' : hwCap(c));
     const tbl = (dir, id) => hwTable(id,
-        ['Country', 'Largest ' + (dir === 'down' ? 'fall' : 'rise'), 'GWh/day', 'Second', 'GWh/day'],
+        ['Country', 'Largest ' + (dir === 'down' ? 'fall' : 'rise'), 'Power', 'GWh/day',
+         'Second', 'Power', 'GWh/day'],
         Object.keys(byCc).sort().map(cc => {
             const list = byCc[cc].slice().sort((a, b) => dir === 'down'
                 ? Number(a.delta_gwh) - Number(b.delta_gwh)
                 : Number(b.delta_gwh) - Number(a.delta_gwh))
                 .filter(r => dir === 'down' ? Number(r.delta_gwh) < -0.05 : Number(r.delta_gwh) > 0.05);
-            return [hwName(cc),
-                list[0] ? hwCap(list[0].component) : '—', list[0] ? hwFmt(list[0].delta_gwh, 1) : '—',
-                list[1] ? hwCap(list[1].component) : '—', list[1] ? hwFmt(list[1].delta_gwh, 1) : '—'];
+            const cell = r => r ? [label(r.component), hwPower(r.delta_mw), hwFmt(r.delta_gwh, 1)]
+                               : ['—', '—', '—'];
+            return [hwName(cc), ...cell(list[0]), ...cell(list[1])];
         }).filter(r => r[1] !== '—'));
     tbl('down', 'hwMapDownTbl');
     tbl('up', 'hwMapUpTbl');
@@ -13864,7 +13920,8 @@ async function hwFetchAll() {
         sb.from('v_solar_price_intraday').select('*').eq('scope', 'heatwave')
             .order('hour', {ascending: true}),
         sb.from('v_hw_event_profile').select('*').order('hour', {ascending: true}),
-        sb.from('mv_heatwave_component_delta').select('country_code, component, delta_gwh')
+        sb.from('mv_heatwave_component_delta')
+            .select('country_code, component, delta_gwh, delta_mw')
             .gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')

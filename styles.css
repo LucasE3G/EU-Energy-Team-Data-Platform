@@ -2534,26 +2534,29 @@ body.sidebar-collapsed #sidebarReveal {
 
 /* Full-width panel: the old version was a 90ch paragraph adrift in a wide
    column, which read as a stray note rather than part of the page. */
-/* Impact maps: colour is the top mover, the label names both. */
+/* Impact maps: the country is tinted by its top mover; the numbers sit in a
+   badge with its own ground so they stay legible whatever is underneath. */
 .hw-impact-map { margin-top: 6px; }
 .hw-impact-svg { width: 100%; height: auto; display: block; }
+.hw-impact-svg .hw-map-badge rect {
+    fill: rgba(255, 255, 255, 0.93);
+    stroke: rgba(20, 32, 58, 0.14);
+    stroke-width: 0.7px;
+}
 .hw-impact-svg .hw-map-cc {
-    font-size: 9.5px;
+    font-size: 8.6px;
     font-weight: 700;
     fill: #16233d;
-    paint-order: stroke;
-    stroke: rgba(255, 255, 255, 0.85);
-    stroke-width: 2.4px;
+    letter-spacing: 0.02em;
 }
+.hw-impact-svg .hw-map-arrow { font-size: 7.6px; }
 .hw-impact-svg .hw-map-l1,
 .hw-impact-svg .hw-map-l2 {
-    font-size: 8.4px;
-    fill: #33405c;
-    paint-order: stroke;
-    stroke: rgba(255, 255, 255, 0.85);
-    stroke-width: 2.2px;
+    font-size: 8.2px;
+    fill: #2b3752;
+    font-variant-numeric: tabular-nums;
 }
-.hw-impact-svg .hw-map-l2 { fill: #5a6478; }
+.hw-impact-svg .hw-map-l2 { fill: #6b7488; }
 
 /* Small multiples: one panel per country, wrapping to the available width.
    minmax(0, 1fr) rather than minmax(300px, 1fr): a grid track's default
