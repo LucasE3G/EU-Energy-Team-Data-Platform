@@ -66,11 +66,18 @@ gen_hourly as (
   select country_code, date, hour, category, avg(mw) as mw
   from gen_per_ts group by 1, 2, 3, 4
 ),
--- Net imports at the same hourly resolution, computed from directed physical
--- flows: what came in minus what went out.
-flow_raw as (
+-- Net imports from directed physical flows: what came in minus what went out.
+--
+-- Borders must be collapsed to the hour SEPARATELY before they are summed.
+-- Reporting resolution varies by border - Italy's Swiss interconnector posts
+-- hourly while its French and Austrian ones post every 15 minutes - so summing
+-- at the raw timestamp drops any border with no row at that instant. That cost
+-- Italy 2.45 GW of Swiss imports on three of every four timestamps and opened a
+-- false gap between generation and demand.
+flow_border_ts as (
   select t.country_code,
-         (f.ts at time zone t.zone)::date            as date,
+         case when f.from_zone = t.country_code then f.to_zone else f.from_zone end as neighbour,
+         (f.ts at time zone t.zone)::date                 as date,
          extract(hour from f.ts at time zone t.zone)::int as hour,
          f.ts,
          sum(case when f.to_zone   = t.country_code then f.mw else 0 end)
@@ -79,11 +86,15 @@ flow_raw as (
   join tz t on t.country_code in (f.from_zone, f.to_zone)
   join params p on true
   where f.ts >= p.d0 and f.ts < p.d1 + 1 and f.mw is not null
-  group by 1, 2, 3, 4
+  group by 1, 2, 3, 4, 5
+),
+flow_border_hour as (
+  select country_code, neighbour, date, hour, avg(net_mw) as net_mw
+  from flow_border_ts group by 1, 2, 3, 4
 ),
 flow_hourly as (
-  select country_code, date, hour, 'net_import' as category, avg(net_mw) as mw
-  from flow_raw group by 1, 2, 3
+  select country_code, date, hour, 'net_import' as category, sum(net_mw) as mw
+  from flow_border_hour group by 1, 2, 3
 ),
 load_hourly as (
   select l.zone_id as country_code,

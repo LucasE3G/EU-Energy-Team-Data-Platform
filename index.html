@@ -1823,12 +1823,21 @@
                             Romania near 7; the peak is printed beside each country name.
                         </p>
                         <p style="margin-top:8px">
-                            Two honest limits. <strong>Storage is discharge only</strong>: ENTSO-E publishes
-                            pumping as a separate consumption series we do not ingest, so unlike the Ember
-                            version this band never dips below zero, and Hungary and Romania report no pumped
-                            storage at all. And demand and generation do not close exactly &mdash; the residual
-                            is pumping that is never netted off, distributed generation outside the
-                            transmission data, and losses.
+                            <strong>Storage is discharge only.</strong> ENTSO-E publishes pumping as a separate
+                            consumption series we do not ingest, so unlike the Ember version this band never
+                            dips below zero, and Hungary and Romania report no pumped storage at all.
+                        </p>
+                        <p style="margin-top:8px">
+                            <strong>Generation and demand do not close exactly</strong>, and the reason differs
+                            by panel. Where supply runs <em>above</em> demand &mdash; France around midday
+                            &mdash; it is pumped storage charging: the pumps draw power that never appears as
+                            consumption in this data, so generation looks larger than the load it serves.
+                            Where supply runs <em>below</em> demand &mdash; Italy in the evening &mdash; it is
+                            generation below ENTSO-E&rsquo;s unit-size reporting threshold, plus borders
+                            outside the EU network: Greece exchanges with Albania, North Macedonia and Turkey,
+                            and Italy with Malta and Montenegro, none of which appear in ENTSO-E&rsquo;s
+                            transparency flows. Greece has only two neighbours in the data (Bulgaria and
+                            Italy), which is why its midday surplus is the largest of the five.
                         </p>
                     </div>
                     <div id="hwEventProfileLegend" class="hw-legend"></div>
