@@ -12939,8 +12939,6 @@ function hwPower(mw) {
     return v >= 1000 ? (v / 1000).toFixed(1) + ' GW' : Math.round(v) + ' MW';
 }
 
-// Centroid nudges, in projected units, for countries whose badge would sit on a
-// neighbour's. Small, dense western Europe needs them; the rest do not.
 // Desaturated companions to HW_FUEL_COLOR, for the map fill.
 const HW_FUEL_TINT = {
     gas: '#f6d9cc', coal: '#ded9d3', other: '#e8d9ea', biomass: '#d5e8d5',
@@ -12948,11 +12946,48 @@ const HW_FUEL_TINT = {
     imports: '#d2ece0',
 };
 
-const HW_MAP_NUDGE = {
-    BE: [-16, -6], NL: [-4, -16], CH: [-10, 8], AT: [10, 6], SI: [2, 12],
-    HR: [10, 10], CZ: [4, -6], SK: [12, 2], HU: [6, 6], PT: [-14, 0],
-    DK: [-2, -10], LU: [-18, 4],
-};
+// Push overlapping badges apart instead of nudging them by hand.
+//
+// Hand-tuned offsets could not hold: Belgium ended up behind the Netherlands and
+// Austria's name under Germany's badge. This separates boxes along whichever
+// axis they overlap least, largest country first so the big ones keep their
+// centroid, then clamps everything inside the frame. Anything displaced far
+// enough gets a leader line back to where it belongs.
+function hwLayoutBadges(items, W, H, margin) {
+    const boxes = items.map(it => ({...it, x: it.ax, y: it.ay}));
+    boxes.sort((a, b) => b.weight - a.weight);
+    const overlap = (a, b) => {
+        const dx = (a.w + b.w) / 2 + 3 - Math.abs(a.x - b.x);
+        const dy = (a.h + b.h) / 2 + 3 - Math.abs(a.y - b.y);
+        return dx > 0 && dy > 0 ? {dx, dy} : null;
+    };
+    for (let pass = 0; pass < 90; pass++) {
+        let moved = false;
+        for (let i = 0; i < boxes.length; i++) {
+            for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i], b = boxes[j];
+                const o = overlap(a, b);
+                if (!o) continue;
+                moved = true;
+                // Separate along the cheaper axis; the later box yields more so
+                // the biggest systems stay put.
+                if (o.dx < o.dy) {
+                    const s = (a.x <= b.x ? -1 : 1) * o.dx;
+                    a.x += s * 0.35; b.x -= s * 0.65;
+                } else {
+                    const s = (a.y <= b.y ? -1 : 1) * o.dy;
+                    a.y += s * 0.35; b.y -= s * 0.65;
+                }
+            }
+        }
+        boxes.forEach(v => {
+            v.x = Math.min(W - margin - v.w / 2, Math.max(margin + v.w / 2, v.x));
+            v.y = Math.min(H - margin - v.h / 2, Math.max(margin + v.h / 2, v.y));
+        });
+        if (!moved) break;
+    }
+    return boxes;
+}
 
 async function hwRenderImpactMaps() {
     const rows = hwData.impact || [];
@@ -12966,8 +13001,10 @@ async function hwRenderImpactMaps() {
     [['down', 'hwMapDown'], ['up', 'hwMapUp']].forEach(([dir, hostId]) => {
         const host = document.getElementById(hostId);
         if (!host) return;
-        const W = 1000, H = 620, pad = 8;
-        const bounds = {minLon: -12, maxLon: 32, minLat: 34, maxLat: 62};
+        // Wider than the countries themselves: badges sit around the shapes and
+        // were being clipped at the frame, Portugal and Greece worst.
+        const W = 1060, H = 660, pad = 8;
+        const bounds = {minLon: -16, maxLon: 36, minLat: 33, maxLat: 63};
 
         if (!feats.length) {
             host.innerHTML = '<p class="hw-foot">Map outlines unavailable — see the data table below.</p>';
@@ -12979,6 +13016,7 @@ async function hwRenderImpactMaps() {
 
         // Which components actually appear, so the legend lists only those.
         const used = new Set();
+        const pending = [];
         const pick = cc => {
             const list = (byCc[cc] || []).slice()
                 .sort((a, b) => dir === 'down'
@@ -13014,7 +13052,7 @@ async function hwRenderImpactMaps() {
             svg.appendChild(path);
 
             if (!top.length) return;
-            // Badge at the centroid of the country's largest ring.
+            // Collect the badge; placement happens once all are known.
             let ring = geom.type === 'Polygon' ? geom.coordinates[0]
                 : geom.coordinates.map(p => p[0]).sort((a, b) => b.length - a.length)[0];
             if (!ring || !ring.length) return;
@@ -13023,28 +13061,53 @@ async function hwRenderImpactMaps() {
                 const [x, y] = projectLonLat(lon, lat, W, H, bounds, pad);
                 sx += x; sy += y;
             });
-            const nudge = HW_MAP_NUDGE[cc] || [0, 0];
-            const cx = sx / ring.length + nudge[0], cy = sy / ring.length + nudge[1];
 
-            const arrow = dir === 'down' ? '▼' : '▲';
             const lines = top.map(r => ({
                 fuel: r.component === 'imports' ? 'Trade' : hwCap(r.component),
                 val: hwPower(r.delta_mw != null ? r.delta_mw : Number(r.delta_gwh) * 1000 / 24),
                 col: HW_FUEL_COLOR[r.component] || '#8a8f98',
             }));
-            // Estimate the badge box from the longest row; SVG cannot measure
-            // text before it is laid out.
-            const widest = Math.max(hwName(cc).length,
-                ...lines.map(l => l.fuel.length + l.val.length + 3));
-            const bw = Math.max(52, widest * 4.9 + 16);
-            const bh = 15 + lines.length * 11;
+            // Estimate the box from the longest row; SVG cannot measure text
+            // before it is laid out.
+            const widest = Math.max(hwName(cc).length + 1,
+                ...lines.map(l => l.fuel.length + l.val.length + 4));
+            pending.push({
+                cc, lines,
+                ax: sx / ring.length, ay: sy / ring.length,
+                w: Math.max(56, widest * 5.0 + 16),
+                h: 15 + lines.length * 11.5,
+                weight: Math.abs(Number(top[0].delta_mw) || 0),
+            });
 
+            const tip = top.map(r => `${hwCap(r.component === 'imports' ? 'net trade' : r.component)} `
+                + `${hwSign(r.delta_gwh, 1)} GWh/day (${hwPower(r.delta_mw)})`).join('<br>');
+            hwTip(path, `<b>${hwName(cc)}</b><br>${tip}`);
+        });
+
+        // Second pass: separate the badges, then draw them over the shapes.
+        const arrow = dir === 'down' ? '▼' : '▲';
+        hwLayoutBadges(pending, W, H, 4).forEach(b => {
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('class', 'hw-map-badge');
+            // A leader line only where the badge had to travel far enough that
+            // its country is no longer obvious.
+            const dist = Math.hypot(b.x - b.ax, b.y - b.ay);
+            if (dist > b.w / 2 + 6) {
+                const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                ln.setAttribute('x1', b.ax); ln.setAttribute('y1', b.ay);
+                ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y);
+                ln.setAttribute('class', 'hw-map-leader');
+                g.appendChild(ln);
+                const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                dot.setAttribute('cx', b.ax); dot.setAttribute('cy', b.ay);
+                dot.setAttribute('r', 1.8);
+                dot.setAttribute('class', 'hw-map-anchor');
+                g.appendChild(dot);
+            }
             const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            rect.setAttribute('x', cx - bw / 2); rect.setAttribute('y', cy - bh / 2);
-            rect.setAttribute('width', bw); rect.setAttribute('height', bh);
-            rect.setAttribute('rx', 4);
+            rect.setAttribute('x', b.x - b.w / 2); rect.setAttribute('y', b.y - b.h / 2);
+            rect.setAttribute('width', b.w); rect.setAttribute('height', b.h);
+            rect.setAttribute('rx', 5);
             g.appendChild(rect);
 
             const mk = (txt, x, y, cls, fill) => {
@@ -13055,22 +13118,21 @@ async function hwRenderImpactMaps() {
                 t.textContent = txt;
                 g.appendChild(t);
             };
-            const left = cx - bw / 2 + 7;
-            mk(hwName(cc), left, cy - bh / 2 + 11, 'hw-map-cc');
-            lines.forEach((l, i) => {
-                const y = cy - bh / 2 + 22 + i * 11;
+            const left = b.x - b.w / 2 + 7;
+            mk(hwName(b.cc), left, b.y - b.h / 2 + 11, 'hw-map-cc');
+            b.lines.forEach((l, i) => {
+                const y = b.y - b.h / 2 + 22.5 + i * 11.5;
                 mk(arrow, left, y, 'hw-map-arrow', l.col);
-                mk(`${l.fuel} ${l.val}`, left + 9, y, i === 0 ? 'hw-map-l1' : 'hw-map-l2');
+                mk(`${l.fuel} ${l.val}`, left + 10, y, i === 0 ? 'hw-map-l1' : 'hw-map-l2');
             });
             svg.appendChild(g);
-
-            const tip = top.map(r => `${hwCap(r.component === 'imports' ? 'net trade' : r.component)} `
-                + `${hwSign(r.delta_gwh, 1)} GWh/day (${hwPower(r.delta_mw)})`).join('<br>');
-            hwTip(path, `<b>${hwName(cc)}</b><br>${tip}`);
         });
 
         hwLegend(dir === 'down' ? 'hwMapDownLegend' : 'hwMapUpLegend',
-            [...used].sort().map(c => ({c: HW_FUEL_COLOR[c] || '#8a8f98', t: hwCap(c)})));
+            [...used].sort().map(c => ({
+                c: HW_FUEL_COLOR[c] || '#8a8f98',
+                t: c === 'imports' ? 'Net trade' : hwCap(c),
+            })));
     });
 
     const label = c => (c === 'imports' ? 'Net trade' : hwCap(c));

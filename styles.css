@@ -2539,10 +2539,15 @@ body.sidebar-collapsed #sidebarReveal {
 .hw-impact-map { margin-top: 6px; }
 .hw-impact-svg { width: 100%; height: auto; display: block; }
 .hw-impact-svg .hw-map-badge rect {
-    fill: rgba(255, 255, 255, 0.93);
-    stroke: rgba(20, 32, 58, 0.14);
+    fill: rgba(255, 255, 255, 0.96);
+    stroke: rgba(20, 32, 58, 0.16);
     stroke-width: 0.7px;
 }
+.hw-impact-svg .hw-map-leader {
+    stroke: rgba(20, 32, 58, 0.35);
+    stroke-width: 0.7px;
+}
+.hw-impact-svg .hw-map-anchor { fill: rgba(20, 32, 58, 0.5); }
 .hw-impact-svg .hw-map-cc {
     font-size: 8.6px;
     font-weight: 700;
