@@ -12680,6 +12680,108 @@ function hwRenderMixTemp() {
             ...HW_MIX_ORDER.slice().reverse().map(f => hwFmt(byBin[b][f] || 0, 1))]));
 }
 
+// What solar does to the price, hour by hour.
+//
+// Two panels on one shared hour axis rather than one chart with two y-scales:
+// a dual axis would let the eye read a correlation out of an arbitrary choice
+// of scaling. Stacked, the mirror image is visible without that trick.
+const HW_SP_COUNTRIES = ['DE', 'ES', 'IT'];
+const HW_SP_COLOR = {DE: '#2a78d6', ES: '#e8a33d', IT: '#c2562f'};
+
+function hwRenderSolarPrice() {
+    const svg = document.getElementById('hwSolarPrice');
+    if (!svg) return;
+    hwClear(svg);
+    const all = hwData.solarPrice || [];
+    const rows = all.filter(r => HW_SP_COUNTRIES.includes(r.country_code));
+    if (!rows.length) { svg.setAttribute('height', 60); return; }
+
+    const by = {};
+    rows.forEach(r => { (by[r.country_code] ||= {})[Number(r.hour)] = r; });
+    const hours = [...Array(24).keys()];
+
+    const W = svg.clientWidth || 800, H = 460;
+    svg.setAttribute('height', H);
+    const m = {t: 16, r: 54, b: 44, l: 54};
+    const iw = W - m.l - m.r;
+    const gap = 34;
+    const ph = (H - m.t - m.b - gap) * 0.58;   // price panel
+    const sh = (H - m.t - m.b - gap) * 0.42;   // solar panel
+    const sTop = m.t + ph + gap;
+
+    const prices = rows.map(r => Number(r.price_eur));
+    const pLo = Math.min(0, ...prices), pHi = Math.max(...prices);
+    const X = h => m.l + (h / 23) * iw;
+    const YP = v => m.t + ph - ((v - pLo) / ((pHi - pLo) || 1)) * ph;
+    const YS = v => sTop + sh - (v / 100) * sh;
+
+    // Price panel
+    const pTicks = [];
+    for (let v = Math.ceil(pLo / 50) * 50; v <= pHi; v += 50) pTicks.push(v);
+    pTicks.forEach(v => {
+        hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: YP(v), y2: YP(v),
+            stroke: v === 0 ? '#c3c2b7' : '#eceae2', 'stroke-width': 1});
+        hwEl(svg, 'text', {x: m.l - 8, y: YP(v) + 4, class: 'hw-tick', 'text-anchor': 'end'},
+            '€' + v);
+    });
+    hwEl(svg, 'text', {x: m.l, y: m.t - 4, class: 'hw-lbl'}, 'Day-ahead price (€/MWh)');
+
+    // Solar panel
+    [0, 25, 50, 75].forEach(v => {
+        hwEl(svg, 'line', {x1: m.l, x2: m.l + iw, y1: YS(v), y2: YS(v),
+            stroke: '#eceae2', 'stroke-width': 1});
+        hwEl(svg, 'text', {x: m.l - 8, y: YS(v) + 4, class: 'hw-tick', 'text-anchor': 'end'},
+            v + '%');
+    });
+    hwEl(svg, 'text', {x: m.l, y: sTop - 6, class: 'hw-lbl'}, 'Solar share of generation (%)');
+
+    HW_SP_COUNTRIES.forEach(cc => {
+        const d = by[cc];
+        if (!d) return;
+        const col = HW_SP_COLOR[cc];
+        const pts = hours.filter(h => d[h]);
+        hwEl(svg, 'polyline', {fill: 'none', stroke: col, 'stroke-width': 2,
+            'stroke-linejoin': 'round',
+            points: pts.map(h => `${X(h)},${YP(Number(d[h].price_eur))}`).join(' ')});
+        hwEl(svg, 'polyline', {fill: 'none', stroke: col, 'stroke-width': 2,
+            'stroke-linejoin': 'round',
+            points: pts.map(h => `${X(h)},${YS(Number(d[h].solar_share_pct))}`).join(' ')});
+        // Direct label at the midday extreme, which is the point of the chart.
+        const noon = d[13] || d[12];
+        if (noon) {
+            hwEl(svg, 'text', {x: X(13) + 6, y: YP(Number(noon.price_eur)) + 4,
+                class: 'hw-val', fill: col}, `${hwName(cc)} €${hwFmt(noon.price_eur, 0)}`);
+        }
+    });
+
+    hours.filter(h => h % 3 === 0).forEach(h => {
+        hwEl(svg, 'text', {x: X(h), y: H - 22, class: 'hw-tick', 'text-anchor': 'middle'},
+            String(h).padStart(2, '0') + ':00');
+    });
+    hwEl(svg, 'text', {x: m.l + iw / 2, y: H - 6, class: 'hw-lbl', 'text-anchor': 'middle'},
+        'Hour of day (local, CEST)');
+
+    // One hover column per hour covering both panels.
+    hours.forEach(h => {
+        const hit = hwEl(svg, 'rect', {x: X(h) - iw / 46, y: m.t, width: iw / 23,
+            height: ph + gap + sh, fill: 'transparent'});
+        const lines = HW_SP_COUNTRIES.filter(cc => by[cc] && by[cc][h]).map(cc => {
+            const r = by[cc][h];
+            return `${hwName(cc)}: €${hwFmt(r.price_eur, 0)} · solar ${hwFmt(r.solar_share_pct, 0)}%`;
+        }).join('<br>');
+        hwTip(hit, `<b>${String(h).padStart(2, '0')}:00</b><br>${lines}`);
+    });
+
+    hwLegend('hwSolarPriceLegend',
+        HW_SP_COUNTRIES.map(cc => ({c: HW_SP_COLOR[cc], t: hwName(cc)})));
+    hwTable('hwSolarPriceTbl',
+        ['Hour', ...HW_SP_COUNTRIES.flatMap(cc => [hwName(cc) + ' €/MWh', hwName(cc) + ' solar %'])],
+        hours.filter(h => HW_SP_COUNTRIES.some(cc => by[cc] && by[cc][h])).map(h => [
+            String(h).padStart(2, '0') + ':00',
+            ...HW_SP_COUNTRIES.flatMap(cc => by[cc] && by[cc][h]
+                ? [by[cc][h].price_eur, by[cc][h].solar_share_pct] : ['—', '—'])]));
+}
+
 function hwRenderFuels() {
     const src = hwData.fuels.slice().sort((a, b) => b.avg - a.avg);
     const rows = src.map(r => ({
@@ -13483,7 +13585,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, solarPrice, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         // Ten-day floor: Sweden and Ireland had 3 heatwave days in 2026, Latvia 4,
         // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
@@ -13507,6 +13609,8 @@ async function hwFetchAll() {
         sb.from('v_heatwave_gap_coverage').select('*').gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_baseline_quality').select('*'),
         sb.from('v_eu_mix_by_temp').select('*').order('bin_c', {ascending: true}),
+        sb.from('v_solar_price_intraday').select('*').eq('scope', 'heatwave')
+            .order('hour', {ascending: true}),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
@@ -13561,6 +13665,7 @@ async function hwFetchAll() {
         // Keyed by country so any chart can qualify its own figure.
         quality: Object.fromEntries((quality.data || []).map(r => [r.country_code, r])),
         mixTemp: mixTemp.data || [],
+        solarPrice: solarPrice.data || [],
         events: events.data || [],
         eventSeries: eventSeries || [],
     };
@@ -13595,6 +13700,7 @@ function hwRenderAll() {
     hwRenderKpis();
     hwRenderEu();
     hwRenderMixTemp();
+    hwRenderSolarPrice();
     hwRenderFuels();
     hwRenderRenewable();
     hwRenderPrice();

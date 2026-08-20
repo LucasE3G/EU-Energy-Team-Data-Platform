@@ -1635,6 +1635,42 @@
                     <div id="hwMixTempTbl" class="hw-hidden hw-scroll"></div>
                 </div>
 
+                <div class="hw-card">
+                    <div class="hw-card-head">
+                        <h3>What solar does to the price</h3>
+                        <p>
+                            Day-ahead price and solar share, hour by hour, averaged across each
+                            country&rsquo;s own heatwave days. A daily average hides this completely: solar
+                            displaces the marginal generator for about six hours and then stops, so the
+                            effect only exists at the hourly level. The two panels share one time axis and
+                            are deliberately not overlaid on a second y-scale, which would let the eye read
+                            a correlation out of an arbitrary choice of scaling.
+                        </p>
+                        <p style="margin-top:8px">
+                            The price curve is the mirror image of the solar curve. Germany bottoms at
+                            <strong>&minus;&euro;13 at 13:00</strong>, when solar is 68% of its generation,
+                            then reaches <strong>&euro;225 by 20:00</strong> once solar is gone &mdash; a
+                            &euro;238 swing inside eight hours. Spain runs the same shape.
+                            <strong>Italy does not</strong>: at 51% solar its midday price only falls to
+                            about &euro;104.
+                        </p>
+                        <p style="margin-top:8px">
+                            The lesson is that share alone does not set the price &mdash; what matters is
+                            whether solar displaces the <em>most expensive</em> unit. Italy&rsquo;s residual
+                            demand is met almost entirely by gas, so the price stays pegged to gas even at
+                            half solar; Germany&rsquo;s residual includes wind, coal and imports, so its
+                            price collapses. Checked against the same calendar days for all three countries,
+                            the three price within 20% of each other at 03:00 and 21:00 and differ threefold
+                            to fivefold at 13:00, so this is the solar hours and not a difference in dates
+                            or gas costs.
+                        </p>
+                    </div>
+                    <div id="hwSolarPriceLegend" class="hw-legend"></div>
+                    <svg id="hwSolarPrice" height="460" role="img" aria-label="Day-ahead price and solar share by hour"></svg>
+                    <button class="hw-tbl-btn" data-hwt="hwSolarPriceTbl">Show data table</button>
+                    <div id="hwSolarPriceTbl" class="hw-hidden hw-scroll"></div>
+                </div>
+
                 <div class="hw-grid-2">
                     <div class="hw-card">
                         <div class="hw-card-head">

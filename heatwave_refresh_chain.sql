@@ -28,6 +28,9 @@ begin
   -- 4. The pooled deltas the page reads directly.
   refresh materialized view concurrently public.mv_heatwave_component_delta;
   refresh materialized view concurrently public.mv_heatwave_coverage_delta;
+
+  -- 5. Hourly price-vs-solar, built straight off the raw snapshot tables.
+  refresh materialized view concurrently public.mv_solar_price_intraday;
 end;
 $$;
 
