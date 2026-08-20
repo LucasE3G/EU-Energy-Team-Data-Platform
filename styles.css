@@ -2534,6 +2534,27 @@ body.sidebar-collapsed #sidebarReveal {
 
 /* Full-width panel: the old version was a 90ch paragraph adrift in a wide
    column, which read as a stray note rather than part of the page. */
+/* Impact maps: colour is the top mover, the label names both. */
+.hw-impact-map { margin-top: 6px; }
+.hw-impact-svg { width: 100%; height: auto; display: block; }
+.hw-impact-svg .hw-map-cc {
+    font-size: 9.5px;
+    font-weight: 700;
+    fill: #16233d;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.85);
+    stroke-width: 2.4px;
+}
+.hw-impact-svg .hw-map-l1,
+.hw-impact-svg .hw-map-l2 {
+    font-size: 8.4px;
+    fill: #33405c;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.85);
+    stroke-width: 2.2px;
+}
+.hw-impact-svg .hw-map-l2 { fill: #5a6478; }
+
 /* Small multiples: one panel per country, wrapping to the available width.
    minmax(0, 1fr) rather than minmax(300px, 1fr): a grid track's default
    min-width is auto, which lets an oversized child push the track wider than

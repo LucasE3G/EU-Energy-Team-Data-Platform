@@ -13837,7 +13837,7 @@ async function hwFetchAll() {
     // The two big ones must be paged: PostgREST caps a response at 1000 rows,
     // and these run to ~7k and ~15k. Unpaged they silently truncate, which
     // showed up as a response curve with two countries in it instead of thirty.
-    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, solarPrice, eventProfile, events, eventSeries] = await Promise.all([
+    const [eu, fuels, renewable, price, gas, helpers, weatherRows, loadRows, burden, trade, sources, uplift, coverage, quality, mixTemp, solarPrice, eventProfile, impact, events, eventSeries] = await Promise.all([
         sb.from('v_eu_heatwave_response').select('*'),
         // Ten-day floor: Sweden and Ireland had 3 heatwave days in 2026, Latvia 4,
         // Lithuania 6, Denmark 8. A percentage built on three days is noise, so
@@ -13864,6 +13864,8 @@ async function hwFetchAll() {
         sb.from('v_solar_price_intraday').select('*').eq('scope', 'heatwave')
             .order('hour', {ascending: true}),
         sb.from('v_hw_event_profile').select('*').order('hour', {ascending: true}),
+        sb.from('mv_heatwave_component_delta').select('country_code, component, delta_gwh')
+            .gte('heatwave_days', HW_MIN_DAYS),
         sb.from('v_heatwave_event_top').select('*'),
         gasFetchAllPaged(() => sb.from('v_heatwave_event_series').select('*')
             .order('date', {ascending: true}), 1000, 20000),
@@ -13920,6 +13922,7 @@ async function hwFetchAll() {
         mixTemp: mixTemp.data || [],
         solarPrice: solarPrice.data || [],
         eventProfile: eventProfile.data || [],
+        impact: impact.data || [],
         events: events.data || [],
         eventSeries: eventSeries || [],
     };
@@ -13956,6 +13959,9 @@ function hwRenderAll() {
     hwRenderMixTemp();
     hwRenderSolarPrice();
     hwRenderEventProfile();
+    // Async: it waits on the shared GeoJSON fetch. Failure degrades to the
+    // data tables rather than taking the rest of the page down with it.
+    hwRenderImpactMaps().catch(() => {});
     hwRenderFuels();
     hwRenderRenewable();
     hwRenderPrice();
