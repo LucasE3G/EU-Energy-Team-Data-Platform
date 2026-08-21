@@ -1,0 +1,837 @@
+[
+  {
+    "cc": "CY",
+    "name": "Cyprus",
+    "hw_days": 67,
+    "demand_pct": 53.28,
+    "up": [
+      [
+        "Other",
+        "247 MW",
+        247.0
+      ],
+      [
+        "Solar",
+        "98 MW",
+        98.0
+      ]
+    ],
+    "down": [
+      [
+        "Wind",
+        "4 MW",
+        -4.0
+      ]
+    ]
+  },
+  {
+    "cc": "GR",
+    "name": "Greece",
+    "hw_days": 60,
+    "demand_pct": 31.71,
+    "up": [
+      [
+        "Gas",
+        "708 MW",
+        708.0
+      ],
+      [
+        "Solar",
+        "446 MW",
+        446.0
+      ],
+      [
+        "Wind",
+        "254 MW",
+        254.0
+      ],
+      [
+        "Other",
+        "66 MW",
+        66.0
+      ],
+      [
+        "Hydro",
+        "50 MW",
+        50.0
+      ],
+      [
+        "Net trade",
+        "4 MW",
+        4.0
+      ]
+    ],
+    "down": [
+      [
+        "Coal",
+        "5 MW",
+        -5.0
+      ]
+    ]
+  },
+  {
+    "cc": "IT",
+    "name": "Italy",
+    "hw_days": 77,
+    "demand_pct": 27.11,
+    "up": [
+      [
+        "Gas",
+        "6.24 GW",
+        6235.0
+      ],
+      [
+        "Net trade",
+        "868 MW",
+        868.0
+      ],
+      [
+        "Solar",
+        "808 MW",
+        808.0
+      ],
+      [
+        "Coal",
+        "76 MW",
+        76.0
+      ],
+      [
+        "Biomass",
+        "30 MW",
+        30.0
+      ]
+    ],
+    "down": [
+      [
+        "Wind",
+        "734 MW",
+        -734.0
+      ],
+      [
+        "Hydro",
+        "446 MW",
+        -446.0
+      ],
+      [
+        "Other",
+        "52 MW",
+        -52.0
+      ]
+    ]
+  },
+  {
+    "cc": "HR",
+    "name": "Croatia",
+    "hw_days": 42,
+    "demand_pct": 20.27,
+    "up": [
+      [
+        "Gas",
+        "156 MW",
+        156.0
+      ],
+      [
+        "Coal",
+        "76 MW",
+        76.0
+      ],
+      [
+        "Solar",
+        "20 MW",
+        20.0
+      ],
+      [
+        "Hydro",
+        "14 MW",
+        14.0
+      ],
+      [
+        "Other",
+        "1 MW",
+        1.0
+      ]
+    ],
+    "down": [
+      [
+        "Net trade",
+        "119 MW",
+        -119.0
+      ],
+      [
+        "Wind",
+        "34 MW",
+        -34.0
+      ],
+      [
+        "Biomass",
+        "1 MW",
+        -1.0
+      ]
+    ]
+  },
+  {
+    "cc": "ES",
+    "name": "Spain",
+    "hw_days": 75,
+    "demand_pct": 18.39,
+    "up": [
+      [
+        "Gas",
+        "3.04 GW",
+        3037.0
+      ],
+      [
+        "Solar",
+        "2.32 GW",
+        2318.0
+      ],
+      [
+        "Nuclear",
+        "1.56 GW",
+        1556.0
+      ],
+      [
+        "Biomass",
+        "48 MW",
+        48.0
+      ],
+      [
+        "Other",
+        "5 MW",
+        5.0
+      ]
+    ],
+    "down": [
+      [
+        "Net trade",
+        "928 MW",
+        -928.0
+      ],
+      [
+        "Hydro",
+        "744 MW",
+        -744.0
+      ],
+      [
+        "Wind",
+        "557 MW",
+        -557.0
+      ],
+      [
+        "Coal",
+        "31 MW",
+        -31.0
+      ]
+    ]
+  },
+  {
+    "cc": "HU",
+    "name": "Hungary",
+    "hw_days": 43,
+    "demand_pct": 9.72,
+    "up": [
+      [
+        "Gas",
+        "274 MW",
+        274.0
+      ],
+      [
+        "Solar",
+        "214 MW",
+        214.0
+      ],
+      [
+        "Net trade",
+        "197 MW",
+        197.0
+      ],
+      [
+        "Coal",
+        "34 MW",
+        34.0
+      ],
+      [
+        "Other",
+        "12 MW",
+        12.0
+      ],
+      [
+        "Biomass",
+        "1 MW",
+        1.0
+      ]
+    ],
+    "down": [
+      [
+        "Nuclear",
+        "452 MW",
+        -452.0
+      ],
+      [
+        "Wind",
+        "10 MW",
+        -10.0
+      ],
+      [
+        "Hydro",
+        "3 MW",
+        -3.0
+      ]
+    ]
+  },
+  {
+    "cc": "BG",
+    "name": "Bulgaria",
+    "hw_days": 31,
+    "demand_pct": 9.1,
+    "up": [
+      [
+        "Nuclear",
+        "472 MW",
+        472.0
+      ],
+      [
+        "Coal",
+        "192 MW",
+        192.0
+      ],
+      [
+        "Solar",
+        "182 MW",
+        182.0
+      ]
+    ],
+    "down": [
+      [
+        "Hydro",
+        "234 MW",
+        -234.0
+      ],
+      [
+        "Net trade",
+        "203 MW",
+        -203.0
+      ],
+      [
+        "Gas",
+        "37 MW",
+        -37.0
+      ],
+      [
+        "Wind",
+        "11 MW",
+        -11.0
+      ],
+      [
+        "Biomass",
+        "1 MW",
+        -1.0
+      ]
+    ]
+  },
+  {
+    "cc": "RO",
+    "name": "Romania",
+    "hw_days": 31,
+    "demand_pct": 7.68,
+    "up": [
+      [
+        "Net trade",
+        "243 MW",
+        243.0
+      ],
+      [
+        "Solar",
+        "227 MW",
+        227.0
+      ],
+      [
+        "Gas",
+        "180 MW",
+        180.0
+      ],
+      [
+        "Coal",
+        "71 MW",
+        71.0
+      ],
+      [
+        "Nuclear",
+        "22 MW",
+        22.0
+      ],
+      [
+        "Biomass",
+        "6 MW",
+        6.0
+      ],
+      [
+        "Other",
+        "6 MW",
+        6.0
+      ]
+    ],
+    "down": [
+      [
+        "Hydro",
+        "172 MW",
+        -172.0
+      ],
+      [
+        "Wind",
+        "155 MW",
+        -155.0
+      ]
+    ]
+  },
+  {
+    "cc": "BE",
+    "name": "Belgium",
+    "hw_days": 31,
+    "demand_pct": 6.45,
+    "up": [
+      [
+        "Solar",
+        "694 MW",
+        694.0
+      ],
+      [
+        "Gas",
+        "470 MW",
+        470.0
+      ],
+      [
+        "Other",
+        "19 MW",
+        19.0
+      ],
+      [
+        "Biomass",
+        "2 MW",
+        2.0
+      ]
+    ],
+    "down": [
+      [
+        "Net trade",
+        "386 MW",
+        -386.0
+      ],
+      [
+        "Wind",
+        "348 MW",
+        -348.0
+      ],
+      [
+        "Hydro",
+        "14 MW",
+        -14.0
+      ]
+    ]
+  },
+  {
+    "cc": "PT",
+    "name": "Portugal",
+    "hw_days": 18,
+    "demand_pct": 6.03,
+    "up": [
+      [
+        "Net trade",
+        "228 MW",
+        228.0
+      ],
+      [
+        "Wind",
+        "207 MW",
+        207.0
+      ]
+    ],
+    "down": [
+      [
+        "Hydro",
+        "204 MW",
+        -204.0
+      ],
+      [
+        "Gas",
+        "32 MW",
+        -32.0
+      ],
+      [
+        "Solar",
+        "25 MW",
+        -25.0
+      ],
+      [
+        "Biomass",
+        "7 MW",
+        -7.0
+      ],
+      [
+        "Other",
+        "2 MW",
+        -2.0
+      ]
+    ]
+  },
+  {
+    "cc": "FR",
+    "name": "France",
+    "hw_days": 46,
+    "demand_pct": 5.89,
+    "up": [
+      [
+        "Net trade",
+        "2.82 GW",
+        2821.0
+      ],
+      [
+        "Solar",
+        "1.06 GW",
+        1065.0
+      ],
+      [
+        "Gas",
+        "990 MW",
+        990.0
+      ],
+      [
+        "Other",
+        "59 MW",
+        59.0
+      ]
+    ],
+    "down": [
+      [
+        "Wind",
+        "1.19 GW",
+        -1187.0
+      ],
+      [
+        "Nuclear",
+        "843 MW",
+        -843.0
+      ],
+      [
+        "Hydro",
+        "748 MW",
+        -748.0
+      ],
+      [
+        "Biomass",
+        "7 MW",
+        -7.0
+      ]
+    ]
+  },
+  {
+    "cc": "PL",
+    "name": "Poland",
+    "hw_days": 16,
+    "demand_pct": 5.49,
+    "up": [
+      [
+        "Coal",
+        "910 MW",
+        910.0
+      ],
+      [
+        "Solar",
+        "649 MW",
+        649.0
+      ],
+      [
+        "Gas",
+        "282 MW",
+        282.0
+      ],
+      [
+        "Other",
+        "30 MW",
+        30.0
+      ],
+      [
+        "Hydro",
+        "24 MW",
+        24.0
+      ],
+      [
+        "Biomass",
+        "14 MW",
+        14.0
+      ]
+    ],
+    "down": [
+      [
+        "Wind",
+        "572 MW",
+        -572.0
+      ],
+      [
+        "Net trade",
+        "377 MW",
+        -377.0
+      ]
+    ]
+  },
+  {
+    "cc": "SK",
+    "name": "Slovakia",
+    "hw_days": 33,
+    "demand_pct": 3.44,
+    "up": [
+      [
+        "Net trade",
+        "123 MW",
+        123.0
+      ],
+      [
+        "Gas",
+        "98 MW",
+        98.0
+      ],
+      [
+        "Solar",
+        "16 MW",
+        16.0
+      ]
+    ],
+    "down": [
+      [
+        "Nuclear",
+        "137 MW",
+        -137.0
+      ],
+      [
+        "Hydro",
+        "7 MW",
+        -7.0
+      ],
+      [
+        "Biomass",
+        "7 MW",
+        -7.0
+      ],
+      [
+        "Other",
+        "4 MW",
+        -4.0
+      ]
+    ]
+  },
+  {
+    "cc": "CZ",
+    "name": "Czechia",
+    "hw_days": 30,
+    "demand_pct": 2.21,
+    "up": [
+      [
+        "Coal",
+        "177 MW",
+        177.0
+      ],
+      [
+        "Solar",
+        "164 MW",
+        164.0
+      ],
+      [
+        "Gas",
+        "110 MW",
+        110.0
+      ],
+      [
+        "Biomass",
+        "10 MW",
+        10.0
+      ]
+    ],
+    "down": [
+      [
+        "Nuclear",
+        "162 MW",
+        -162.0
+      ],
+      [
+        "Net trade",
+        "152 MW",
+        -152.0
+      ],
+      [
+        "Hydro",
+        "34 MW",
+        -34.0
+      ],
+      [
+        "Wind",
+        "22 MW",
+        -22.0
+      ]
+    ]
+  },
+  {
+    "cc": "CH",
+    "name": "Switzerland",
+    "hw_days": 51,
+    "demand_pct": 2.11,
+    "up": [
+      [
+        "Nuclear",
+        "326 MW",
+        326.0
+      ],
+      [
+        "Hydro",
+        "83 MW",
+        83.0
+      ],
+      [
+        "Solar",
+        "61 MW",
+        61.0
+      ]
+    ],
+    "down": [
+      [
+        "Net trade",
+        "346 MW",
+        -346.0
+      ],
+      [
+        "Wind",
+        "4 MW",
+        -4.0
+      ]
+    ]
+  },
+  {
+    "cc": "DE",
+    "name": "Germany",
+    "hw_days": 25,
+    "demand_pct": 0.61,
+    "up": [
+      [
+        "Solar",
+        "3.03 GW",
+        3027.0
+      ],
+      [
+        "Net trade",
+        "1.18 GW",
+        1177.0
+      ],
+      [
+        "Gas",
+        "104 MW",
+        104.0
+      ],
+      [
+        "Hydro",
+        "77 MW",
+        77.0
+      ],
+      [
+        "Other",
+        "46 MW",
+        46.0
+      ]
+    ],
+    "down": [
+      [
+        "Wind",
+        "4.07 GW",
+        -4073.0
+      ],
+      [
+        "Biomass",
+        "97 MW",
+        -97.0
+      ],
+      [
+        "Coal",
+        "72 MW",
+        -72.0
+      ]
+    ]
+  },
+  {
+    "cc": "AT",
+    "name": "Austria",
+    "hw_days": 40,
+    "demand_pct": 0.46,
+    "up": [
+      [
+        "Solar",
+        "192 MW",
+        192.0
+      ],
+      [
+        "Net trade",
+        "50 MW",
+        50.0
+      ],
+      [
+        "Gas",
+        "39 MW",
+        39.0
+      ],
+      [
+        "Biomass",
+        "2 MW",
+        2.0
+      ]
+    ],
+    "down": [
+      [
+        "Wind",
+        "155 MW",
+        -155.0
+      ],
+      [
+        "Hydro",
+        "150 MW",
+        -150.0
+      ]
+    ]
+  },
+  {
+    "cc": "SI",
+    "name": "Slovenia",
+    "hw_days": 34,
+    "demand_pct": -0.88,
+    "up": [
+      [
+        "Solar",
+        "44 MW",
+        44.0
+      ]
+    ],
+    "down": [
+      [
+        "Hydro",
+        "95 MW",
+        -95.0
+      ],
+      [
+        "Nuclear",
+        "24 MW",
+        -24.0
+      ],
+      [
+        "Net trade",
+        "12 MW",
+        -12.0
+      ],
+      [
+        "Gas",
+        "5 MW",
+        -5.0
+      ],
+      [
+        "Biomass",
+        "2 MW",
+        -2.0
+      ]
+    ]
+  }
+]
