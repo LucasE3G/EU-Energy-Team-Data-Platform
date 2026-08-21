@@ -141,13 +141,15 @@ def draw(ax, d, title):
             ax.plot([i + 0.31, i + 1 - 0.31], [cum, cum], color="#9aa0ad",
                     linewidth=0.9, linestyle=(0, (3, 2)), zorder=2)
 
+    # Closing bar spans the full depth of the hole, mirroring the losses on the
+    # left: everything that was lost was served.
     n = len(bars) + 1
-    ax.bar(n - 1, 4.0, bottom=-2.0, width=0.62, color="#2b3446", zorder=3)
-    ax.text(n - 1, 5.0, "0", ha="center", va="bottom", fontsize=9.5,
+    ax.bar(n - 1, 100.0, bottom=-100.0, width=0.62, color="#2b3446", zorder=3)
+    ax.text(n - 1, 2.6, "100%", ha="center", va="bottom", fontsize=9.5,
             fontweight="bold", color="#2b3446", zorder=5)
 
     names = ([f"{LABEL[k]}\nlost" for k, _ in d["losses"]]
-             + [LABEL[k] for k, _ in d["gains"]] + ["Balance"])
+             + [LABEL[k] for k, _ in d["gains"]] + ["Heatwave\ndemand"])
     ax.set_xticks(range(n))
     ax.set_xticklabels(names, fontsize=8.3, color=MUTED)
     ax.set_xlim(-0.62, n - 0.38)
@@ -205,8 +207,8 @@ def build(data: dict):
         (0.140, f"Periods are taken from the daily series, not assumed. Hungary: 5{NDASH}27 July against 2{NDASH}20 August. Romania: 7{NDASH}27 July against 14{NDASH}20 August, the days its output read zero."),
         (0.113, f"Bars to the left of zero are everything that fell, bars to the right everything that rose. Each side is shown as a share of that country's total generation loss: "
                 f"{hu['lost']:.0f} GWh/day in Hungary, {ro['lost']:.0f} in Romania."),
-        (0.086, f"The measured gains come to {hu['closure']:.0f}% of Hungary's losses and {ro['closure']:.0f}% of Romania's, and are scaled to close the balance. The shortfall is a metering artefact"),
-        (0.059, f"rather than a missing fuel {MIDDOT} distributed solar counts as generation but never crosses the transmission load meter, and small units sit below ENTSO-E's reporting threshold."),
+        (0.086, f"The closing bar is generation and trade rather than metered demand. The measured gains come to {hu['closure']:.0f}% of Hungary's losses and {ro['closure']:.0f}% of Romania's before being scaled to close;"),
+        (0.059, f"the shortfall is a metering artefact, not a missing fuel {MIDDOT} distributed solar counts as generation but never crosses the transmission load meter, and small units sit below ENTSO-E's threshold."),
         (0.018, f"Source: ENTSO-E Transparency Platform (generation per production type, cross-border physical flows)"),
     ]
     for y, txt in foot:
