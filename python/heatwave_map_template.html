@@ -55,6 +55,11 @@ html,body{margin:0;background:#fff}
   transition:filter .12s ease;
 }
 .hwmap .cshape:hover{filter:brightness(1.07) saturate(1.05)}
+/* Clicking a shape focuses it, and the browser's own focus ring is drawn round
+   the path's bounding BOX - a black rectangle across the map. Suppress it on
+   :focus, not only :focus-visible, or it shows on every click. Keyboard focus
+   still gets an indicator below, traced along the border instead. */
+.hwmap .cshape:focus{outline:none}
 .hwmap .cshape:focus-visible{outline:none; stroke:var(--focus); stroke-width:2.4}
 .hwmap .cshape.sel{stroke:var(--ink); stroke-width:2}
 .hwmap .clab{
