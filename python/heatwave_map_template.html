@@ -78,11 +78,16 @@ html,body{margin:0;background:#fff}
 }
 .hwmap .cshape:hover{filter:brightness(1.07) saturate(1.05)}
 /* Clicking a shape focuses it, and the browser's own focus ring is drawn round
-   the path's bounding BOX - a black rectangle across the map. Suppress it on
-   :focus, not only :focus-visible, or it shows on every click. Keyboard focus
-   still gets an indicator below, traced along the border instead. */
-.hwmap .cshape:focus{outline:none}
-.hwmap .cshape:focus-visible{outline:none; stroke:var(--focus); stroke-width:2.4}
+   the path's bounding BOX - a black rectangle across the map. Suppress it in
+   both focus states.
+   The keyboard indicator cannot be left to :focus-visible either: Chrome
+   matches that pseudo-class when a tabindexed SVG shape is CLICKED, so a mouse
+   user would be left with a ring on the country they just dismissed, and the
+   browser would restore that focus on the next reload. The script tracks the
+   input modality and sets .kbd instead, so the ring is keyboard-only by
+   construction rather than by heuristic. */
+.hwmap .cshape:focus, .hwmap .cshape:focus-visible{outline:none}
+.hwmap.kbd .cshape:focus{stroke:var(--focus); stroke-width:2.4}
 .hwmap .cshape.sel{stroke:var(--ink); stroke-width:2}
 .hwmap .clab{
   font-size:11px; font-weight:650; letter-spacing:.02em; pointer-events:none;
@@ -427,6 +432,9 @@ function select(cc, focusPop){
   tip.classList.remove('on');
   pop.innerHTML = popHtml(cc);
   pop.querySelector('.x').addEventListener('click', () => {
+    // Focus always goes back to the country, so keyboard users are not dropped
+    // at the top of the document. Whether that shows a ring is decided by the
+    // .kbd class, not by how focus was moved.
     select(null); nodes[cc].focus();
   });
   // Place it while it is still invisible - a hidden element still has layout, so
@@ -437,6 +445,15 @@ function select(cc, focusPop){
 }
 
 /* ---------------- events ---------------- */
+// Input modality, tracked in the capture phase so it is already correct by the
+// time any focus handler runs.
+const setKbd = on => root.classList.toggle('kbd', on);
+addEventListener('keydown', e => {
+  if (e.key === 'Tab' || e.key === 'Escape' || e.key === 'Enter' || e.key === ' '
+      || e.key.indexOf('Arrow') === 0) setKbd(true);
+}, true);
+addEventListener('pointerdown', () => setKbd(false), true);
+
 svg.addEventListener('click', e => {
   const p = e.target.closest('.cshape');
   select(p ? (p.dataset.cc === sel ? null : p.dataset.cc) : null);
@@ -446,7 +463,14 @@ svg.addEventListener('keydown', e => {
   if (p && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); select(p.dataset.cc, true); }
 });
 document.addEventListener('keydown', e => {
+  // Escape is a keyboard action by definition, so focus always goes back.
   if (e.key === 'Escape' && sel){ const c = sel; select(null); nodes[c].focus(); }
+});
+// A reload restores focus to whatever held it, which would light a country up
+// before the visitor has touched anything.
+addEventListener('pageshow', () => {
+  const a = document.activeElement;
+  if (a && a.closest && a.closest('.cshape')) a.blur();
 });
 document.addEventListener('pointerdown', e => {
   if (sel && !pop.contains(e.target) && !e.target.closest('.cshape')) select(null);
@@ -488,6 +512,21 @@ const fromHash = () => {
 };
 addEventListener('hashchange', fromHash);
 fromHash();
+
+/* If the page is used inside an iframe rather than pasted inline, tell the host
+   how tall it is - the card flows below the map on narrow screens, so a fixed
+   frame height would clip it. Only a height is ever sent. */
+if (window.parent !== window){
+  const report = () => {
+    try {
+      parent.postMessage({hwmap:'height',
+        height: Math.ceil(root.getBoundingClientRect().height) + 8}, '*');
+    } catch (_) {}
+  };
+  addEventListener('load', report);
+  addEventListener('resize', report);
+  if (window.ResizeObserver) new ResizeObserver(report).observe(root);
+}
 
 /* ---------------- screen-reader table ---------------- */
 const FUELS = ['gas','coal','nuclear','hydro','wind','solar','biomass','other','imports'];
