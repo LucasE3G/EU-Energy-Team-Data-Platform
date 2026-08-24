@@ -252,12 +252,12 @@ const TICKS = ['0','2','5','10','20','35','55'];
 const binOf = v => { let i = 0; while (i < BINS.length && v >= BINS[i]) i++; return i; };
 const DARKFILL = 4; // bins at or above this index need light ink on top
 
-const fmtPct = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + '%';
+const fmtPct = v => (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(1) + '%';
 // Rounding to one decimal turns a tiny change into "-0.0", which reads as a
 // negative that is not there. Anything that rounds to zero loses the sign.
-const fmtGwh = v => (Math.abs(v) < 0.05 ? '' : v > 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+const fmtGwh = v => (Math.abs(v) < 0.05 ? '' : v > 0 ? '+' : '\u2212') + Math.abs(v).toFixed(1);
 const fmtMw  = v => { const a = Math.abs(v);
-  return (v < 0 ? '−' : '') + (a >= 1000 ? (a/1000).toFixed(1) + ' GW' : Math.round(a) + ' MW'); };
+  return (v < 0 ? '\u2212' : '') + (a >= 1000 ? (a/1000).toFixed(1) + ' GW' : Math.round(a) + ' MW'); };
 
 /* ---------------- map ---------------- */
 svg.setAttribute('viewBox', `0 0 ${DATA.w} ${DATA.h}`);
@@ -324,7 +324,7 @@ if (codes.some(cc => C[cc].thin)) document.getElementById('hwkey').hidden = fals
 document.getElementById('hwmeth').innerHTML =
   `<b>${codes.length} countries</b> had enough heatwave days to compare. A heatwave day is
    3+ consecutive days above the local day-of-year 90th percentile of daily maximum
-   temperature, or at or above 30&nbsp;°C; each country is measured against its own
+   temperature, or at or above 30&nbsp;\u00b0C; each country is measured against its own
    non-heatwave days in the same season, weekdays matched to weekdays. Temperature is
    population-weighted across each country's largest metropolitan areas.`;
 
@@ -363,8 +363,8 @@ function popHtml(cc){
       <span class="u">mean demand</span>
     </div>
     <p class="sub"><b>${fmtPct(c.peak)}</b> peak &middot; <b>${fmtMw(c.hwMw - c.normalMw)}</b> more load
-      &middot; <b>${c.hwTemp != null ? c.hwTemp.toFixed(1) + '°' : '—'}</b> vs
-      <b>${c.refTemp != null ? c.refTemp.toFixed(1) + '°' : '—'}</b></p>
+      &middot; <b>${c.hwTemp != null ? c.hwTemp.toFixed(1) + '\u00b0' : '\u2014'}</b> vs
+      <b>${c.refTemp != null ? c.refTemp.toFixed(1) + '\u00b0' : '\u2014'}</b></p>
     <p class="seclab">Where the power came from &mdash; GWh/day</p>
     ${rows}
     <div class="axcap">
@@ -534,7 +534,7 @@ const FLAB = {gas:'Gas',coal:'Coal',nuclear:'Nuclear',hydro:'Hydro',wind:'Wind',
   solar:'Solar',biomass:'Biomass',other:'Other',imports:'Net imports'};
 document.getElementById('hwtable').innerHTML = (() => {
   const order = Object.keys(C).sort((a,b) => C[b].mean - C[a].mean);
-  const head = ['Country','Heat days','Mean demand','Peak demand','Heat max °C','Normal max °C',
+  const head = ['Country','Heat days','Mean demand','Peak demand','Heat max \u00b0C','Normal max \u00b0C',
                 ...FUELS.map(f => FLAB[f] + ' GWh/day')];
   return `<table><caption>Change on heatwave days against matched normal days,
     same May to September season.</caption>
