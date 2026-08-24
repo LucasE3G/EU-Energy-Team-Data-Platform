@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Adding the heatwave map to WordPress</title>
+<style>
+@page{size:A4; margin:17mm 16mm 15mm}
+*{box-sizing:border-box}
+body{
+  margin:0; color:#15171c; background:#fff;
+  font:400 10.4pt/1.5 "Segoe UI",-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;
+}
+h1{font-size:21pt; line-height:1.15; letter-spacing:-.02em; margin:0 0 5px; font-weight:680}
+.lede{font-size:11pt; color:#4c515c; margin:0 0 4mm; max-width:52em}
+.rule{height:3px; background:#c0512b; width:56px; margin:0 0 6mm; border-radius:2px}
+
+h2{
+  font-size:13pt; margin:8mm 0 2.5mm; font-weight:670; letter-spacing:-.01em;
+  padding-bottom:1.6mm; border-bottom:1px solid #e3e6ec;
+}
+h2 .n{color:#c0512b; font-variant-numeric:tabular-nums}
+h3{font-size:10.8pt; margin:5mm 0 1.5mm; font-weight:660}
+p{margin:0 0 2.6mm; max-width:54em}
+b,strong{font-weight:650}
+code{
+  font:400 9.2pt/1.4 "Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  background:#f2f3f6; border:1px solid #e3e6ec; border-radius:3px; padding:.5px 4px;
+}
+pre{
+  font:400 8.5pt/1.5 "Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  background:#f7f8fa; border:1px solid #e3e6ec; border-left:3px solid #1f7a8c;
+  border-radius:4px; padding:3mm 4mm; margin:0 0 3mm; overflow-x:auto;
+  white-space:pre-wrap; word-break:break-word;
+}
+ol,ul{margin:0 0 3mm; padding-left:5.5mm; max-width:54em}
+li{margin-bottom:1.6mm}
+ol{counter-reset:none}
+table{border-collapse:collapse; width:100%; margin:0 0 3.5mm; font-size:9.6pt}
+th,td{border-bottom:1px solid #e3e6ec; padding:1.8mm 2.5mm; text-align:left; vertical-align:top}
+thead th{
+  font-size:8.4pt; text-transform:uppercase; letter-spacing:.06em; color:#7e8592;
+  border-bottom:1.5px solid #cfd4dd; font-weight:650;
+}
+td.n{font-variant-numeric:tabular-nums; white-space:nowrap}
+
+.box{
+  border:1px solid #e3e6ec; border-left:3px solid #c0512b; background:#fdf7f4;
+  border-radius:4px; padding:3mm 4mm; margin:0 0 3.5mm;
+}
+.box.ok{border-left-color:#1f7a8c; background:#f2f8f9}
+.box .t{font-weight:660; margin:0 0 1.2mm; font-size:10pt}
+.box p{margin:0 0 1.6mm}
+.box p:last-child{margin:0}
+
+.route{
+  display:inline-block; font-size:8.4pt; font-weight:650; letter-spacing:.06em;
+  text-transform:uppercase; color:#fff; background:#1f7a8c;
+  padding:1px 7px; border-radius:99px; vertical-align:2px; margin-right:5px;
+}
+.route.b{background:#7e8592}
+.avoid{page-break-inside:avoid; break-inside:avoid}
+.newpage{page-break-before:always; break-before:page}
+.foot{margin-top:8mm; padding-top:3mm; border-top:1px solid #e3e6ec; font-size:8.8pt; color:#7e8592}
+.k{color:#7e8592; font-size:9.4pt}
+</style>
+</head>
+<body>
+
+<h1>Adding the heatwave map to WordPress</h1>
+<p class="lede">The map is a single self-contained block of HTML. In the normal case
+this is a copy-and-paste job that takes about two minutes and needs no plugin, no
+developer and no upload. There is one WordPress permission that decides whether
+that works, and a fallback for when it does not.</p>
+<div class="rule"></div>
+
+<h2><span class="n">1.</span> &nbsp;What you have</h2>
+<table>
+  <thead><tr><th>File</th><th>Size</th><th>Use it for</th></tr></thead>
+  <tbody>
+    <tr><td><code>heatwave-map-embed.html</code></td><td class="n">111 KB</td>
+        <td><b>Route A.</b> The widget on its own &mdash; styles, markup and script,
+            nothing else. Select all, paste into one Custom HTML block.</td></tr>
+    <tr><td><code>heatwave-map.html</code></td><td class="n">112 KB</td>
+        <td><b>Route B</b>, and for previewing. A complete web page: double-click it
+            and it opens in a browser.</td></tr>
+  </tbody>
+</table>
+<p>Both carry the data inside them. There is no database call, no API key, no external
+file and no network request of any kind at page load. Nothing needs to be kept running
+for the map to work, and it will keep working if this project is switched off.</p>
+
+<h2><span class="n">2.</span> &nbsp;The one thing that decides which route</h2>
+<p>WordPress deletes <code>&lt;script&gt;</code> and <code>&lt;style&gt;</code> tags from
+page content when it is saved, <i>unless</i> the person saving has a permission called
+<code>unfiltered_html</code>. The map needs both tags, so this is the whole question.</p>
+<table class="avoid">
+  <thead><tr><th>Your situation</th><th>Do you have it?</th></tr></thead>
+  <tbody>
+    <tr><td>Administrator or Editor, ordinary single-site WordPress</td><td><b>Yes</b> &mdash; use Route A</td></tr>
+    <tr><td>Author or Contributor, any setup</td><td><b>No</b> &mdash; Route B, or ask an Administrator to paste it</td></tr>
+    <tr><td>Any role on a WordPress <i>multisite</i> network</td><td><b>No</b>, unless you are a Super Admin</td></tr>
+    <tr><td>Managed hosts and some security plugins</td><td>Sometimes switched off deliberately &mdash; test it</td></tr>
+  </tbody>
+</table>
+<div class="box ok avoid">
+  <p class="t">The two-minute test, which is faster than finding out</p>
+  <p>Make a new draft page. Add a Custom HTML block, paste in
+  <code>&lt;script&gt;console.log(1)&lt;/script&gt;</code>, click <b>Save draft</b>, then
+  <b>reload the editor page in your browser</b>. If the tag is still there, you have the
+  permission and Route A will work. If it has vanished, go to Route B.</p>
+  <p>Reloading matters. Until you reload, the editor shows you what you typed rather than
+  what WordPress stored.</p>
+</div>
+
+<h2 class="avoid"><span class="route">Route A</span> Paste it into the page</h2>
+<p>The normal route. Two minutes, no upload, no plugin.</p>
+<ol>
+  <li>Open <code>heatwave-map-embed.html</code> in a <b>plain-text editor</b> &mdash;
+      Notepad, TextEdit, VS Code. <b>Not Word or Google Docs</b>: they rewrite quotes and
+      dashes and will silently corrupt the file.</li>
+  <li>Select all (<code>Ctrl+A</code>) and copy (<code>Ctrl+C</code>).</li>
+  <li>In WordPress, open the page and put the cursor where the map should go.</li>
+  <li>Click <b>+</b>, search for <b>Custom HTML</b>, and add that block. It must be Custom
+      HTML &mdash; a Paragraph block will show the code as text.</li>
+  <li>Paste. The block will look like a wall of code; that is correct.</li>
+  <li>Click <b>Preview &rarr; Preview in new tab</b>. The editor itself does not run the
+      script, so the block will still look like code until you preview.</li>
+  <li><b>Publish</b> or <b>Update</b>, then load the live page and click a country.</li>
+</ol>
+<div class="box avoid">
+  <p class="t">If the block shows code on the published page too</p>
+  <p>The paste went into a Paragraph or Code block rather than a Custom HTML block.
+  Delete it and add the block again via <b>+ &rarr; Custom HTML</b>.</p>
+</div>
+
+<h2 class="avoid"><span class="route b">Route B</span> Serve it in a frame</h2>
+<p>Use this only if the test in section 2 failed. The map is identical; it just lives in
+its own file and the page shows a window onto it.</p>
+<ol>
+  <li>Upload <code>heatwave-map.html</code> to the server &mdash; for example to
+      <code>/wp-content/uploads/heatwave-map.html</code>. <b>The Media Library will
+      refuse it</b>: WordPress blocks <code>.html</code> uploads by default. Use SFTP or
+      your host's File Manager, or ask whoever administers the site.</li>
+  <li>Check it works on its own by visiting
+      <code>https://your-site/wp-content/uploads/heatwave-map.html</code> directly.</li>
+  <li>Add a Custom HTML block on the page containing:</li>
+</ol>
+<pre>&lt;iframe src="/wp-content/uploads/heatwave-map.html"
+        title="European electricity demand during the 2026 heatwaves"
+        loading="lazy"
+        style="width:100%; border:0; height:820px"&gt;&lt;/iframe&gt;</pre>
+<p><b>If scripts are allowed but you chose this route anyway</b>, add the snippet below as
+well and the frame will size itself. The map reports its own height, so the card never
+gets cut off:</p>
+<pre>&lt;iframe id="hwmap-frame" src="/wp-content/uploads/heatwave-map.html"
+        title="European electricity demand during the 2026 heatwaves"
+        loading="lazy" style="width:100%; border:0; height:820px"&gt;&lt;/iframe&gt;
+&lt;script&gt;
+addEventListener('message', function (e) {
+  if (e.data &amp;&amp; e.data.hwmap === 'height') {
+    document.getElementById('hwmap-frame').style.height = e.data.height + 'px';
+  }
+});
+&lt;/script&gt;</pre>
+<p>With a fixed height, pick it from the width of the column the map sits in. These are
+measured, not estimated:</p>
+<table class="avoid">
+  <thead><tr><th>Column width</th><th class="n">Height needed</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>1110 px (full-width E3G container)</td><td class="n">1055 px</td><td></td></tr>
+    <tr><td>920 px</td><td class="n">926 px</td><td></td></tr>
+    <tr><td>730 px (E3G narrow container)</td><td class="n">792 px</td><td>Use <b>820 px</b> for margin</td></tr>
+    <tr><td>600 px</td><td class="n">709 px</td><td></td></tr>
+    <tr><td>Below 560 px (phones)</td><td class="n">up to 1120 px</td>
+        <td>The country card moves below the map, so the page grows when one is open</td></tr>
+  </tbody>
+</table>
+<p class="k">A fixed height cannot be right at every screen size. Where it is too short the
+frame scrolls internally &mdash; nothing is lost, but it reads worse. The snippet above avoids
+this entirely.</p>
+
+<h2 class="newpage"><span class="n">3.</span> &nbsp;Checking it worked</h2>
+<p>On the <b>published</b> page, not the editor:</p>
+<ul>
+  <li>The map draws, with countries shaded cream through dark rust.</li>
+  <li>Hovering a country shows a small tooltip with its name.</li>
+  <li>Clicking a country opens a card with an arrow pointing at it. Clicking the
+      <b>&times;</b>, pressing <b>Escape</b>, or clicking off the map closes it.</li>
+  <li>The title above the map is in the same sans-serif as the rest of the widget, not
+      the site's heading font. If it has turned serif, the styles did not paste.</li>
+  <li>Temperatures read like <code>34.1&deg; vs 23.8&deg;</code> and falls like
+      <code>&minus;17.6</code>. Anything like <code>34.1&Acirc;&deg;</code> means the file was
+      copied through something that changed its encoding &mdash; recopy it from a plain-text
+      editor.</li>
+  <li>Narrow the browser window to phone width. The card should move below the map
+      rather than cover it.</li>
+</ul>
+
+<h2><span class="n">4.</span> &nbsp;Changing the text or updating the figures</h2>
+<h3>Wording</h3>
+<p>The headline and the standfirst are ordinary HTML near the top of the pasted block.
+Search for <code>class="ttl"</code> for the headline and <code>class="subt"</code> for the
+line under it, and edit between the tags. The source line is <code>class="src"</code> and
+the small print below it is generated by the script &mdash; search for
+<code>hwmeth</code> to change it, or delete that one <code>&lt;p&gt;</code> to drop it.</p>
+<h3>Figures</h3>
+<p>The numbers are a snapshot: they do not refresh on their own. To rebuild from the
+current data, run this in the project and paste the new file in the same way:</p>
+<pre>python python/make_heatwave_map_html.py</pre>
+<p>That rewrites both files. Everything visual lives in
+<code>python/heatwave_map_template.html</code>, so design changes survive a rebuild.</p>
+
+<h2><span class="n">5.</span> &nbsp;If something looks wrong</h2>
+<table>
+  <thead><tr><th>What you see</th><th>Cause and fix</th></tr></thead>
+  <tbody>
+    <tr><td>A wall of code on the live page</td>
+        <td>Pasted into a Paragraph or Code block. Use <b>+ &rarr; Custom HTML</b>.</td></tr>
+    <tr><td>Nothing at all, or a blank gap</td>
+        <td>WordPress stripped the <code>&lt;script&gt;</code>. Run the test in section 2;
+            if it fails, use Route B.</td></tr>
+    <tr><td>Text appears but no map</td>
+        <td>The script block was lost while the styles survived. Recopy the
+            <b>whole</b> file &mdash; it must include everything to the last
+            <code>&lt;/script&gt;</code>.</td></tr>
+    <tr><td>The heading is serif, or paragraphs look far apart</td>
+        <td>The <code>&lt;style&gt;</code> block was stripped or partly copied. Recopy
+            from the top of the file.</td></tr>
+    <tr><td><code>34.1&Acirc;&deg;</code> or other odd symbols</td>
+        <td>The file passed through an editor that changed the encoding. Copy it again
+            from a plain-text editor.</td></tr>
+    <tr><td>The map is squashed or tiny</td>
+        <td>A theme or plugin rule is sizing every <code>svg</code>. Send this over and
+            it can be countered in one line.</td></tr>
+    <tr><td>The card is cut off at the bottom (Route B only)</td>
+        <td>The frame is too short. Use the self-sizing snippet, or raise the height.</td></tr>
+    <tr><td>Two maps on one page interfere</td>
+        <td>Only one copy per page is supported.</td></tr>
+  </tbody>
+</table>
+
+<h2 class="avoid"><span class="n">6.</span> &nbsp;Technical notes for whoever runs the site</h2>
+<ul>
+  <li><b>No network activity.</b> No <code>fetch</code>, no <code>XMLHttpRequest</code>,
+      no external stylesheet, script, font or image. The only URL in the file is the SVG
+      namespace string, which is an identifier and is never requested.</li>
+  <li><b>No credentials.</b> The data is baked in at build time; no key or endpoint
+      reaches the published file.</li>
+  <li><b>Pure ASCII.</b> Deliberately, so that copying it between editors cannot corrupt
+      it.</li>
+  <li><b>Scoped.</b> Every style sits under <code>.hwmap</code> and the script runs inside
+      a closure. It cannot alter the surrounding page, and it carries its own reset so the
+      theme's <code>p</code> and <code>h2</code> rules cannot alter it.</li>
+  <li><b>Accessible.</b> Countries are keyboard-reachable and labelled, the card is a
+      labelled dialog, and a hidden data table carries the same figures for screen
+      readers.</li>
+  <li><b>Light only</b>, and it paints its own white background, so it does not follow a
+      visitor's dark-mode setting into an unreadable state.</li>
+</ul>
+
+<p class="foot">Generated from <code>python/heatwave_map_template.html</code>. Figures:
+ENTSO-E Transparency Platform and ERA5 reanalysis via Open-Meteo, May&ndash;September 2026.</p>
+
+</body>
+</html>
