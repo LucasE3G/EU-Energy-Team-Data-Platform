@@ -500,10 +500,26 @@ fromHash();
    how tall it is - the card flows below the map on narrow screens, so a fixed
    frame height would clip it. Only a height is ever sent. */
 if (window.parent !== window){
+  // The standalone page caps its width so the map is not absurd on a wide
+  // monitor. Inside a frame the host column already does that, and the cap
+  // would just leave a gap, so drop it.
+  const host = root.parentElement;
+  if (host && host.classList.contains('host')){
+    host.style.maxWidth = 'none';
+    host.style.padding = '10px 12px';
+  }
   const report = () => {
     try {
+      // Measure to the widget's BOTTOM plus whatever padding the page puts
+      // below it, not the widget's own height - otherwise the last line of the
+      // note is cut off. documentElement.scrollHeight is no good here: when the
+      // content is shorter than the frame it returns the frame's height, so the
+      // frame could grow but never shrink.
+      const r = root.getBoundingClientRect();
+      const host = root.parentElement;
+      const pad = host ? parseFloat(getComputedStyle(host).paddingBottom) || 0 : 0;
       parent.postMessage({hwmap:'height',
-        height: Math.ceil(root.getBoundingClientRect().height) + 8}, '*');
+        height: Math.ceil(r.bottom + window.scrollY + pad + 2)}, '*');
     } catch (_) {}
   };
   addEventListener('load', report);

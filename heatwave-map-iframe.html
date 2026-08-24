@@ -1,0 +1,51 @@
+<!-- =====================================================================
+     ROUTE B - the heatwave map in a frame.
+
+     Use this only if pasting heatwave-map-embed.html inline did not work,
+     i.e. WordPress stripped the <script> tag out of the page on save.
+
+     1. Upload heatwave-map.html to the server. The WordPress Media Library
+        refuses .html files, so use SFTP or your host's File Manager.
+     2. Check it loads on its own at that address before going further.
+     3. Replace /wp-content/uploads/heatwave-map.html below with wherever you put it.
+     4. Paste ONE of the two options into a single Custom HTML block.
+     ===================================================================== -->
+
+
+<!-- OPTION 1 - preferred. The frame resizes itself to fit, so the country
+     card is never cut off on any screen. Needs <script> to survive; if you
+     are here because it does not, use option 2. -->
+
+<iframe id="hwmap-frame"
+        src="/wp-content/uploads/heatwave-map.html"
+        title="European electricity demand during the 2026 heatwaves"
+        loading="lazy"
+        style="width:100%; border:0; display:block; height:820px"></iframe>
+<script>
+addEventListener('message', function (e) {
+  if (e.data && e.data.hwmap === 'height') {
+    var f = document.getElementById('hwmap-frame');
+    if (f) f.style.height = e.data.height + 'px';
+  }
+});
+</script>
+
+
+<!-- OPTION 2 - no script at all. Set the height by hand from the width of the
+     column the map sits in. Measured in a real frame, not estimated:
+
+         column width      height needed
+         1110 px           1060 px
+          920 px            930 px
+          730 px            800 px   <- use 830 for margin
+          600 px            715 px
+         under ~590 px     up to 1120 px, because the country card moves
+                           below the map and the page grows when one opens
+
+     A single height cannot suit every screen. Where it is too short the frame
+     scrolls internally - nothing is lost, it just reads worse. -->
+
+<iframe src="/wp-content/uploads/heatwave-map.html"
+        title="European electricity demand during the 2026 heatwaves"
+        loading="lazy"
+        style="width:100%; border:0; display:block; height:820px"></iframe>

@@ -81,9 +81,12 @@ that works, and a fallback for when it does not.</p>
     <tr><td><code>heatwave-map-embed.html</code></td><td class="n">111 KB</td>
         <td><b>Route A.</b> The widget on its own &mdash; styles, markup and script,
             nothing else. Select all, paste into one Custom HTML block.</td></tr>
-    <tr><td><code>heatwave-map.html</code></td><td class="n">112 KB</td>
+    <tr><td><code>heatwave-map.html</code></td><td class="n">113 KB</td>
         <td><b>Route B</b>, and for previewing. A complete web page: double-click it
-            and it opens in a browser.</td></tr>
+            and it opens in a browser. This is the file you upload.</td></tr>
+    <tr><td><code>heatwave-map-iframe.html</code></td><td class="n">2 KB</td>
+        <td><b>Route B.</b> The frame code, both versions, ready to paste. Not a page
+            &mdash; a snippet.</td></tr>
   </tbody>
 </table>
 <p>Both carry the data inside them. There is no database call, no API key, no external
@@ -143,42 +146,50 @@ its own file and the page shows a window onto it.</p>
       refuse it</b>: WordPress blocks <code>.html</code> uploads by default. Use SFTP or
       your host's File Manager, or ask whoever administers the site.</li>
   <li>Check it works on its own by visiting
-      <code>https://your-site/wp-content/uploads/heatwave-map.html</code> directly.</li>
-  <li>Add a Custom HTML block on the page containing:</li>
+      <code>https://your-site/wp-content/uploads/heatwave-map.html</code> directly.
+      If it does not load here, nothing later will help.</li>
+  <li>Open <code>heatwave-map-iframe.html</code>. It holds <b>two options</b>; change the
+      address in the one you use to match step 1, then paste that one into a Custom HTML
+      block.</li>
 </ol>
-<pre>&lt;iframe src="/wp-content/uploads/heatwave-map.html"
-        title="European electricity demand during the 2026 heatwaves"
-        loading="lazy"
-        style="width:100%; border:0; height:820px"&gt;&lt;/iframe&gt;</pre>
-<p><b>If scripts are allowed but you chose this route anyway</b>, add the snippet below as
-well and the frame will size itself. The map reports its own height, so the card never
-gets cut off:</p>
+<h3>Option 1 &mdash; the frame sizes itself <span class="k">(use this if you can)</span></h3>
+<p>The map measures itself and tells the page how tall to make the frame, so nothing is
+ever cut off and it adapts on a phone. It needs a <code>&lt;script&gt;</code> tag to
+survive, so it is only available if the section&nbsp;2 test passed and you are choosing a
+frame for another reason.</p>
 <pre>&lt;iframe id="hwmap-frame" src="/wp-content/uploads/heatwave-map.html"
         title="European electricity demand during the 2026 heatwaves"
-        loading="lazy" style="width:100%; border:0; height:820px"&gt;&lt;/iframe&gt;
+        loading="lazy" style="width:100%; border:0; display:block; height:820px"&gt;&lt;/iframe&gt;
 &lt;script&gt;
 addEventListener('message', function (e) {
   if (e.data &amp;&amp; e.data.hwmap === 'height') {
-    document.getElementById('hwmap-frame').style.height = e.data.height + 'px';
+    var f = document.getElementById('hwmap-frame');
+    if (f) f.style.height = e.data.height + 'px';
   }
 });
 &lt;/script&gt;</pre>
-<p>With a fixed height, pick it from the width of the column the map sits in. These are
-measured, not estimated:</p>
+<h3>Option 2 &mdash; fixed height <span class="k">(no script anywhere)</span></h3>
+<pre>&lt;iframe src="/wp-content/uploads/heatwave-map.html"
+        title="European electricity demand during the 2026 heatwaves"
+        loading="lazy"
+        style="width:100%; border:0; display:block; height:830px"&gt;&lt;/iframe&gt;</pre>
+<p>Pick the height from the width of the column the map sits in. Measured in a real
+frame, not estimated:</p>
 <table class="avoid">
   <thead><tr><th>Column width</th><th class="n">Height needed</th><th>Notes</th></tr></thead>
   <tbody>
-    <tr><td>1110 px (full-width E3G container)</td><td class="n">1055 px</td><td></td></tr>
-    <tr><td>920 px</td><td class="n">926 px</td><td></td></tr>
-    <tr><td>730 px (E3G narrow container)</td><td class="n">792 px</td><td>Use <b>820 px</b> for margin</td></tr>
-    <tr><td>600 px</td><td class="n">709 px</td><td></td></tr>
-    <tr><td>Below 560 px (phones)</td><td class="n">up to 1120 px</td>
+    <tr><td>1110 px (full-width E3G container)</td><td class="n">1060 px</td><td></td></tr>
+    <tr><td>920 px</td><td class="n">930 px</td><td></td></tr>
+    <tr><td>730 px (E3G narrow container)</td><td class="n">800 px</td><td>Use <b>830 px</b> for margin</td></tr>
+    <tr><td>600 px</td><td class="n">715 px</td><td></td></tr>
+    <tr><td>Under about 590 px (phones)</td><td class="n">up to 1120 px</td>
         <td>The country card moves below the map, so the page grows when one is open</td></tr>
   </tbody>
 </table>
-<p class="k">A fixed height cannot be right at every screen size. Where it is too short the
-frame scrolls internally &mdash; nothing is lost, but it reads worse. The snippet above avoids
-this entirely.</p>
+<p class="k">A fixed height cannot be right at every screen size &mdash; a phone needs
+roughly the height a desktop does, for a much narrower map. Where the frame is too short
+it scrolls internally: nothing is lost, it just reads worse. Option 1 avoids this
+entirely, which is why it is worth using where it is available.</p>
 
 <h2 class="newpage"><span class="n">3.</span> &nbsp;Checking it worked</h2>
 <p>On the <b>published</b> page, not the editor:</p>
