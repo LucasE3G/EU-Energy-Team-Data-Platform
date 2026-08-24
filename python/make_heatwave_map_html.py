@@ -52,14 +52,13 @@ LABEL = {"imports": "Net imports", "gas": "Gas", "coal": "Coal", "solar": "Solar
          "wind": "Wind", "hydro": "Hydro", "nuclear": "Nuclear",
          "biomass": "Biomass", "other": "Other"}
 
-# Countries that cannot appear, and the reason - shown on the page so the gap is
-# explained rather than silently left blank.
-ABSENT = [
-    ("Estonia, Finland", "no heatwave days at all this summer"),
-    ("Sweden, Latvia, Lithuania, Ireland", "3-6 heatwave days, too few to compare against"),
-    ("Malta", "ENTSO-E publishes no load or generation for it"),
-    ("Netherlands", "excluded - a TenneT reporting break makes the series unusable"),
-]
+# Not on the map, and why. Kept here rather than on the page: the widget is an
+# embed and carries only its own legend, but the next person to wonder where
+# Malta went should not have to re-derive it.
+#   Estonia, Finland  - no heatwave days at all this summer
+#   Sweden 3, Latvia 4, Lithuania 6, Ireland 6 - too few days to compare against
+#   Malta             - ENTSO-E publishes no load or generation for it
+#   Netherlands       - a TenneT reporting break makes the series unusable
 
 print("querying...")
 uplift = {r["country_code"]: r
@@ -218,8 +217,7 @@ for f in geo["features"]:
     else:
         ctx.append(" ".join(paths))
 
-payload = {"w": W, "h": H, "countries": countries, "shapes": shapes,
-           "context": ctx, "absent": ABSENT}
+payload = {"w": W, "h": H, "countries": countries, "shapes": shapes, "context": ctx}
 print(f"  {len(shapes)} shapes, {len(ctx)} context shapes")
 
 TEMPLATE = Path(__file__).resolve().parent / "heatwave_map_template.html"
