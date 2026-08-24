@@ -28,7 +28,11 @@ html,body{margin:0;background:#fff}
   --shadow:0 10px 34px rgba(16,20,28,.17);
 
   color:var(--ink); position:relative;
-  font:400 15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  /* Open Sans first: the host may already serve it, in which case this matches
+     the surrounding page at no extra request. Everything after is a fallback -
+     no webfont is loaded, so the widget stays free of network calls. */
+  font:400 15px/1.5 "Open Sans",ui-sans-serif,-apple-system,"Segoe UI",Roboto,
+       Helvetica,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;
   /* Light only, and it paints its own ground so it stays legible whatever the
      host page is coloured. Only the map sits in a frame; without this the
@@ -37,6 +41,24 @@ html,body{margin:0;background:#fff}
   background:var(--surface);
 }
 .hwmap *{box-sizing:border-box}
+
+/* Defensive reset, and the reason the widget survives a strange host page.
+   A theme's bare element rules carry almost no specificity but still win for
+   any property the widget does not set itself - E3G's own stylesheet, for one,
+   has p{padding-bottom:30px} and h2,h3{font-family:"Georgia",serif}, which
+   would inflate every paragraph here and turn the headings serif. Every rule
+   below this one uses at least two classes, so the reset never fights them.
+
+   Font-weight is deliberately NOT reset: <b> gets its bold from the browser,
+   and inheriting here would quietly flatten it. */
+.hwmap div, .hwmap p, .hwmap h2, .hwmap h3, .hwmap span, .hwmap b, .hwmap i,
+.hwmap button, .hwmap table, .hwmap caption, .hwmap th, .hwmap td{
+  margin:0; padding:0; font-family:inherit; font-size:inherit; font-style:normal;
+  line-height:inherit; letter-spacing:normal; text-transform:none; color:inherit;
+  text-align:left; text-indent:0; text-decoration:none; list-style:none;
+  background:none; border:0; border-radius:0; box-shadow:none;
+}
+.hwmap .x svg{display:block; width:17px; height:17px}
 
 /* ---- title block ---- */
 .hwmap .ttl{
@@ -85,7 +107,7 @@ html,body{margin:0;background:#fff}
 
 /* ---- popup card, drawn over the map ---- */
 .hwmap .pop{
-  position:absolute; z-index:6; width:296px; max-width:calc(100% - 16px);
+  position:absolute; z-index:6; width:310px; max-width:calc(100% - 16px);
   background:var(--raise); border:1px solid var(--line2); border-radius:13px;
   box-shadow:var(--shadow);
   opacity:0; visibility:hidden; transition:opacity .12s ease;
@@ -130,7 +152,9 @@ html,body{margin:0;background:#fff}
   color:var(--ink3); margin:0 0 6px; display:flex; align-items:center; gap:7px}
 .hwmap .seclab::after{content:""; flex:1; height:1px; background:var(--line)}
 
-.hwmap .row{display:grid; grid-template-columns:62px minmax(0,1fr) 66px; align-items:center;
+/* The label column fits "Net imports" in Open Sans, which is wider than the
+   system stack this was first sized against. */
+.hwmap .row{display:grid; grid-template-columns:74px minmax(0,1fr) 64px; align-items:center;
   gap:7px; padding:1px 0}
 .hwmap .row .lab{font-size:11.5px; color:var(--ink2); text-align:right;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -143,7 +167,7 @@ html,body{margin:0;background:#fff}
 .hwmap .row .val{font-size:11.5px; font-variant-numeric:tabular-nums; font-weight:580;
   text-align:right}
 .hwmap .axcap{display:flex; justify-content:space-between; font-size:10.5px; color:var(--ink3);
-  margin:6px 0 0; padding:0 66px 0 62px}
+  margin:6px 0 0; padding:0 64px 0 74px}
 .hwmap .axcap i{font-style:normal; display:flex; align-items:center; gap:5px}
 .hwmap .dot{width:8px; height:8px; border-radius:2px; display:inline-block}
 .hwmap .pnote{font-size:11px; color:var(--ink3); margin:9px 0 0; padding-top:8px;
