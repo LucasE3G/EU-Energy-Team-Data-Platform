@@ -29,6 +29,10 @@ DOMAINS: Dict[str, str] = {
     "IT": "10Y1001A1001A73I",
     "LV": "10YLV-1001A00074",
     "LT": "10YLT-1001A0008Q",
+    # Luxembourg has its own CTA and does publish; it was simply absent here,
+    # which is the whole reason it was missing from the analysis.
+    "LU": "10YLU-CEGEDEL-NQ",
+    # Malta is listed but ENTSO-E returns nothing for it - verified, not assumed.
     "MT": "10YMT-1001A0003F",
     "NL": "10YNL----------L",
     "NO1": "10YNO-1--------2",
