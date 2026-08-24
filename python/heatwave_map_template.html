@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Europe's power system in the 2026 heat</title>
+<style>
+:root{
+  --surface:#ffffff; --panel:#f5f6f9; --raise:#ffffff;
+  --ink:#15171c; --ink2:#4c515c; --ink3:#7e8592;
+  --line:#e3e6ec; --line2:#cfd4dd;
+  /* Sequential ramp - demand uplift is a magnitude, so one hue, light to dark. */
+  --r1:#fbeacd; --r2:#f6cf95; --r3:#eda85c; --r4:#dd7a33; --r5:#b4491a; --r6:#7d2f0f;
+  --onLight:#4a2a12; --onDark:#fff6ea;
+  /* Diverging pair - "rose" against "fell" is a polarity. Validated in OKLab
+     for normal vision and for protan/deutan simulation. */
+  --rose:#1f7a8c; --fell:#c0512b;
+  --focus:#2563eb;
+}
+:root[data-theme="dark"], html:not([data-theme="light"]) {}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface:#0f1115; --panel:#171a21; --raise:#1c2028;
+    --ink:#eef0f5; --ink2:#b4bac6; --ink3:#828a98;
+    --line:#252a34; --line2:#333a46;
+    --r1:#3a2b17; --r2:#5b4019; --r3:#83571d; --r4:#ad7027; --r5:#d18a3c; --r6:#f0ad5c;
+    --onLight:#f7ead9; --onDark:#2a1c0c;
+    --rose:#3aa8bd; --fell:#e0703f;
+    --focus:#6aa2ff;
+  }
+}
+:root[data-theme="dark"]{
+  --surface:#0f1115; --panel:#171a21; --raise:#1c2028;
+  --ink:#eef0f5; --ink2:#b4bac6; --ink3:#828a98;
+  --line:#252a34; --line2:#333a46;
+  --r1:#3a2b17; --r2:#5b4019; --r3:#83571d; --r4:#ad7027; --r5:#d18a3c; --r6:#f0ad5c;
+  --onLight:#f7ead9; --onDark:#2a1c0c;
+  --rose:#3aa8bd; --fell:#e0703f;
+  --focus:#6aa2ff;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--surface); color:var(--ink);
+  font:400 15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1240px; margin:0 auto; padding:32px 24px 56px}
+
+/* ---- header ---- */
+.eyebrow{
+  font-size:11.5px; font-weight:650; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink3); margin:0 0 10px;
+}
+h1{font-size:clamp(26px,3.4vw,40px); line-height:1.12; letter-spacing:-.02em; margin:0 0 12px; font-weight:660}
+.lede{font-size:17px; color:var(--ink2); max-width:70ch; margin:0}
+.lede b{color:var(--ink); font-weight:600}
+.hr{height:1px; background:var(--line); border:0; margin:26px 0}
+
+/* ---- layout ---- */
+.grid{display:grid; grid-template-columns:minmax(0,1.05fr) minmax(340px,.95fr); gap:26px; align-items:start}
+@media (max-width:940px){ .grid{grid-template-columns:1fr} }
+
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:14px}
+.panel-h{
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+  padding:14px 18px 0;
+}
+.panel-t{font-size:13px; font-weight:650; letter-spacing:.02em; margin:0}
+.panel-s{font-size:12.5px; color:var(--ink3); margin:0}
+
+/* ---- map ---- */
+.mapbox{padding:6px 10px 12px; position:relative}
+svg.map{display:block; width:100%; height:auto}
+.ctx{fill:var(--line); opacity:.42; stroke:none}
+.cshape{
+  stroke:var(--panel); stroke-width:1; cursor:pointer;
+  transition:filter .12s ease, stroke .12s ease;
+}
+.cshape:hover{filter:brightness(1.06) saturate(1.05)}
+.cshape:focus-visible{outline:none; stroke:var(--focus); stroke-width:2.4}
+.cshape.sel{stroke:var(--ink); stroke-width:2.2}
+.clab{
+  font-size:11px; font-weight:650; letter-spacing:.02em; pointer-events:none;
+  text-anchor:middle; dominant-baseline:central;
+  /* Halo in the fill the label sits on, so a code straddling a border or a
+     leader line stays legible without a box around it. */
+  paint-order:stroke; stroke-width:2.6px; stroke-linejoin:round;
+}
+.pin{fill:none; stroke:var(--ink3); stroke-width:1.1; pointer-events:none}
+.pin-dot{fill:var(--ink3); pointer-events:none}
+
+.tip{
+  position:absolute; z-index:9; pointer-events:none; opacity:0;
+  transform:translate(-50%,-100%); transition:opacity .1s ease;
+  background:var(--raise); border:1px solid var(--line2); border-radius:9px;
+  padding:8px 11px; box-shadow:0 6px 22px rgba(0,0,0,.13); white-space:nowrap;
+}
+.tip.on{opacity:1}
+.tip .n{font-size:13px; font-weight:640}
+.tip .v{font-size:12.5px; color:var(--ink2); margin-top:2px}
+
+/* ---- legend ---- */
+.legend{display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; padding:2px 18px 16px}
+.ramp{display:flex; flex-direction:column; gap:5px}
+.ramp-t{font-size:11.5px; color:var(--ink3); font-weight:600; letter-spacing:.02em}
+.swatches{display:flex}
+.sw{width:44px; height:11px}
+.sw:first-child{border-radius:3px 0 0 3px}
+.sw:last-child{border-radius:0 3px 3px 0}
+.ticks{display:flex; font-size:11px; color:var(--ink3); font-variant-numeric:tabular-nums}
+.ticks span{width:44px; transform:translateX(-50%); text-align:center}
+.ticks span:first-child{width:44px}
+
+/* ---- card ---- */
+.card{padding:18px}
+.card-top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px}
+.cname{font-size:22px; font-weight:660; letter-spacing:-.01em; margin:0}
+.cdays{font-size:12.5px; color:var(--ink3); margin:3px 0 0}
+.badge{
+  font-size:11px; font-weight:650; letter-spacing:.06em; text-transform:uppercase;
+  padding:4px 9px; border-radius:99px; background:var(--surface);
+  border:1px solid var(--line2); color:var(--ink2); white-space:nowrap;
+}
+.hero{display:flex; align-items:baseline; gap:9px; margin:14px 0 2px}
+.hero .big{font-size:44px; font-weight:680; letter-spacing:-.025em; line-height:1; font-variant-numeric:tabular-nums}
+.hero .u{font-size:14px; color:var(--ink2)}
+.herosub{font-size:13px; color:var(--ink3); margin:0 0 14px}
+
+.stats{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line);
+  border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:18px}
+.stat{background:var(--surface); padding:10px 12px}
+.stat .k{font-size:10.5px; font-weight:640; letter-spacing:.07em; text-transform:uppercase; color:var(--ink3)}
+.stat .v{font-size:16px; font-weight:640; margin-top:3px; font-variant-numeric:tabular-nums}
+.stat .s{font-size:11.5px; color:var(--ink3); font-variant-numeric:tabular-nums}
+
+.seclab{
+  font-size:11px; font-weight:650; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--ink3); margin:0 0 9px; display:flex; align-items:center; gap:8px;
+}
+.seclab::after{content:""; flex:1; height:1px; background:var(--line)}
+
+.rows{display:flex; flex-direction:column; gap:2px}
+.row{display:grid; grid-template-columns:76px minmax(0,1fr) 92px; align-items:center; gap:10px;
+  padding:3px 0; border-radius:6px}
+.row .lab{font-size:12.5px; color:var(--ink2); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.plot{position:relative; height:19px}
+.plot::before{content:""; position:absolute; left:50%; top:-1px; bottom:-1px; width:1px; background:var(--line2)}
+.bar{position:absolute; top:3px; height:13px; border-radius:3px}
+.bar.up{left:50%; background:var(--rose); border-radius:0 4px 4px 0}
+.bar.dn{right:50%; background:var(--fell); border-radius:4px 0 0 4px}
+.row .val{font-size:12.5px; font-variant-numeric:tabular-nums; color:var(--ink); font-weight:560}
+.row .val .p{color:var(--ink3); font-weight:400; font-size:11.5px}
+
+.axcap{display:grid; grid-template-columns:76px minmax(0,1fr) 92px; gap:10px; margin-top:8px}
+.axcap .c{display:flex; justify-content:space-between; font-size:11px; color:var(--ink3)}
+.axcap .c i{font-style:normal; display:flex; align-items:center; gap:5px}
+.dot{width:9px; height:9px; border-radius:2px; display:inline-block}
+
+.note{font-size:12.5px; color:var(--ink3); margin:16px 0 0; padding-top:12px; border-top:1px solid var(--line)}
+.thin{color:var(--fell); font-weight:600}
+
+/* ---- empty state ---- */
+.empty{padding:6px 0 4px}
+.eu{display:flex; align-items:baseline; gap:9px; margin:6px 0 2px}
+.eu .big{font-size:44px; font-weight:680; letter-spacing:-.025em; line-height:1; font-variant-numeric:tabular-nums}
+.hint{
+  display:flex; gap:9px; align-items:center; margin-top:18px; padding:11px 13px;
+  background:var(--surface); border:1px dashed var(--line2); border-radius:10px;
+  font-size:13px; color:var(--ink2);
+}
+
+/* ---- table ---- */
+.tbtn{
+  appearance:none; background:var(--panel); color:var(--ink2); cursor:pointer;
+  border:1px solid var(--line2); border-radius:8px; padding:7px 13px;
+  font:inherit; font-size:13px; font-weight:560;
+}
+.tbtn:hover{color:var(--ink); border-color:var(--ink3)}
+.tbtn:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.tablewrap{margin-top:16px; overflow-x:auto; -webkit-overflow-scrolling:touch}
+table{border-collapse:collapse; width:100%; min-width:720px; font-size:13px}
+caption{text-align:left; font-size:12.5px; color:var(--ink3); padding:0 0 9px}
+th,td{padding:7px 10px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+thead th{font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink3); font-weight:640}
+tbody tr:hover{background:var(--panel)}
+td.num{font-variant-numeric:tabular-nums}
+
+/* ---- foot ---- */
+.foot{margin-top:30px; padding-top:20px; border-top:1px solid var(--line);
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:22px}
+.foot h3{font-size:11px; font-weight:650; letter-spacing:.09em; text-transform:uppercase; color:var(--ink3); margin:0 0 7px}
+.foot p, .foot li{font-size:12.5px; color:var(--ink2); margin:0 0 6px; line-height:1.5}
+.foot ul{margin:0; padding-left:16px}
+.foot b{color:var(--ink); font-weight:600}
+
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0,0,0,0); white-space:nowrap; border:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">European electricity &middot; summer 2026</p>
+  <h1>What the heat did to Europe&rsquo;s power system</h1>
+  <p class="lede">
+    On days that met the local heatwave threshold, electricity demand rose and the
+    mix that met it shifted. Each country is compared against
+    <b>its own non-heatwave days</b> in the same May&ndash;September season, matched
+    weekday to weekday. <b>Select a country</b> to see what rose and what fell.
+  </p>
+
+  <hr class="hr">
+
+  <div class="grid">
+    <!-- MAP -->
+    <section class="panel" aria-labelledby="maph">
+      <div class="panel-h">
+        <p class="panel-t" id="maph">Mean demand change on heatwave days</p>
+        <p class="panel-s" id="ncount"></p>
+      </div>
+      <div class="mapbox">
+        <svg class="map" id="map" role="img" aria-labelledby="maph maptext"></svg>
+        <p class="sr" id="maptext">
+          A map of Europe shaded by how much average electricity demand rose on
+          heatwave days. The full figures are available in the data table below.
+        </p>
+        <div class="tip" id="tip" aria-hidden="true"></div>
+      </div>
+      <div class="legend">
+        <div class="ramp">
+          <div class="ramp-t">Mean demand change</div>
+          <div class="swatches" id="swatches"></div>
+          <div class="ticks" id="ticks"></div>
+        </div>
+        <div class="ramp" id="thinkey" hidden>
+          <div class="ramp-t">Sample</div>
+          <div style="font-size:12px; color:var(--ink2); padding-bottom:2px">
+            <b style="color:var(--ink)">*</b> fewer than 10 heat days &mdash; indicative
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CARD -->
+    <section class="panel" aria-live="polite" aria-atomic="true">
+      <div class="card" id="card"></div>
+    </section>
+  </div>
+
+  <div style="margin-top:20px">
+    <button class="tbtn" id="tbtn" aria-expanded="false" aria-controls="tablewrap">
+      Show data table
+    </button>
+    <div class="tablewrap" id="tablewrap" hidden></div>
+  </div>
+
+  <div class="foot">
+    <div>
+      <h3>How a heatwave day is defined</h3>
+      <p>Three or more consecutive days above the local day-of-year 90th percentile
+      of daily maximum temperature (2014&ndash;2025 baseline), or at or above 30&nbsp;&deg;C.
+      Temperature is ERA5 reanalysis, population-weighted across each country&rsquo;s
+      largest metropolitan areas, so it tracks where demand actually sits.</p>
+    </div>
+    <div>
+      <h3>What the comparison holds fixed</h3>
+      <p>Heatwave days are compared against non-heatwave days from the same
+      May&ndash;September season, with weekdays matched to weekdays and weekends to
+      weekends &mdash; without that, a heatwave falling on a working week reads as
+      demand growth that is really just the difference between a Tuesday and a
+      Sunday.</p>
+    </div>
+    <div>
+      <h3 id="whyh">Why 19 countries and not 27</h3>
+      <ul id="absent"></ul>
+      <p style="margin-top:8px">Switzerland is shown alongside the EU members
+      because it sits inside the same synchronous grid and trades across it.</p>
+    </div>
+    <div>
+      <h3>Reading the country card</h3>
+      <p>The bars are <b>supply-side</b>: generation by fuel plus net cross-border
+      trade, as a change in average daily energy. They will not sum exactly to the
+      demand change, because a country also exports, pumps and loses energy in
+      transmission.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const C = DATA.countries, S = DATA.shapes;
+
+/* Bins for the sequential ramp. Uplift runs from about -1% to +53%, so the
+   steps are widened toward the top rather than spaced evenly - even spacing
+   would put fifteen countries in one bucket and leave four empty. */
+const BINS = [2, 5, 10, 20, 35];
+const RAMP = ['--r1','--r2','--r3','--r4','--r5','--r6'];
+const TICKS = ['0', '2', '5', '10', '20', '35', '55'];
+const binOf = v => { let i = 0; while (i < BINS.length && v >= BINS[i]) i++; return i; };
+const DARKFILL = 4; // bins at or above this index need light ink on top
+
+const fmtPct = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + '%';
+// Rounding to one decimal turns Luxembourg's tiny gas change into "-0.0", which
+// reads as a negative that is not there. Anything that rounds to zero loses the sign.
+const fmtGwh = v => (Math.abs(v) < 0.05 ? '' : v > 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+const fmtMw = v => { const a = Math.abs(v);
+  return (v < 0 ? '−' : '') + (a >= 1000 ? (a/1000).toFixed(1) + ' GW' : Math.round(a) + ' MW'); };
+
+/* ---------------- map ---------------- */
+const svg = document.getElementById('map');
+const tip = document.getElementById('tip');
+svg.setAttribute('viewBox', `0 0 ${DATA.w} ${DATA.h}`);
+
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+DATA.context.forEach(d => svg.appendChild(el('path', {d, class:'ctx'})));
+
+const codes = Object.keys(C).sort((a,b) => C[a].mean - C[b].mean);
+const nodes = {};
+codes.forEach(cc => {
+  const bin = binOf(C[cc].mean);
+  const p = el('path', {
+    d: S[cc].d, class:'cshape', fill:`var(${RAMP[bin]})`,
+    tabindex:'0', role:'button', 'data-cc':cc,
+    'aria-label':`${C[cc].name}, mean demand ${fmtPct(C[cc].mean)} on heatwave days`
+      + (C[cc].thin ? `, thin sample of only ${C[cc].days} days` : '')
+  });
+  svg.appendChild(p);
+  nodes[cc] = p;
+});
+
+// Labels go on last so no shape can cover them.
+// Countries too small to hold a label, and where to lead it out to. The offsets
+// are chosen by hand into open water or an unlabelled neighbour - two of these
+// sit in the most crowded corner of the map and no generic rule places them
+// better than looking at it does.
+const LEAD = {LU:[-52,16], SI:[-8,34], CY:[0,-24]};
+codes.forEach(cc => {
+  const s = S[cc], bin = binOf(C[cc].mean);
+  const t = el('text', {class:'clab'});
+  // An asterisk, not a dashed outline: Denmark's coastline is all fjords and
+  // islands, and a dash pattern on it reads as static rather than as a caveat.
+  t.textContent = cc + (C[cc].thin ? '*' : '');
+  if (!LEAD[cc] && s.span >= 42) {
+    t.setAttribute('x', s.cx); t.setAttribute('y', s.cy);
+    t.setAttribute('fill', bin >= DARKFILL ? 'var(--onDark)' : 'var(--onLight)');
+    t.setAttribute('stroke', `var(${RAMP[bin]})`);
+  } else {
+    const [dx, dy] = LEAD[cc] || [34, -26];
+    svg.appendChild(el('path', {class:'pin',
+      d:`M${s.cx} ${s.cy}L${s.cx + dx} ${s.cy + dy}`}));
+    svg.appendChild(el('circle', {class:'pin-dot', cx:s.cx, cy:s.cy, r:1.8}));
+    t.setAttribute('x', s.cx + dx + (dx < 0 ? -4 : dx > 0 ? 4 : 0));
+    t.setAttribute('y', s.cy + dy + (dy < 0 ? -1 : 1));
+    t.setAttribute('fill', 'var(--ink2)');
+    t.setAttribute('stroke', 'var(--panel)');
+    t.setAttribute('style',
+      dx < 0 ? 'text-anchor:end' : dx > 0 ? 'text-anchor:start' : 'text-anchor:middle');
+  }
+  svg.appendChild(t);
+});
+
+document.getElementById('ncount').textContent = codes.length + ' countries';
+document.getElementById('whyh').textContent =
+  `Why ${codes.length} countries and not 27`;
+if (codes.some(cc => C[cc].thin)) document.getElementById('thinkey').hidden = false;
+
+// legend
+const swWrap = document.getElementById('swatches'), tkWrap = document.getElementById('ticks');
+RAMP.forEach(v => { const d = document.createElement('div');
+  d.className = 'sw'; d.style.background = `var(${v})`; swWrap.appendChild(d); });
+TICKS.forEach((t,i) => { const s = document.createElement('span');
+  s.textContent = i === TICKS.length-1 ? t + '%' : t; tkWrap.appendChild(s); });
+
+/* ---------------- interaction ---------------- */
+let sel = null;
+
+function select(cc){
+  sel = cc;
+  for (const k in nodes) nodes[k].classList.toggle('sel', k === cc);
+  if (cc) {
+    // Raise the selected outline so its stroke is not clipped by a neighbour.
+    svg.appendChild(nodes[cc]);
+    svg.querySelectorAll('text.clab, path.pin').forEach(n => svg.appendChild(n));
+  }
+  renderCard();
+}
+
+svg.addEventListener('click', e => {
+  const p = e.target.closest('.cshape');
+  select(p ? p.dataset.cc : null);
+});
+svg.addEventListener('keydown', e => {
+  const p = e.target.closest('.cshape');
+  if (p && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(p.dataset.cc); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') select(null); });
+
+function showTip(cc, x, y){
+  const c = C[cc];
+  tip.innerHTML = `<div class="n">${c.name}</div>
+    <div class="v">${fmtPct(c.mean)} mean demand &middot; ${c.days} heatwave days</div>`;
+  const box = svg.getBoundingClientRect(), host = tip.offsetParent.getBoundingClientRect();
+  tip.style.left = (x - host.left) + 'px';
+  tip.style.top  = (y - host.top - 12) + 'px';
+  tip.classList.add('on');
+}
+svg.addEventListener('pointermove', e => {
+  const p = e.target.closest('.cshape');
+  if (p) showTip(p.dataset.cc, e.clientX, e.clientY);
+  else tip.classList.remove('on');
+});
+svg.addEventListener('pointerleave', () => tip.classList.remove('on'));
+svg.addEventListener('focusin', e => {
+  const p = e.target.closest('.cshape');
+  if (!p) return;
+  const r = p.getBoundingClientRect();
+  showTip(p.dataset.cc, r.left + r.width/2, r.top);
+});
+svg.addEventListener('focusout', () => tip.classList.remove('on'));
+
+/* ---------------- card ---------------- */
+const card = document.getElementById('card');
+
+function euSummary(){
+  let n = 0, h = 0;
+  for (const k in C){ n += C[k].normalMw; h += C[k].hwMw; }
+  return {pct:(h-n)/n*100, gw:(h-n)/1000, gwh:(h-n)*24/1000};
+}
+
+function renderCard(){
+  if (!sel){
+    const s = euSummary();
+    const hot = Object.keys(C).sort((a,b)=>C[b].mean-C[a].mean).slice(0,5);
+    card.innerHTML = `
+      <div class="empty">
+        <div class="card-top">
+          <div><h2 class="cname">All ${codes.length} together</h2>
+            <p class="cdays">Every heatwave day recorded this season</p></div>
+        </div>
+        <div class="eu">
+          <span class="big" style="color:var(--rose)">${fmtPct(s.pct)}</span>
+          <span class="u">average demand</span>
+        </div>
+        <p class="herosub">${s.gw.toFixed(1)} GW more load on average, or
+          ${Math.round(s.gwh)} GWh a day across the region.</p>
+        <div class="stats">
+          <div class="stat"><div class="k">Hardest hit</div>
+            <div class="v">${C[hot[0]].name}</div><div class="s">${fmtPct(C[hot[0]].mean)}</div></div>
+          <div class="stat"><div class="k">Most heat days</div>
+            <div class="v">${C[hot.slice().sort((a,b)=>C[b].days-C[a].days)[0]].name}</div>
+            <div class="s">${Math.max(...hot.map(k=>C[k].days))} days</div></div>
+          <div class="stat"><div class="k">Barely moved</div>
+            <div class="v">${C[codes[0]].name}</div><div class="s">${fmtPct(C[codes[0]].mean)}</div></div>
+        </div>
+        <div class="hint">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M9 11.5 4 20l8.5-5"/><path d="M14 4c3 0 6 3 6 6 0 4.5-5.5 8-9 9-1-3.5 .5-9 3-12"/>
+          </svg>
+          Select any shaded country for its own breakdown.
+        </div>
+      </div>`;
+    return;
+  }
+
+  const c = C[sel];
+  const all = [...c.up, ...c.down].sort((a,b) => Math.abs(b.gwh) - Math.abs(a.gwh));
+  const max = Math.max(...all.map(x => Math.abs(x.gwh)), 0.1);
+  const dMw = c.hwMw - c.normalMw;
+
+  const rows = all.map(x => {
+    // Floor the width: at Italy's scale a 0.7 GWh/d change against a 150 GWh/d
+    // one is a third of a pixel, which reads as "no bar" rather than "small".
+    const w = Math.max(Math.abs(x.gwh) / max * 50, 0.9);
+    const up = x.gwh > 0;
+    return `<div class="row">
+      <div class="lab">${x.k}</div>
+      <div class="plot"><div class="bar ${up?'up':'dn'}" style="width:${w}%"></div></div>
+      <div class="val" style="color:var(${up?'--rose':'--fell'})">${fmtGwh(x.gwh)}
+        <span class="p">GWh/d</span></div>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div>
+        <h2 class="cname">${c.name}</h2>
+        <p class="cdays">${c.days} heatwave days vs ${c.normalDays} normal days
+          ${c.thin ? '<b class="thin">&middot; thin sample</b>' : ''}</p>
+      </div>
+      <span class="badge">${sel}</span>
+    </div>
+
+    <div class="hero">
+      <span class="big" style="color:var(${c.mean >= 0 ? '--rose' : '--fell'})">${fmtPct(c.mean)}</span>
+      <span class="u">mean demand</span>
+    </div>
+    <p class="herosub">${fmtMw(dMw)} more load on average &mdash;
+      ${(c.normalMw/1000).toFixed(1)} &rarr; ${(c.hwMw/1000).toFixed(1)} GW.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Peak demand</div>
+        <div class="v">${fmtPct(c.peak)}</div><div class="s">daily maximum</div></div>
+      <div class="stat"><div class="k">Heat days</div>
+        <div class="v">${c.hwTemp != null ? c.hwTemp.toFixed(1) + '°' : '—'}</div>
+        <div class="s">avg daily max</div></div>
+      <div class="stat"><div class="k">Normal days</div>
+        <div class="v">${c.refTemp != null ? c.refTemp.toFixed(1) + '°' : '—'}</div>
+        <div class="s">avg daily max</div></div>
+    </div>
+
+    <p class="seclab">Where the power came from</p>
+    <div class="rows">${rows}</div>
+    <div class="axcap">
+      <div></div>
+      <div class="c">
+        <i><span class="dot" style="background:var(--fell)"></span>fell</i>
+        <i>rose<span class="dot" style="background:var(--rose)"></span></i>
+      </div>
+      <div></div>
+    </div>
+
+    <p class="note">${c.thin ? '<b class="thin">Only ' + c.days + ' heatwave days met the '
+      + 'threshold here, so treat these figures as indicative rather than settled.</b> ' : ''}${
+      c.note ? c.note + ' ' : ''}Change in average daily energy on heatwave days
+      against matched normal days. Generation is measured at the plant; net
+      imports are cross-border flows.</p>`;
+}
+
+/* ---------------- table ---------------- */
+const FUELS = ['gas','coal','nuclear','hydro','wind','solar','biomass','other','imports'];
+const FLAB = {gas:'Gas',coal:'Coal',nuclear:'Nuclear',hydro:'Hydro',wind:'Wind',
+  solar:'Solar',biomass:'Biomass',other:'Other',imports:'Net imports'};
+
+document.getElementById('tbtn').addEventListener('click', e => {
+  const w = document.getElementById('tablewrap');
+  const open = w.hasAttribute('hidden');
+  if (open && !w.innerHTML) w.innerHTML = buildTable();
+  w.toggleAttribute('hidden', !open);
+  e.target.setAttribute('aria-expanded', String(open));
+  e.target.textContent = open ? 'Hide data table' : 'Show data table';
+});
+
+function buildTable(){
+  const order = Object.keys(C).sort((a,b) => C[b].mean - C[a].mean);
+  const head = ['Country','Heat days','Mean demand','Peak demand','Heat °C',
+                'Normal °C', ...FUELS.map(f => FLAB[f] + ' GWh/d')];
+  const body = order.map(cc => {
+    const c = C[cc], m = {};
+    [...c.up, ...c.down].forEach(x => m[x.id] = x.gwh);
+    return `<tr><td>${c.name}</td><td class="num">${c.days}</td>
+      <td class="num">${fmtPct(c.mean)}</td><td class="num">${fmtPct(c.peak)}</td>
+      <td class="num">${c.hwTemp != null ? c.hwTemp.toFixed(1) : '—'}</td>
+      <td class="num">${c.refTemp != null ? c.refTemp.toFixed(1) : '—'}</td>
+      ${FUELS.map(f => `<td class="num">${m[f] != null ? fmtGwh(m[f]) : '—'}</td>`).join('')}
+    </tr>`;
+  }).join('');
+  return `<table><caption>Change on heatwave days against matched normal days,
+    same May&ndash;September season. Energy figures are average GWh per day.</caption>
+    <thead><tr>${head.map(h => `<th scope="col">${h}</th>`).join('')}</tr></thead>
+    <tbody>${body}</tbody></table>`;
+}
+
+/* absent-country list */
+document.getElementById('absent').innerHTML =
+  DATA.absent.map(([who, why]) => `<li><b>${who}</b> &mdash; ${why}</li>`).join('');
+
+/* The hash carries the selection, so an embed can deep-link to one country and
+   the back button steps through what was looked at. */
+const fromHash = () => {
+  const cc = decodeURIComponent(location.hash.replace('#','')).toUpperCase();
+  select(C[cc] ? cc : null);
+};
+addEventListener('hashchange', fromHash);
+const baseSelect = select;
+select = function(cc){
+  baseSelect(cc);
+  // Opened straight off the filesystem, Chrome refuses to rewrite the URL. The
+  // map still works, so the deep link is simply not available there.
+  try {
+    history.replaceState(null, '', cc ? '#' + cc : location.pathname + location.search);
+  } catch (_) {}
+};
+
+fromHash();
+if (!sel) renderCard();
+</script>
+</body>
+</html>
