@@ -21,6 +21,13 @@ The scale is diverging, not sequential: importing and exporting are opposite
 states rather than more and less of one thing, so lightness peaks at the
 balanced midpoint and falls toward both poles.
 
+Corridor arrows are single-headed and point the way the power actually went,
+which is not the way the corridor reads: Greece feeds Bulgaria, Bulgaria feeds
+Romania, and Hungary feeds Romania too, so the flows cascade north onto the
+dearest market in the group. That is coupling doing its job, and the script
+counts how often it did rather than asserting it - 10 of the 13 borders between
+these ten carried power toward the dearer side.
+
 Writes PDF and PNG to python/output/.
 """
 from __future__ import annotations
@@ -126,6 +133,53 @@ for cc in CEE:
         days=min(int(p["heatwave_days"]), int(r["heatwave_days"]),
                  int(t["heatwave_days"])),
     )
+
+# ---- net flow on each border, on heatwave days ----------------------------
+def page(q):
+    out, off = [], 0
+    while True:
+        chunk = get(f"{q}&limit=1000&offset={off}")
+        out += chunk
+        if len(chunk) < 1000:
+            return out
+        off += 1000
+
+
+hw_days = {}
+for r in page("v_heatwave_days?select=country_code,date"):
+    hw_days.setdefault(r["country_code"], set()).add(r["date"])
+
+# Every border is stored in both directions, so collapse each to one canonical
+# orientation before summing or the mirror row cancels it out.
+_acc = {}
+for r in page("mv_crossborder_net_daily?select=date,from_country,to_country,"
+              "net_export_gwh&date=gte.2026-05-01&date=lte.2026-09-30"):
+    a, b = r["from_country"], r["to_country"]
+    if a not in NAMES or b not in NAMES:
+        continue
+    # A border belongs to the heat event if either end was in a heatwave.
+    if r["date"] not in hw_days.get(a, ()) and r["date"] not in hw_days.get(b, ()):
+        continue
+    lo, hi = (a, b) if a < b else (b, a)
+    v = float(r["net_export_gwh"] or 0)
+    _acc.setdefault((lo, hi), {})[r["date"]] = v if a == lo else -v
+
+FLOW = {}
+for (lo, hi), days in _acc.items():
+    mean = sum(days.values()) / len(days)
+    src, dst = (lo, hi) if mean > 0 else (hi, lo)
+    FLOW[(lo, hi)] = FLOW[(hi, lo)] = dict(src=src, dst=dst, gwh=abs(mean),
+                                           days=len(days))
+print(f"  {len(_acc)} borders with flow on heatwave days")
+
+# Coupling is supposed to send power toward the dearer market. Count how often
+# it actually did, rather than asserting that it did.
+_pairs = [k for k in _acc if k[0] in D and k[1] in D]
+NBORDERS = len(_pairs)
+TOWARD = sum(1 for k in _pairs
+             if D[FLOW[k]["dst"]]["price"] > D[FLOW[k]["src"]]["price"])
+print(f"  flow ran toward the dearer market on {TOWARD} of {NBORDERS} borders")
+
 
 def corr(key):
     n = len(D)
@@ -241,25 +295,25 @@ cor_p = [D[c]["price"] for c in CORRIDOR]
 cor_r = [D[c]["resh"] for c in CORRIDOR]
 CSPREAD = max(cor_p) - min(cor_p)
 
-# The subtitle is three lines now; the legend has to start below where it ends.
-TOP = 0.843
+# The subtitle is four lines now; the legend has to start below where it ends.
+TOP = 0.818
 fig.text(0.055, 0.972, "The importers paid the most,",
          fontsize=18, fontweight="bold", color=INK, va="top")
 fig.text(0.055, 0.947, "the exporters paid the least",
          fontsize=18, fontweight="bold", color=INK, va="top")
 fig.text(0.055, 0.919,
          f"Net trade position and average day-ahead price on heatwave days, "
-         f"May{NDASH}September 2026. Across these ten,\nprice tracks net trade "
-         f"(r = {R_IMP:+.2f}) and not renewable share (r = {R_RES:+.2f}). Neither causes the "
-         f"other: a country imports\nbecause it is short, and being short is what costs. "
-         f"The Hungary{NDASH}Romania{NDASH}Bulgaria{NDASH}Greece corridor spans "
-         f"{EURO}{CSPREAD:.0f}/MWh.",
+         f"May{NDASH}September 2026.\nAcross these ten, price tracks net trade "
+         f"(r = {R_IMP:+.2f}), not renewable share (r = {R_RES:+.2f}). Neither causes the\n"
+         f"other: a country imports because it is short, and being short is what costs.\n"
+         f"Arrows show net flow along the corridor; power ran to the dearer market on "
+         f"{TOWARD} of {NBORDERS} borders.",
          fontsize=10.2, color=MUTED, va="top", linespacing=1.5)
 
 # ---- map axis
 # With only the legend in the left column, the map takes the width the two
 # removed panels were using.
-ax = fig.add_axes([0.235, 0.108, 0.755, 0.772])
+ax = fig.add_axes([0.235, 0.100, 0.755, 0.730])
 ax.set_xlim(-16, W + 16)
 ax.set_ylim(-16, H + 16)
 ax.set_aspect("equal")
@@ -321,13 +375,20 @@ def shrink(p, q, by):
 
 
 for a, b in zip(CORRIDOR, CORRIDOR[1:]):
-    pa, pb = LABELPT[a], LABELPT[b]
+    f = FLOW[(a, b)]
+    # Single-headed and pointing the way the power actually went, which is not
+    # always the way the corridor is read: both Hungary and Bulgaria feed
+    # Romania, so the two arrows converge on it.
+    pa, pb = LABELPT[f["src"]], LABELPT[f["dst"]]
     ax.annotate("", xy=shrink(pb, pa, 62), xytext=shrink(pa, pb, 62),
-                arrowprops=dict(arrowstyle="<->", color="#5d6b58", lw=1.3,
-                                shrinkA=0, shrinkB=0), zorder=5.5)
+                arrowprops=dict(arrowstyle="-|>", color="#5d6b58", lw=1.4,
+                                mutation_scale=15, shrinkA=0, shrinkB=0),
+                zorder=5.5)
     mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-    ax.text(mid[0], mid[1], f"{EURO}{abs(D[a]['price'] - D[b]['price']):.0f}\nspread",
-            ha="center", va="center", fontsize=8.4, color=INK, linespacing=1.3,
+    ax.text(mid[0], mid[1],
+            f"{EURO}{abs(D[a]['price'] - D[b]['price']):.0f} spread\n"
+            f"{f['gwh']:.1f} GWh/d",
+            ha="center", va="center", fontsize=8.0, color=INK, linespacing=1.35,
             zorder=6, bbox=dict(boxstyle="round,pad=0.34", facecolor="#ffffff",
                                 edgecolor="#c9d2c6", linewidth=0.9))
 
