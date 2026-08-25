@@ -40,6 +40,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib import patheffects as pe
 from matplotlib.patches import PathPatch, Rectangle, FancyArrowPatch
 from matplotlib.path import Path as MPath
 
@@ -334,6 +335,29 @@ def shrink(p, q, by):
     return p[0] + dx / n * by, p[1] + dy / n * by
 
 
+def flow_arrow(a, b, gwh, zorder):
+    """One filled polygon, outlined.
+
+    Built from a line plus a separate arrowhead first, with a second wider
+    arrow drawn underneath as a white casing. That looked wrong: the casing's
+    head is scaled independently of the shaft, so it protruded around the dark
+    head as a ragged white wedge. A single 'simple' arrow is one closed shape,
+    and a stroke path-effect outlines the whole silhouette evenly - which is
+    what the casing was trying to be.
+    """
+    w = (gwh / GMAX) ** 0.55
+    tail = 1.8 + 5.4 * w
+    head_w = tail * 2.5
+    head_l = tail * 2.3
+    return FancyArrowPatch(
+        a, b,
+        arrowstyle=f"simple,head_width={head_w:.2f},head_length={head_l:.2f},"
+                   f"tail_width={tail:.2f}",
+        mutation_scale=1, facecolor=ARROW, edgecolor="none",
+        shrinkA=0, shrinkB=0, zorder=zorder,
+        path_effects=[pe.withStroke(linewidth=2.4, foreground=SEAM)])
+
+
 def render(mode):
     M = MODES[mode]
     ramp, ink_for, bins = M["ramp"], M["ink"], M["bins"]
@@ -422,22 +446,14 @@ def render(mode):
         mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
         a = shrink(mid, pa, half)
         b = shrink(mid, pb, half)
-        w = (fl["gwh"] / GMAX) ** 0.55
-        lw = 1.5 + 5.2 * w
-        head = 12 + 17 * w
-        # A white casing under the arrow, so it stays legible over a dark fill
-        # as well as a light one.
-        for col, extra, z in ((SEAM, 2.8, 5.2), (ARROW, 0.0, 5.4)):
-            ax.annotate("", xy=b, xytext=a,
-                        arrowprops=dict(arrowstyle="-|>", color=col,
-                                        lw=lw + extra, mutation_scale=head + extra * 2,
-                                        shrinkA=0, shrinkB=0,
-                                        joinstyle="miter", capstyle="butt"),
-                        zorder=z, annotation_clip=False)
+        ax.add_patch(flow_arrow(a, b, fl["gwh"], zorder=5.4))
         # Number beside the shaft, not on it, so it never breaks the arrow in two.
         ux, uy = (b[0] - a[0]) / (2 * half or 1), (b[1] - a[1]) / (2 * half or 1)
         px, py = -uy, ux
-        ax.text(mid[0] + px * 16, mid[1] + py * 16, f"{fl['gwh']:.1f}",
+        # Clear of the shaft, not on it: the offset has to grow with the arrow,
+        # since the widest heads are about as across as the badge is tall.
+        off = 24 + 17 * (fl["gwh"] / GMAX) ** 0.55
+        ax.text(mid[0] + px * off, mid[1] + py * off, f"{fl['gwh']:.1f}",
                 ha="center", va="center", fontsize=7.4, color=ARROW,
                 fontweight="bold", zorder=5.6,
                 bbox=dict(boxstyle="round,pad=0.22", facecolor="#ffffff",
@@ -478,11 +494,9 @@ def render(mode):
     # Two sample arrows at the extremes of the scale, so the widths mean something.
     y -= 0.052
     for gv in (min(f["gwh"] for f in FLOW.values()), GMAX):
-        w = (gv / GMAX) ** 0.55
-        fig.patches.append(FancyArrowPatch(
-            (lx + 0.004, y), (lx + 0.062, y), transform=fig.transFigure,
-            arrowstyle="-|>", mutation_scale=12 + 17 * w, lw=1.5 + 5.2 * w,
-            color=ARROW, shrinkA=0, shrinkB=0, zorder=4))
+        arr = flow_arrow((lx + 0.004, y), (lx + 0.062, y), gv, zorder=4)
+        arr.set_transform(fig.transFigure)
+        fig.patches.append(arr)
         fig.text(lx + 0.074, y, f"{gv:.1f}", fontsize=8.8, color=MUTED, va="center")
         y -= 0.030
 
