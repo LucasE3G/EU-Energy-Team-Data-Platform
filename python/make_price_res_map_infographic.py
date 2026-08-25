@@ -301,7 +301,7 @@ for a, b in zip(CORRIDOR, CORRIDOR[1:]):
                 arrowprops=dict(arrowstyle="<->", color="#5d6b58", lw=1.3,
                                 shrinkA=0, shrinkB=0), zorder=5.5)
     mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-    ax.text(mid[0], mid[1], f"{EURO}{abs(D[a]['price'] - D[b]['price']):.0f}\napart",
+    ax.text(mid[0], mid[1], f"{EURO}{abs(D[a]['price'] - D[b]['price']):.0f}\nspread",
             ha="center", va="center", fontsize=8.4, color=INK, linespacing=1.3,
             zorder=6, bbox=dict(boxstyle="round,pad=0.34", facecolor="#ffffff",
                                 edgecolor="#c9d2c6", linewidth=0.9))
@@ -309,7 +309,7 @@ for a, b in zip(CORRIDOR, CORRIDOR[1:]):
 # ---- the comparison the map is built around, called out on it
 ax.annotate(
     f"Same renewable share,\n"
-    f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart:\n"
+    f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh spread:\n"
     f"Romania {D['RO']['resh']:.0f}% at {EURO}{D['RO']['price']:.0f},\n"
     f"Greece {D['GR']['resh']:.0f}% at {EURO}{D['GR']['price']:.0f}.",
     # No leader. It names both countries, both are labelled on the map, and a
