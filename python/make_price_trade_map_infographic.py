@@ -52,15 +52,14 @@ from matplotlib.path import Path as MPath
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "python" / "output"
 
-CEE = ["PL", "CZ", "SK", "AT", "HU", "SI", "HR", "RO", "BG", "GR"]
+CEE = ["AT", "SK", "HU", "RO", "BG", "GR"]
 # Four markets connected in a chain, and the ones whose cross-border data was
 # most incomplete until the Balkan and non-EU borders were backfilled. Romania
 # and Greece sit at opposite ends of the price range on almost identical
 # renewable shares, which is the whole point of the map.
 CORRIDOR = ["HU", "RO", "BG", "GR"]
-NAMES = {"PL": "Poland", "CZ": "Czechia", "SK": "Slovakia", "AT": "Austria",
-         "HU": "Hungary", "SI": "Slovenia", "HR": "Croatia", "RO": "Romania",
-         "BG": "Bulgaria", "GR": "Greece"}
+NAMES = {"AT": "Austria", "SK": "Slovakia", "HU": "Hungary",
+         "RO": "Romania", "BG": "Bulgaria", "GR": "Greece"}
 
 # Diverging, because net trade has a sign: a country is either leaning on its
 # neighbours or supplying them, and those are opposite states rather than more
@@ -77,14 +76,12 @@ INK, MUTED, FAINT = "#14203a", "#6b7280", "#e6e8ec"
 SEAM = "#ffffff"
 EURO, NDASH, MIDDOT, MINUS = "€", "–", "·", "−"
 
-# Only the ten countries are drawn, so everything west of Austria and Croatia is
-# empty canvas. Slovenia and Croatia are too small and too thin to hold three
-# lines of text, so their labels go out there on a leader; ABROAD gives the
-# absolute position of the label box in projected units.
-ABROAD = {"SI": (92, 688), "HR": (92, 516)}
+# Nothing is too small to hold its own label now that Slovenia and Croatia are
+# out, so no label needs leading off the map.
+ABROAD = {}
 # Hand nudges for labels that would otherwise sit on a border or over a
 # neighbour's text.
-NUDGE = {"SK": (16, 26), "AT": (-14, 2), "CZ": (-6, 6), "HU": (8, -6),
+NUDGE = {"SK": (10, 12), "AT": (-10, 0), "HU": (4, -8),
          "GR": (-2, -4), "RO": (6, 0)}
 
 
@@ -215,8 +212,9 @@ def bin_of(v: float) -> int:
 
 # ---------------------------------------------------------------- geometry
 # Crete and the far Aegean islands are dropped: they stretch the frame a long
-# way south for a few pixels of land and shrink everything else.
-BOUNDS = dict(min_lon=9.0, max_lon=30.4, min_lat=36.1, max_lat=55.2)
+# way south for a few pixels of land and shrink everything else. With Poland and
+# Czechia out the frame no longer has to reach north of Slovakia.
+BOUNDS = dict(min_lon=9.2, max_lon=30.2, min_lat=35.9, max_lat=50.2)
 W = 1000.0
 MIDLAT = math.radians((BOUNDS["min_lat"] + BOUNDS["max_lat"]) / 2)
 LONSPAN = (BOUNDS["max_lon"] - BOUNDS["min_lon"]) * math.cos(MIDLAT)
@@ -308,7 +306,7 @@ MODES = {
         labels=["exports 20%+ of demand", "exports 5-20%", "broadly balanced",
                 "imports 5-15%", "imports 15%+"],
         legend="Net trade on\nheatwave days",
-        title=("The importers paid the most,", "the exporters paid the least"),
+        title=("The two that imported most", "were the two that paid most"),
         file="heatwave_price_trade_map",
     ),
     "price": dict(
@@ -373,7 +371,9 @@ def render(mode):
             i += 1
         return i
 
-    fig = plt.figure(figsize=(9.0, 11.0), dpi=200)
+    # Shorter than it was: without Poland and Czechia the frame is nearly square
+    # rather than portrait, and the old canvas left a band of white below Greece.
+    fig = plt.figure(figsize=(9.0, 9.6), dpi=200)
     fig.patch.set_facecolor("#ffffff")
 
     TOP = 0.818
@@ -383,11 +383,13 @@ def render(mode):
              color=INK, va="top")
     fig.text(0.055, 0.919,
              f"Net trade, day-ahead price and net cross-border flow on heatwave days, "
-             f"May{NDASH}September 2026.\nAcross these ten, price tracks net trade "
-             f"(r = {R_IMP:+.2f}), not renewable share (r = {R_RES:+.2f}). Neither causes the\n"
-             f"other: a country imports because it is short, and being short is what costs.\n"
-             f"Arrows are net flow, scaled by volume; power ran to the dearer market on "
-             f"{TOWARD} of {NBORDERS} borders.",
+             f"May{NDASH}September 2026.\nPower ran toward the dearer market on "
+             f"{'every one of the' if TOWARD == NBORDERS else str(TOWARD) + ' of the'} "
+             f"{NBORDERS} borders between these {len(CEE)}. It is not that importing\n"
+             f"raises the price: a country imports because it is short, and being short "
+             f"is what costs.\nRenewable share does not order them {MIDDOT} Romania and Greece "
+             f"ran the same {D['RO']['resh']:.0f}% and sit "
+             f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.",
              fontsize=10.2, color=MUTED, va="top", linespacing=1.5)
 
     ax = fig.add_axes([0.235, 0.100, 0.755, 0.730])
@@ -469,14 +471,13 @@ def render(mode):
             if all(math.dist(cand, q) > 40 for q in placed):
                 break
         placed.append(cand)
-        # Both numbers, because they answer different questions: the spread is
-        # why the power moved, the volume is how much of it did. The euro sign
-        # tells them apart without spending a line on units.
-        ax.text(cand[0], cand[1],
-                f"{EURO}{abs(D[lo]['price'] - D[hi]['price']):.0f}\n{fl['gwh']:.1f}",
-                ha="center", va="center", fontsize=7.2, color=ARROW,
-                fontweight="bold", zorder=5.6, linespacing=1.25,
-                bbox=dict(boxstyle="round,pad=0.24", facecolor="#ffffff",
+        # Volume only. The spread between any two is the difference between the
+        # two prices already printed on them, so putting it here spent a line
+        # restating something the reader can take straight off the map.
+        ax.text(cand[0], cand[1], f"{fl['gwh']:.1f}",
+                ha="center", va="center", fontsize=8.4, color=ARROW,
+                fontweight="bold", zorder=5.6,
+                bbox=dict(boxstyle="round,pad=0.26", facecolor="#ffffff",
                           edgecolor="#c9d2c6", linewidth=0.8))
 
     ax.annotate(
@@ -511,7 +512,7 @@ def render(mode):
     y -= 0.026
     # Kept narrow: the left column is only as wide as the legend swatches, and
     # a longer line reaches across into Slovenia's label box.
-    fig.text(lx, y, f"{EURO}  price spread\n    net flow, GWh/day\n"
+    fig.text(lx, y, f"Net flow in GWh per day.\n"
                     f"Arrows point downstream\nand widen with the volume.",
              fontsize=8.6, color=MUTED, va="top", linespacing=1.45)
     y -= 0.028
