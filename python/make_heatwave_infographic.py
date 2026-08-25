@@ -68,7 +68,7 @@ def get(path: str):
         return json.loads(r.read())
 
 
-def fetch() -> tuple[dict, dict]:
+def fetch() -> tuple[dict, dict, dict]:
     prof: dict = {}
     for x in get("v_hw_event_profile?select=*"):
         (prof.setdefault(x["country_code"], {})
@@ -76,10 +76,15 @@ def fetch() -> tuple[dict, dict]:
     price: dict = {}
     for x in get("v_hw_event_price?select=*"):
         price.setdefault(x["country_code"], {})[int(x["hour"])] = float(x["eur"])
-    return prof, price
+    # Demand on non-heatwave days from the same season, weighted to the weekday
+    # mix of the heatwave days each panel is drawn from.
+    base: dict = {}
+    for x in get("v_hw_event_baseline_demand?select=*"):
+        base.setdefault(x["country_code"], {})[int(x["hour"])] = float(x["gwh"])
+    return prof, price, base
 
 
-def draw_dispatch(ax, xs, series, title, note):
+def draw_dispatch(ax, xs, series, title, note, base=None):
     pos = [0.0] * len(xs)
     neg = [0.0] * len(xs)
     for key in STACK:
@@ -99,6 +104,11 @@ def draw_dispatch(ax, xs, series, title, note):
             ax.fill_between(xs, lo, neg, facecolor=COLOR[key], linewidth=0, zorder=2)
             neg = lo
 
+    # Baseline first, so the heatwave line sits on top of it where they meet.
+    if base:
+        ax.plot(xs, [base.get(h, float("nan")) for h in xs], color=DEMAND,
+                linewidth=1.6, zorder=3.5, linestyle=(0, (2.4, 2.0)),
+                dash_capstyle="round")
     ax.plot(xs, [series[h].get("demand", 0.0) for h in xs],
             color=DEMAND, linewidth=2.2, zorder=4, solid_capstyle="round")
     ax.axhline(0, color="#9aa3b2", linewidth=0.9, zorder=3)
@@ -141,7 +151,7 @@ def draw_price(ax, xs, px):
                     fontsize=8.4, color=PRICE)
 
 
-def build(prof: dict, price: dict):
+def build(prof: dict, price: dict, base: dict):
     plt.rcParams["font.family"] = ["DejaVu Sans"]
     fig = plt.figure(figsize=(13.2, 8.0), dpi=200)
     fig.patch.set_facecolor("#ffffff")
@@ -156,13 +166,17 @@ def build(prof: dict, price: dict):
 
     present = {k for cc, _ in COUNTRIES for h in prof.get(cc, {}).values()
                for k in h if abs(h.get(k, 0.0)) > 1e-9}
-    handles = [Line2D([], [], color=DEMAND, linewidth=2.2, label="Demand")]
+    handles = [Line2D([], [], color=DEMAND, linewidth=2.2, label="Demand"),
+               Line2D([], [], color=DEMAND, linewidth=1.6, label="Demand, normal days",
+                      linestyle=(0, (2.4, 2.0)))]
     handles += [Patch(facecolor=COLOR[k], label=LABEL[k])
                 for k in reversed(STACK) if k in present]
     handles += [Line2D([], [], color=PRICE, linewidth=2.0, label="Day-ahead price")]
+    # One row, always: the baseline entry made nine, and at ncol=8 the legend
+    # wrapped onto a second line that landed on top of the France panel title.
     fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.042, 0.845),
-               ncol=8, frameon=False, fontsize=9, handlelength=1.5,
-               handleheight=0.9, columnspacing=1.3, labelcolor=INK)
+               ncol=len(handles), frameon=False, fontsize=8.6, handlelength=1.5,
+               handleheight=0.9, columnspacing=1.05, labelcolor=INK)
 
     gs = fig.add_gridspec(2, 4, left=0.045, right=0.985, top=0.745, bottom=0.205,
                           hspace=0.10, wspace=0.19, height_ratios=[3.0, 1.15])
@@ -175,7 +189,8 @@ def build(prof: dict, price: dict):
         peak = max(series[h].get("demand", 0.0) for h in xs)
         ax = fig.add_subplot(gs[0, i])
         draw_dispatch(ax, xs, series, name,
-                      f"peak {peak:.1f} GWh  {MIDDOT}  {HW_DAYS.get(cc, 0)} heatwave days")
+                      f"peak {peak:.1f} GWh  {MIDDOT}  {HW_DAYS.get(cc, 0)} heatwave days",
+                      base=base.get(cc))
         if i == 0:
             ax.set_ylabel("GWh per hour", fontsize=8.6, color=MUTED, labelpad=4)
         axp = fig.add_subplot(gs[1, i])
@@ -183,16 +198,21 @@ def build(prof: dict, price: dict):
         if i == 0:
             axp.set_ylabel("€/MWh", fontsize=8.6, color=MUTED, labelpad=4)
 
+    # Laid out from a single start and step rather than hand-placed, so adding a
+    # line cannot silently print it on top of the next one.
     foot = [
-        (0.166, f"Solar and storage are drawn at the top of the stack, with fossil directly beneath: the midday solar bulge and the evening fossil surge then read as one handover. The price panel is the same hours and days."),
-        (0.140, f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GWh, Greece near 8."),
-        (0.114, f"Generation stacks above zero and net exports fall below it, which is why France, an exporter throughout, carries a band beneath the axis."),
-        (0.088, f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector is included, the Balkan and non-EU borders"),
-        (0.062, f"among them {MIDDOT} Hungary now balances exactly. Greece's export band is still understated: ENTSO-E reports its Albanian and Italian flows for well under a third of these hours, and an unreported hour counts as none."),
-        (0.030, f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows, day-ahead prices) {MIDDOT} ERA5 via Open-Meteo (temperature)"),
+        f"Solar and storage are drawn at the top of the stack, with fossil directly beneath: the midday solar bulge and the evening fossil surge then read as one handover.",
+        f"The dotted line is the same hours on non-heatwave days from the same May{NDASH}September season, weighted to each panel's own mix of weekdays and weekends {MIDDOT} the gap between the two lines is what the heat added.",
+        f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GWh, Greece near 8. The price panel is the same hours and days.",
+        f"Generation stacks above zero and net exports fall below it, which is why France, an exporter throughout, carries a band beneath the axis.",
+        f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector is included, the Balkan and non-EU borders",
+        f"among them {MIDDOT} Hungary now balances exactly. Greece's export band is still understated: ENTSO-E reports its Albanian and Italian flows for well under a third of these hours, and an unreported hour counts as none.",
+        f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows, day-ahead prices) {MIDDOT} ERA5 via Open-Meteo (temperature)",
     ]
-    for y, txt in foot:
+    y = 0.170
+    for txt in foot:
         fig.text(0.045, y, txt, fontsize=7.5, color=MUTED, va="top")
+        y -= 0.0235
 
     fig.add_artist(Line2D([0.045, 0.26], [0.985, 0.985], color="#22c55e",
                           linewidth=3.4, solid_capstyle="butt"))
@@ -201,7 +221,7 @@ def build(prof: dict, price: dict):
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    prof, price = fetch()
+    prof, price, base = fetch()
     for cc, name in COUNTRIES:
         px = price.get(cc, {})
         if px:
@@ -209,7 +229,7 @@ def main() -> None:
             hi = max(px, key=lambda h: px[h])
             print(f"{name}: price {px[lo]:.0f} at {lo:02d}h -> {px[hi]:.0f} at {hi:02d}h "
                   f"({px[hi]/max(px[lo], 0.01):.1f}x)")
-    fig = build(prof, price)
+    fig = build(prof, price, base)
     pdf = OUT / "heatwave_july_august_2026.pdf"
     png = OUT / "heatwave_july_august_2026.png"
     fig.savefig(pdf, format="pdf", facecolor=fig.get_facecolor())
