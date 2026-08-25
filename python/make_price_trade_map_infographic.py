@@ -1,20 +1,25 @@
-"""Shareable infographic: day-ahead prices and renewable share on heatwave days
-across central and south-east Europe.
+"""Shareable infographic: net trade position and day-ahead prices on heatwave
+days across central and south-east Europe.
 
-The finding the map is built around is a NON-relationship, and that is the point.
-Across these ten countries the renewable share of generation on heatwave days
-runs from about 16% to 84% while the average day-ahead price sits inside a band
-of roughly 20 EUR/MWh. The correlation between the two is r = +0.03, nothing.
+Shaded by net trade rather than by renewable share, because that is what tracks
+the price. Across these ten countries the correlation between price and net
+imports is +0.67; between price and renewable share it is +0.03. Renewable share
+simply does not order them - Austria at 84% and Slovakia at 16% paid within
+9 EUR/MWh of each other - so shading by it invites a reader to hunt for a
+pattern that is not there.
 
-The Hungary-Romania-Bulgaria-Greece corridor makes the case sharpest, which is
-why it carries the headline and the only annotation on the map. Four markets
-wired to each other, a 19 EUR/MWh spread end to end - and Romania and Greece,
-on renewable shares of 54% and 53%, sit at opposite ends of it.
+Neither figure causes the other and the chart does not claim it does: a country
+imports because it is short, and being short is what costs. The map shows the
+two states side by side and says so in words.
 
-The map shades by renewable share and prints the price on top, so a reader
-looking for a pattern in the shading can see for themselves that there is not
-one. That is a deliberate choice rather than an accident of encoding, so the
-claim is also stated in words instead of being left to be inferred from a fill.
+The Hungary-Romania-Bulgaria-Greece corridor carries the argument, and it is
+also the stretch whose cross-border data was most incomplete until the Balkan
+and non-EU borders were backfilled. Romania and Greece ran the same renewable
+share and sit 19 EUR/MWh apart; one was importing and the other exporting.
+
+The scale is diverging, not sequential: importing and exporting are opposite
+states rather than more and less of one thing, so lightness peaks at the
+balanced midpoint and falls toward both poles.
 
 Writes PDF and PNG to python/output/.
 """
@@ -44,13 +49,16 @@ NAMES = {"PL": "Poland", "CZ": "Czechia", "SK": "Slovakia", "AT": "Austria",
          "HU": "Hungary", "SI": "Slovenia", "HR": "Croatia", "RO": "Romania",
          "BG": "Bulgaria", "GR": "Greece"}
 
-# Sequential ramp, light to dark. Every step carries text, so each was checked
-# for 4.5:1 against the ink chosen for it; the top step is the only one that
-# takes white. Adjacent steps are >=1.35:1 apart in luminance.
-BINS = [25, 40, 55, 70]
-RAMP = ["#f3f9ef", "#c2dfb0", "#8ec378", "#519f47", "#22682e"]
-BIN_LABELS = ["under 25%", "25-39%", "40-54%", "55-69%", "70% and over"]
-ON_FILL = ["#152a19", "#152a19", "#152a19", "#152a19", "#ffffff"]
+# Diverging, because net trade has a sign: a country is either leaning on its
+# neighbours or supplying them, and those are opposite states rather than more
+# and less of one thing. Lightness peaks at the balanced midpoint and falls
+# toward both poles. Every step carries text and was checked for 4.5:1 against
+# the ink chosen for it; adjacent steps are at least 17 apart in OKLab.
+BINS = [-20, -5, 5, 15]
+RAMP = ["#146b7a", "#84bcc7", "#eeeeea", "#eeb078", "#b3541d"]
+BIN_LABELS = ["exports 20%+ of demand", "exports 5-20%", "broadly balanced",
+              "imports 5-15%", "imports 15%+"]
+ON_FILL = ["#ffffff", "#152a19", "#152a19", "#152a19", "#ffffff"]
 
 INK, MUTED, FAINT = "#14203a", "#6b7280", "#e6e8ec"
 SEAM = "#ffffff"
@@ -64,7 +72,7 @@ ABROAD = {"SI": (92, 688), "HR": (92, 516)}
 # Hand nudges for labels that would otherwise sit on a border or over a
 # neighbour's text.
 NUDGE = {"SK": (16, 26), "AT": (-14, 2), "CZ": (-6, 6), "HU": (8, -6),
-         "GR": (14, -14), "RO": (6, 0)}
+         "GR": (-2, -4), "RO": (6, 0)}
 
 
 def load_env() -> dict:
@@ -93,10 +101,17 @@ def get(q):
 print("querying...")
 price = {r["country_code"]: r for r in get("v_heatwave_price?select=*")}
 res = {r["country_code"]: r for r in get("v_heatwave_renewable?select=*")}
+trade = {r["country_code"]: r for r in get("v_heatwave_trade_position?select=*")}
+uplift = {r["country_code"]: r for r in get("v_heatwave_demand_uplift?select=*")}
 
 D = {}
 for cc in CEE:
-    p, r = price[cc], res[cc]
+    p, r, t, u = price[cc], res[cc], trade[cc], uplift[cc]
+    # Net trade as a share of that country's own demand, so a 27 GWh/day import
+    # into Hungary and a 27 GWh/day import into France are not made to look
+    # like the same thing. Positive is a net importer.
+    dem = float(u["heatwave_mean_mw"]) * 24 / 1000.0
+    net = float(t["heatwave_net_import_gwh"])
     D[cc] = dict(
         name=NAMES[cc],
         price=float(p["heatwave_price_eur"]),
@@ -105,24 +120,30 @@ for cc in CEE:
         rise_pct=float(p["change_pct"]),
         resh=float(r["heatwave_renewable_pct"]),
         res_delta=float(r["delta_pp"]),
-        # The two views can differ by a day where one series has a gap, so the
-        # smaller count is the honest one to quote.
-        days=min(int(p["heatwave_days"]), int(r["heatwave_days"])),
+        net=net, demand=dem, imp=net / dem * 100.0,
+        # The views can differ by a day where one series has a gap, so the
+        # smallest count is the honest one to quote.
+        days=min(int(p["heatwave_days"]), int(r["heatwave_days"]),
+                 int(t["heatwave_days"])),
     )
 
-lo_res = min(D, key=lambda c: D[c]["resh"])
-hi_res = max(D, key=lambda c: D[c]["resh"])
+def corr(key):
+    n = len(D)
+    xs = [D[c][key] for c in D]
+    ys = [D[c]["price"] for c in D]
+    mx, my = sum(xs) / n, sum(ys) / n
+    cov = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    sx = math.sqrt(sum((v - mx) ** 2 for v in xs))
+    sy = math.sqrt(sum((v - my) ** 2 for v in ys))
+    return cov / (sx * sy)
+
+
 lo_p = min(D, key=lambda c: D[c]["price"])
 hi_p = max(D, key=lambda c: D[c]["price"])
-n = len(D)
-mx = sum(D[c]["resh"] for c in D) / n
-my = sum(D[c]["price"] for c in D) / n
-cov = sum((D[c]["resh"] - mx) * (D[c]["price"] - my) for c in D)
-sx = math.sqrt(sum((D[c]["resh"] - mx) ** 2 for c in D))
-sy = math.sqrt(sum((D[c]["price"] - my) ** 2 for c in D))
-CORR = cov / (sx * sy)
-print(f"  renewable share {D[lo_res]['resh']:.0f}-{D[hi_res]['resh']:.0f}%, "
-      f"price {D[lo_p]['price']:.0f}-{D[hi_p]['price']:.0f} EUR/MWh, r = {CORR:+.2f}")
+R_IMP, R_RES = corr("imp"), corr("resh")
+print(f"  price {D[lo_p]['price']:.0f}-{D[hi_p]['price']:.0f} EUR/MWh")
+print(f"  price vs net import share  r = {R_IMP:+.2f}")
+print(f"  price vs renewable share   r = {R_RES:+.2f}")
 
 
 def bin_of(v: float) -> int:
@@ -222,29 +243,30 @@ CSPREAD = max(cor_p) - min(cor_p)
 
 # The subtitle is three lines now; the legend has to start below where it ends.
 TOP = 0.843
-fig.text(0.055, 0.972, f"Romania and Greece both ran {D['RO']['resh']:.0f}% renewable.",
+fig.text(0.055, 0.972, "The importers paid the most,",
          fontsize=18, fontweight="bold", color=INK, va="top")
-fig.text(0.055, 0.947, f"One paid {EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh more.",
+fig.text(0.055, 0.947, "the exporters paid the least",
          fontsize=18, fontweight="bold", color=INK, va="top")
 fig.text(0.055, 0.919,
-         f"Average day-ahead price and renewable share of generation on heatwave days, "
-         f"May{NDASH}September 2026.\nAlong the Hungary{NDASH}Romania{NDASH}Bulgaria"
-         f"{NDASH}Greece corridor {MIDDOT} four markets wired to each other {MIDDOT} the spread\n"
-         f"is {EURO}{CSPREAD:.0f}/MWh, while renewable share swings between "
-         f"{min(cor_r):.0f}% and {max(cor_r):.0f}%.",
+         f"Net trade position and average day-ahead price on heatwave days, "
+         f"May{NDASH}September 2026. Across these ten,\nprice tracks net trade "
+         f"(r = {R_IMP:+.2f}) and not renewable share (r = {R_RES:+.2f}). Neither causes the "
+         f"other: a country imports\nbecause it is short, and being short is what costs. "
+         f"The Hungary{NDASH}Romania{NDASH}Bulgaria{NDASH}Greece corridor spans "
+         f"{EURO}{CSPREAD:.0f}/MWh.",
          fontsize=10.2, color=MUTED, va="top", linespacing=1.5)
 
 # ---- map axis
 # With only the legend in the left column, the map takes the width the two
 # removed panels were using.
-ax = fig.add_axes([0.235, 0.075, 0.755, 0.805])
+ax = fig.add_axes([0.235, 0.108, 0.755, 0.772])
 ax.set_xlim(-16, W + 16)
 ax.set_ylim(-16, H + 16)
 ax.set_aspect("equal")
 ax.axis("off")
 
 for cc, rings in SHAPES.items():
-    b = bin_of(D[cc]["resh"])
+    b = bin_of(D[cc]["imp"])
     # The corridor keeps a darker seam so the chain reads as one object without
     # having to tint the four away from their own renewable-share colour.
     on_cor = cc in CORRIDOR
@@ -265,7 +287,10 @@ def label(x, y, d, ink):
                 color=ink, fontweight="bold", **common)
     ax.annotate(f"{EURO}{d['price']:.0f}", (x, y), xytext=(0, -1), va="center",
                 fontsize=15.5, color=ink, fontweight="bold", **common)
-    ax.annotate(f"RES {d['resh']:.0f}%", (x, y), xytext=(0, -15), va="center",
+    v = d["imp"]
+    trade_txt = (f"imports {v:.0f}%" if v >= 5 else
+                 f"exports {-v:.0f}%" if v <= -5 else "balanced")
+    ax.annotate(trade_txt, (x, y), xytext=(0, -15), va="center",
                 fontsize=8.2, color=ink, alpha=.82, **common)
 
 
@@ -284,7 +309,7 @@ for cc in CEE:
                                edgecolor=FAINT, lw=1.0, zorder=4.5))
         label(tx, ty, d, INK)
     else:
-        label(axy[0] + nx, axy[1] + ny, d, ON_FILL[bin_of(d["resh"])])
+        label(axy[0] + nx, axy[1] + ny, d, ON_FILL[bin_of(d["imp"])])
 
 # ---- the corridor: a link between each neighbouring pair, with the gap on it
 def shrink(p, q, by):
@@ -308,10 +333,10 @@ for a, b in zip(CORRIDOR, CORRIDOR[1:]):
 
 # ---- the comparison the map is built around, called out on it
 ax.annotate(
-    f"Same renewable share,\n"
-    f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh spread:\n"
-    f"Romania {D['RO']['resh']:.0f}% at {EURO}{D['RO']['price']:.0f},\n"
-    f"Greece {D['GR']['resh']:.0f}% at {EURO}{D['GR']['price']:.0f}.",
+    f"Romania and Greece both ran about\n"
+    f"{D['RO']['resh']:.0f}% renewable, {EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.\n"
+    f"Romania imported {D['RO']['imp']:.0f}% of its power\n"
+    f"that week; Greece exported {-D['GR']['imp']:.0f}%.",
     # No leader. It names both countries, both are labelled on the map, and a
     # line to either one would have to cross the other's text to get there.
     xy=(250, 250), xytext=(250, 250),
@@ -322,7 +347,7 @@ ax.annotate(
 
 # ---- left column: legend, then the heatwave effect ranked
 lx = 0.055
-fig.text(lx, TOP - 0.012, "Renewable share\nof generation", fontsize=10.4,
+fig.text(lx, TOP - 0.012, "Net trade on\nheatwave days", fontsize=10.4,
          fontweight="bold", color=INK, va="top", linespacing=1.35)
 y = TOP - 0.062
 for i, lab in enumerate(BIN_LABELS):
@@ -333,20 +358,24 @@ for i, lab in enumerate(BIN_LABELS):
     y -= 0.0285
 
 # ---- footer
-fig.lines.append(plt.Line2D([0.055, 0.945], [0.062, 0.062],
+# Four lines now that net trade needs defining, so the rule sits higher and the
+# map gives up the space rather than the last line falling off the page.
+fig.lines.append(plt.Line2D([0.055, 0.945], [0.088, 0.088],
                             transform=fig.transFigure, color=FAINT, lw=1))
-fig.text(0.055, 0.052,
-         f"Correlation between renewable share and price across the ten: r = {CORR:+.2f}. "
-         f"A heatwave day is 3+ consecutive days above the local day-of-year 90th\n"
-         f"percentile of daily maximum temperature, or at or above 30 {MIDDOT}C; each country "
-         f"is measured against its own non-heatwave days in the same May{NDASH}September\n"
-         f"season, weekdays matched to weekdays. Price is the unweighted daily mean of "
-         f"day-ahead prices. Source: ENTSO-E Transparency Platform; ERA5 via Open-Meteo.",
+fig.text(0.055, 0.078,
+         f"Net trade is the balance of physical cross-border flows over the country's own "
+         f"demand, so a net importer is shaded warm and a net exporter cool. All of each\n"
+         f"country's interconnectors are included, the Balkan and non-EU borders among them. "
+         f"A heatwave day is 3+ consecutive days above the local day-of-year 90th percentile\n"
+         f"of daily maximum temperature, or at or above 30 {MIDDOT}C; each country is measured "
+         f"against its own non-heatwave days in the same May{NDASH}September season, weekdays\n"
+         f"matched to weekdays. Price is the unweighted daily mean of day-ahead prices. "
+         f"Source: ENTSO-E Transparency Platform; ERA5 via Open-Meteo.",
          fontsize=7.2, color=MUTED, va="top", linespacing=1.6)
 
 OUT.mkdir(parents=True, exist_ok=True)
 for ext in ("pdf", "png"):
-    p = OUT / f"heatwave_price_renewable_map.{ext}"
+    p = OUT / f"heatwave_price_trade_map.{ext}"
     fig.savefig(p, facecolor="#ffffff", bbox_inches=None)
     print(f"wrote {p}  ({p.stat().st_size / 1024:.0f} KB)")
 plt.close(fig)
