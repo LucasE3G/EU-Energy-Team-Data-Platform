@@ -7,9 +7,13 @@ python/output/.
 Data comes from v_hw_event_profile and v_hw_event_price - each country's own
 heatwave days inside 28 July - 12 August 2026, averaged by local hour.
 
-Fossil sits at the TOP of the stack, not the bottom. It is the marginal unit:
-what is dispatched last, sets the price, and fills whatever the rest cannot.
-Stacking it underneath buried the one band whose shape explains the price panel.
+Solar and storage sit at the TOP of the stack, with fossil directly beneath
+them. The chart has one job - to show the handover from solar in the middle of
+the day to gas in the evening - and putting the two on top of each other makes
+it a single shape: the solar band swells and collapses, and the fossil band
+underneath grows into the space it leaves. Solar on top also puts it directly
+above the zero line's mirror image, so the midday hours where solar pushes the
+country into net export can be read against the export band below the axis.
 """
 from __future__ import annotations
 
@@ -30,8 +34,10 @@ OUT = ROOT / "python" / "output"
 COUNTRIES = [("FR", "France"), ("GR", "Greece"), ("HU", "Hungary"), ("RO", "Romania")]
 HW_DAYS = {"GR": 16, "HU": 14, "RO": 13, "FR": 8}
 
-# Bottom to top, in merit order: must-run first, the marginal unit last.
-STACK = ["nuclear", "other_renewables", "solar", "storage", "net_import", "fossil"]
+# Bottom to top. Must-run and traded volume underneath; then fossil, then the
+# two that define the day's shape - storage and solar - on top, so the midday
+# solar bulge and the evening fossil surge sit against each other.
+STACK = ["nuclear", "other_renewables", "net_import", "fossil", "storage", "solar"]
 LABEL = {"nuclear": "Nuclear", "fossil": "Fossil", "other_renewables": "Other renewables",
          "solar": "Solar", "storage": "Storage", "net_import": "Net import"}
 COLOR = {"solar": "#22c55e", "storage": "#f5c542", "nuclear": "#6b74a8",
@@ -178,11 +184,11 @@ def build(prof: dict, price: dict):
             axp.set_ylabel("€/MWh", fontsize=8.6, color=MUTED, labelpad=4)
 
     foot = [
-        (0.166, f"Fossil is drawn at the top of the stack because it is the marginal unit: dispatched last, and the one that sets the price. The price panel is the same hours and the same days."),
+        (0.166, f"Solar and storage are drawn at the top of the stack, with fossil directly beneath: the midday solar bulge and the evening fossil surge then read as one handover. The price panel is the same hours and days."),
         (0.140, f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GWh, Greece near 8."),
         (0.114, f"Generation stacks above zero and net exports fall below it, which is why France, an exporter throughout, carries a band beneath the axis."),
-        (0.088, f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Demand and generation do not close exactly {MIDDOT}"),
-        (0.062, f"distributed solar counts as generation but never crosses the transmission load meter, and Greece also trades with Albania, North Macedonia and Turkey, outside ENTSO-E's data."),
+        (0.088, f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector each country has is now included, the"),
+        (0.062, f"Balkan and non-EU borders among them. Hungary balances exactly; Greece still generates more than it consumes or exports, because distributed solar counts as generation but is netted out of transmission load."),
         (0.030, f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows, day-ahead prices) {MIDDOT} ERA5 via Open-Meteo (temperature)"),
     ]
     for y, txt in foot:
