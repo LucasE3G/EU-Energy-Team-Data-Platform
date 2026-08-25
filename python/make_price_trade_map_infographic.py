@@ -23,6 +23,11 @@ make the headline visible rather than asserted - the flows run out of the pale
 countries and into the dark ones. The script counts how often that held instead
 of claiming it always does: 10 of the 13 borders.
 
+Each border carries two numbers: the price spread between its two ends and
+the volume that crossed it. They answer different questions - the spread is
+why the power moved, the volume is how much of it did - and the euro sign
+tells them apart without spending a line on units.
+
 The trade scale is diverging, because importing and exporting are opposite
 states rather than more and less of one thing, so lightness peaks at the
 balanced midpoint. The price scale is sequential, because price is a magnitude.
@@ -436,7 +441,10 @@ def render(mode):
     # Drawn between the two countries' own anchors so the arrow sits across the
     # border it describes, and centred there so it does not reach into either
     # country's label.
-    for (lo, hi), f in sorted(_acc.items()):
+    placed = []
+    # Biggest first, so the flows that matter most get the clearest spot and the
+    # small ones move aside for them rather than the other way round.
+    for (lo, hi) in sorted(_acc, key=lambda k: -FLOW[k]["gwh"]):
         fl = FLOW[(lo, hi)]
         pa, pb = ANCHOR[fl["src"]], ANCHOR[fl["dst"]]
         dist = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
@@ -452,11 +460,23 @@ def render(mode):
         px, py = -uy, ux
         # Clear of the shaft, not on it: the offset has to grow with the arrow,
         # since the widest heads are about as across as the badge is tall.
-        off = 24 + 17 * (fl["gwh"] / GMAX) ** 0.55
-        ax.text(mid[0] + px * off, mid[1] + py * off, f"{fl['gwh']:.1f}",
-                ha="center", va="center", fontsize=7.4, color=ARROW,
-                fontweight="bold", zorder=5.6,
-                bbox=dict(boxstyle="round,pad=0.22", facecolor="#ffffff",
+        off = 28 + 17 * (fl["gwh"] / GMAX) ** 0.55
+        # Four borders meet within a few pixels around Slovenia, so the first
+        # choice of side is not always free. Try the other side, then further
+        # out, and take the first spot clear of the badges already placed.
+        for sx, mult in ((1, 1.0), (-1, 1.0), (1, 1.7), (-1, 1.7), (1, 2.4)):
+            cand = (mid[0] + px * off * sx * mult, mid[1] + py * off * sx * mult)
+            if all(math.dist(cand, q) > 40 for q in placed):
+                break
+        placed.append(cand)
+        # Both numbers, because they answer different questions: the spread is
+        # why the power moved, the volume is how much of it did. The euro sign
+        # tells them apart without spending a line on units.
+        ax.text(cand[0], cand[1],
+                f"{EURO}{abs(D[lo]['price'] - D[hi]['price']):.0f}\n{fl['gwh']:.1f}",
+                ha="center", va="center", fontsize=7.2, color=ARROW,
+                fontweight="bold", zorder=5.6, linespacing=1.25,
+                bbox=dict(boxstyle="round,pad=0.24", facecolor="#ffffff",
                           edgecolor="#c9d2c6", linewidth=0.8))
 
     ax.annotate(
@@ -486,11 +506,15 @@ def render(mode):
     fig.lines.append(plt.Line2D([lx, lx + 0.175], [y, y], transform=fig.transFigure,
                                 color=FAINT, lw=1))
     y -= 0.030
-    fig.text(lx, y, "Net flow", fontsize=10.4, fontweight="bold", color=INK, va="top")
+    fig.text(lx, y, "On each border", fontsize=10.4, fontweight="bold",
+             color=INK, va="top")
     y -= 0.026
-    fig.text(lx, y, f"GWh per day, {int(round(min(f['gwh'] for f in FLOW.values())))}"
-                    f"{NDASH}{int(round(GMAX))}.\nArrow width scales with volume.",
-             fontsize=8.8, color=MUTED, va="top", linespacing=1.45)
+    # Kept narrow: the left column is only as wide as the legend swatches, and
+    # a longer line reaches across into Slovenia's label box.
+    fig.text(lx, y, f"{EURO}  price spread\n    net flow, GWh/day\n"
+                    f"Arrows point downstream\nand widen with the volume.",
+             fontsize=8.6, color=MUTED, va="top", linespacing=1.45)
+    y -= 0.028
     # Two sample arrows at the extremes of the scale, so the widths mean something.
     y -= 0.052
     for gv in (min(f["gwh"] for f in FLOW.values()), GMAX):
