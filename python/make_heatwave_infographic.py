@@ -187,8 +187,8 @@ def build(prof: dict, price: dict):
         (0.166, f"Solar and storage are drawn at the top of the stack, with fossil directly beneath: the midday solar bulge and the evening fossil surge then read as one handover. The price panel is the same hours and days."),
         (0.140, f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GWh, Greece near 8."),
         (0.114, f"Generation stacks above zero and net exports fall below it, which is why France, an exporter throughout, carries a band beneath the axis."),
-        (0.088, f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector each country has is now included, the"),
-        (0.062, f"Balkan and non-EU borders among them. Hungary balances exactly; Greece still generates more than it consumes or exports, because distributed solar counts as generation but is netted out of transmission load."),
+        (0.088, f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector is included, the Balkan and non-EU borders"),
+        (0.062, f"among them {MIDDOT} Hungary now balances exactly. Greece's export band is still understated: ENTSO-E reports its Albanian and Italian flows for well under a third of these hours, and an unreported hour counts as none."),
         (0.030, f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows, day-ahead prices) {MIDDOT} ERA5 via Open-Meteo (temperature)"),
     ]
     for y, txt in foot:
