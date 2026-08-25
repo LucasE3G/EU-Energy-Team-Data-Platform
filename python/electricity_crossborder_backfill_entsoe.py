@@ -51,6 +51,14 @@ DOMAINS: dict[str, str] = {
     "PL": "10YPL-AREA-----S", "PT": "10YPT-REN------W", "RO": "10YRO-TEL------P",
     "SE1": "10Y1001A1001A44P", "SE3": "10Y1001A1001A46L", "SE4": "10Y1001A1001A47J",
     "SI": "10YSI-ELES-----O", "SK": "10YSK-SEPS-----K",
+    # Non-EU and Western Balkan neighbours. Without these the supply/demand
+    # balance does not close for the countries on the south-east edge of the
+    # synchronous area: Greece generated 212 GWh against 169 GWh of demand
+    # across the July window and the data could only account for 5 GWh of
+    # export, because Albania, North Macedonia and Turkey were not ingested.
+    # Every one was probed against ENTSO-E first and returns physical flows.
+    "AL": "10YAL-KESH-----5", "MK": "10YMK-MEPSO----8", "TR": "10YTR-TEIAS----W",
+    "RS": "10YCS-SERBIATSOV", "UA": "10Y1001C--000182", "MD": "10Y1001A1001A990",
 }
 
 # Mirrors TRANSMISSION_PAIRS in app.js so the map and the data agree.
@@ -80,6 +88,17 @@ PAIRS: list[tuple[str, str]] = [
     # heatwaves when it is in fact a heavy importer.
     ("CH","FR"),("FR","CH"),("CH","DE"),("DE","CH"),
     ("CH","IT"),("IT","CH"),("CH","AT"),("AT","CH"),
+    # The south-eastern edge of the synchronous area. These were absent, which
+    # understated net trade for exactly the countries that sit on it - Greece's
+    # exports were missing almost entirely, and Romania and Hungary were short
+    # their Serbian and Ukrainian borders.
+    ("GR","AL"),("AL","GR"),("GR","MK"),("MK","GR"),("GR","TR"),("TR","GR"),
+    ("BG","RS"),("RS","BG"),("BG","MK"),("MK","BG"),("BG","TR"),("TR","BG"),
+    ("RO","RS"),("RS","RO"),("RO","UA"),("UA","RO"),("RO","MD"),("MD","RO"),
+    ("HU","RS"),("RS","HU"),("HU","UA"),("UA","HU"),
+    # Hungary-Slovenia is an EU border and was simply missed: the Cirkovce-Pince
+    # line has been running since 2022.
+    ("HU","SI"),("SI","HU"),
 ]
 
 RES_MINUTES = {"PT15M": 15, "PT30M": 30, "PT60M": 60, "P1D": 1440}
