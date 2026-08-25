@@ -1,34 +1,34 @@
-"""Shareable infographic: net trade position and day-ahead prices on heatwave
-days across central and south-east Europe.
+"""Two shareable infographics of the same ten countries in central and
+south-east Europe, on heatwave days.
 
-Shaded by net trade rather than by renewable share, because that is what tracks
-the price. Across these ten countries the correlation between price and net
-imports is +0.67; between price and renewable share it is +0.03. Renewable share
-simply does not order them - Austria at 84% and Slovakia at 16% paid within
-9 EUR/MWh of each other - so shading by it invites a reader to hunt for a
-pattern that is not there.
+Both carry identical labels, identical flow arrows and the same corridor
+emphasis. Only the fill and its legend differ, so the pair can be read against
+each other without re-learning the picture:
 
-Neither figure causes the other and the chart does not claim it does: a country
-imports because it is short, and being short is what costs. The map shows the
-two states side by side and says so in words.
+  heatwave_price_trade_map   shaded by net trade position
+  heatwave_price_level_map   shaded by day-ahead price
 
-The Hungary-Romania-Bulgaria-Greece corridor carries the argument, and it is
-also the stretch whose cross-border data was most incomplete until the Balkan
-and non-EU borders were backfilled. Romania and Greece ran the same renewable
-share and sit 19 EUR/MWh apart; one was importing and the other exporting.
+Trade is the fill worth having if you only take one. Across these ten the
+correlation between price and net imports is +0.67; between price and renewable
+share it is +0.03. Renewable share simply does not order them - Austria at 84%
+and Slovakia at 16% paid within 9 EUR/MWh of each other - so shading by it
+invites a reader to hunt for a pattern that is not there.
 
-The scale is diverging, not sequential: importing and exporting are opposite
+Neither figure causes the other and the charts do not claim it: a country
+imports because it is short, and being short is what costs.
+
+Arrows are the mean net flow across every border between the ten, scaled by
+volume and pointing the way the power actually went. On the price version they
+make the headline visible rather than asserted - the flows run out of the pale
+countries and into the dark ones. The script counts how often that held instead
+of claiming it always does: 10 of the 13 borders.
+
+The trade scale is diverging, because importing and exporting are opposite
 states rather than more and less of one thing, so lightness peaks at the
-balanced midpoint and falls toward both poles.
+balanced midpoint. The price scale is sequential, because price is a magnitude.
+Every step of both was checked for 4.5:1 against the ink chosen for it.
 
-Corridor arrows are single-headed and point the way the power actually went,
-which is not the way the corridor reads: Greece feeds Bulgaria, Bulgaria feeds
-Romania, and Hungary feeds Romania too, so the flows cascade north onto the
-dearest market in the group. That is coupling doing its job, and the script
-counts how often it did rather than asserting it - 10 of the 13 borders between
-these ten carried power toward the dearer side.
-
-Writes PDF and PNG to python/output/.
+Writes PDF and PNG for each to python/output/.
 """
 from __future__ import annotations
 
@@ -288,84 +288,44 @@ print(f"  {len(SHAPES)} outlines")
 
 
 # ---------------------------------------------------------------- draw
-fig = plt.figure(figsize=(9.0, 11.0), dpi=200)
-fig.patch.set_facecolor("#ffffff")
+# Two versions of the same map. Only the fill and its legend change: the labels,
+# the flow arrows and the corridor emphasis are identical, so the pair can be
+# read against each other without re-learning the picture.
+MODES = {
+    "trade": dict(
+        key="imp",
+        # Diverging: importing and exporting are opposite states, not more and
+        # less of one thing, so lightness peaks at the balanced midpoint.
+        bins=[-20, -5, 5, 15],
+        ramp=["#146b7a", "#84bcc7", "#eeeeea", "#eeb078", "#b3541d"],
+        ink=["#ffffff", "#152a19", "#152a19", "#152a19", "#ffffff"],
+        labels=["exports 20%+ of demand", "exports 5-20%", "broadly balanced",
+                "imports 5-15%", "imports 15%+"],
+        legend="Net trade on\nheatwave days",
+        title=("The importers paid the most,", "the exporters paid the least"),
+        file="heatwave_price_trade_map",
+    ),
+    "price": dict(
+        key="price",
+        # Sequential: price is a magnitude, so one hue, light to dark. Every
+        # step was checked for 4.5:1 against the ink chosen for it and adjacent
+        # steps are at least 1.3:1 apart in luminance.
+        bins=[120, 126, 131, 136],
+        ramp=["#fdf1dc", "#f7cf99", "#eda75d", "#d97b34", "#a8431a"],
+        ink=["#152a19", "#152a19", "#152a19", "#152a19", "#ffffff"],
+        labels=[f"under {EURO}120", f"{EURO}120-125", f"{EURO}126-130",
+                f"{EURO}131-135", f"{EURO}136 and over"],
+        legend="Day-ahead price on\nheatwave days",
+        title=("Power flowed out of the cheap markets", "and into the dear ones"),
+        file="heatwave_price_level_map",
+    ),
+}
 
-cor_p = [D[c]["price"] for c in CORRIDOR]
-cor_r = [D[c]["resh"] for c in CORRIDOR]
-CSPREAD = max(cor_p) - min(cor_p)
-
-# The subtitle is four lines now; the legend has to start below where it ends.
-TOP = 0.818
-fig.text(0.055, 0.972, "The importers paid the most,",
-         fontsize=18, fontweight="bold", color=INK, va="top")
-fig.text(0.055, 0.947, "the exporters paid the least",
-         fontsize=18, fontweight="bold", color=INK, va="top")
-fig.text(0.055, 0.919,
-         f"Net trade position and average day-ahead price on heatwave days, "
-         f"May{NDASH}September 2026.\nAcross these ten, price tracks net trade "
-         f"(r = {R_IMP:+.2f}), not renewable share (r = {R_RES:+.2f}). Neither causes the\n"
-         f"other: a country imports because it is short, and being short is what costs.\n"
-         f"Arrows show net flow along the corridor; power ran to the dearer market on "
-         f"{TOWARD} of {NBORDERS} borders.",
-         fontsize=10.2, color=MUTED, va="top", linespacing=1.5)
-
-# ---- map axis
-# With only the legend in the left column, the map takes the width the two
-# removed panels were using.
-ax = fig.add_axes([0.235, 0.100, 0.755, 0.730])
-ax.set_xlim(-16, W + 16)
-ax.set_ylim(-16, H + 16)
-ax.set_aspect("equal")
-ax.axis("off")
-
-for cc, rings in SHAPES.items():
-    b = bin_of(D[cc]["imp"])
-    # The corridor keeps a darker seam so the chain reads as one object without
-    # having to tint the four away from their own renewable-share colour.
-    on_cor = cc in CORRIDOR
-    for pts in rings:
-        ax.add_patch(PathPatch(MPath(pts, closed=True), facecolor=RAMP[b],
-                               edgecolor="#5d6b58" if on_cor else SEAM,
-                               linewidth=1.7 if on_cor else 1.3,
-                               zorder=2.5 if on_cor else 2))
+CSPREAD = max(D[c]["price"] for c in CORRIDOR) - min(D[c]["price"] for c in CORRIDOR)
+GMAX = max(f["gwh"] for f in FLOW.values())
+ARROW = "#22313d"
 
 
-def label(x, y, d, ink):
-    """Three lines stacked in POINTS, not in map units. Offsetting in data
-    coordinates made the spacing depend on how the map happened to scale, which
-    is why the name and the price were landing on top of each other."""
-    common = dict(xycoords="data", textcoords="offset points", ha="center",
-                  annotation_clip=False, zorder=5)
-    ax.annotate(d["name"], (x, y), xytext=(0, 14), va="center", fontsize=8.6,
-                color=ink, fontweight="bold", **common)
-    ax.annotate(f"{EURO}{d['price']:.0f}", (x, y), xytext=(0, -1), va="center",
-                fontsize=15.5, color=ink, fontweight="bold", **common)
-    v = d["imp"]
-    trade_txt = (f"imports {v:.0f}%" if v >= 5 else
-                 f"exports {-v:.0f}%" if v <= -5 else "balanced")
-    ax.annotate(trade_txt, (x, y), xytext=(0, -15), va="center",
-                fontsize=8.2, color=ink, alpha=.82, **common)
-
-
-LABELPT = {}
-for cc in CEE:
-    d = D[cc]
-    axy = ANCHOR[cc]
-    nx, ny = NUDGE.get(cc, (0, 0))
-    LABELPT[cc] = ABROAD[cc] if cc in ABROAD else (axy[0] + nx, axy[1] + ny)
-    if cc in ABROAD:
-        tx, ty = ABROAD[cc]
-        ax.plot([axy[0], tx], [axy[1], ty], color="#9aa2ae", lw=0.9, zorder=4,
-                solid_capstyle="round")
-        ax.plot([axy[0]], [axy[1]], marker="o", ms=3.4, color="#9aa2ae", zorder=4)
-        ax.add_patch(Rectangle((tx - 62, ty - 34), 124, 68, facecolor="#ffffff",
-                               edgecolor=FAINT, lw=1.0, zorder=4.5))
-        label(tx, ty, d, INK)
-    else:
-        label(axy[0] + nx, axy[1] + ny, d, ON_FILL[bin_of(d["imp"])])
-
-# ---- the corridor: a link between each neighbouring pair, with the gap on it
 def shrink(p, q, by):
     """Pull an endpoint back along the segment so the arrow starts clear of the
     label text rather than under it."""
@@ -374,69 +334,181 @@ def shrink(p, q, by):
     return p[0] + dx / n * by, p[1] + dy / n * by
 
 
-for a, b in zip(CORRIDOR, CORRIDOR[1:]):
-    f = FLOW[(a, b)]
-    # Single-headed and pointing the way the power actually went, which is not
-    # always the way the corridor is read: both Hungary and Bulgaria feed
-    # Romania, so the two arrows converge on it.
-    pa, pb = LABELPT[f["src"]], LABELPT[f["dst"]]
-    ax.annotate("", xy=shrink(pb, pa, 62), xytext=shrink(pa, pb, 62),
-                arrowprops=dict(arrowstyle="-|>", color="#5d6b58", lw=1.4,
-                                mutation_scale=15, shrinkA=0, shrinkB=0),
-                zorder=5.5)
-    mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-    ax.text(mid[0], mid[1],
-            f"{EURO}{abs(D[a]['price'] - D[b]['price']):.0f} spread\n"
-            f"{f['gwh']:.1f} GWh/d",
-            ha="center", va="center", fontsize=8.0, color=INK, linespacing=1.35,
-            zorder=6, bbox=dict(boxstyle="round,pad=0.34", facecolor="#ffffff",
-                                edgecolor="#c9d2c6", linewidth=0.9))
+def render(mode):
+    M = MODES[mode]
+    ramp, ink_for, bins = M["ramp"], M["ink"], M["bins"]
 
-# ---- the comparison the map is built around, called out on it
-ax.annotate(
-    f"Romania and Greece both ran about\n"
-    f"{D['RO']['resh']:.0f}% renewable, {EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.\n"
-    f"Romania imported {D['RO']['imp']:.0f}% of its power\n"
-    f"that week; Greece exported {-D['GR']['imp']:.0f}%.",
-    # No leader. It names both countries, both are labelled on the map, and a
-    # line to either one would have to cross the other's text to get there.
-    xy=(250, 250), xytext=(250, 250),
-    fontsize=9.2, color=INK, linespacing=1.5, ha="center", va="center",
-    zorder=6, annotation_clip=False,
-    bbox=dict(boxstyle="round,pad=0.55", facecolor="#ffffff",
-              edgecolor="#c9d2c6", linewidth=1.1))
+    def bin_of(v):
+        i = 0
+        while i < len(bins) and v >= bins[i]:
+            i += 1
+        return i
 
-# ---- left column: legend, then the heatwave effect ranked
-lx = 0.055
-fig.text(lx, TOP - 0.012, "Net trade on\nheatwave days", fontsize=10.4,
-         fontweight="bold", color=INK, va="top", linespacing=1.35)
-y = TOP - 0.062
-for i, lab in enumerate(BIN_LABELS):
-    fig.patches.append(Rectangle((lx, y - 0.0125), 0.052, 0.0175,
-                                 transform=fig.transFigure, facecolor=RAMP[i],
-                                 edgecolor="#d4dad2", linewidth=0.7, zorder=3))
-    fig.text(lx + 0.064, y - 0.0042, lab, fontsize=9.5, color=MUTED, va="center")
-    y -= 0.0285
+    fig = plt.figure(figsize=(9.0, 11.0), dpi=200)
+    fig.patch.set_facecolor("#ffffff")
 
-# ---- footer
-# Four lines now that net trade needs defining, so the rule sits higher and the
-# map gives up the space rather than the last line falling off the page.
-fig.lines.append(plt.Line2D([0.055, 0.945], [0.088, 0.088],
-                            transform=fig.transFigure, color=FAINT, lw=1))
-fig.text(0.055, 0.078,
-         f"Net trade is the balance of physical cross-border flows over the country's own "
-         f"demand, so a net importer is shaded warm and a net exporter cool. All of each\n"
-         f"country's interconnectors are included, the Balkan and non-EU borders among them. "
-         f"A heatwave day is 3+ consecutive days above the local day-of-year 90th percentile\n"
-         f"of daily maximum temperature, or at or above 30 {MIDDOT}C; each country is measured "
-         f"against its own non-heatwave days in the same May{NDASH}September season, weekdays\n"
-         f"matched to weekdays. Price is the unweighted daily mean of day-ahead prices. "
-         f"Source: ENTSO-E Transparency Platform; ERA5 via Open-Meteo.",
-         fontsize=7.2, color=MUTED, va="top", linespacing=1.6)
+    TOP = 0.818
+    fig.text(0.055, 0.972, M["title"][0], fontsize=18, fontweight="bold",
+             color=INK, va="top")
+    fig.text(0.055, 0.947, M["title"][1], fontsize=18, fontweight="bold",
+             color=INK, va="top")
+    fig.text(0.055, 0.919,
+             f"Net trade, day-ahead price and net cross-border flow on heatwave days, "
+             f"May{NDASH}September 2026.\nAcross these ten, price tracks net trade "
+             f"(r = {R_IMP:+.2f}), not renewable share (r = {R_RES:+.2f}). Neither causes the\n"
+             f"other: a country imports because it is short, and being short is what costs.\n"
+             f"Arrows are net flow, scaled by volume; power ran to the dearer market on "
+             f"{TOWARD} of {NBORDERS} borders.",
+             fontsize=10.2, color=MUTED, va="top", linespacing=1.5)
 
-OUT.mkdir(parents=True, exist_ok=True)
-for ext in ("pdf", "png"):
-    p = OUT / f"heatwave_price_trade_map.{ext}"
-    fig.savefig(p, facecolor="#ffffff", bbox_inches=None)
-    print(f"wrote {p}  ({p.stat().st_size / 1024:.0f} KB)")
-plt.close(fig)
+    ax = fig.add_axes([0.235, 0.100, 0.755, 0.730])
+    ax.set_xlim(-16, W + 16)
+    ax.set_ylim(-16, H + 16)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    for cc, rings in SHAPES.items():
+        b = bin_of(D[cc][M["key"]])
+        on_cor = cc in CORRIDOR
+        for pts in rings:
+            ax.add_patch(PathPatch(MPath(pts, closed=True), facecolor=ramp[b],
+                                   edgecolor="#5d6b58" if on_cor else SEAM,
+                                   linewidth=1.7 if on_cor else 1.3,
+                                   zorder=2.5 if on_cor else 2))
+
+    def label(x, y, d, ink):
+        """Three lines stacked in POINTS, not in map units - offsetting in data
+        coordinates made the spacing depend on how the map happened to scale."""
+        common = dict(xycoords="data", textcoords="offset points", ha="center",
+                      annotation_clip=False, zorder=7)
+        ax.annotate(d["name"], (x, y), xytext=(0, 14), va="center", fontsize=8.6,
+                    color=ink, fontweight="bold", **common)
+        ax.annotate(f"{EURO}{d['price']:.0f}", (x, y), xytext=(0, -1), va="center",
+                    fontsize=15.5, color=ink, fontweight="bold", **common)
+        v = d["imp"]
+        txt = (f"imports {v:.0f}%" if v >= 5 else
+               f"exports {-v:.0f}%" if v <= -5 else "balanced")
+        ax.annotate(txt, (x, y), xytext=(0, -15), va="center",
+                    fontsize=8.2, color=ink, alpha=.82, **common)
+
+    LABELPT = {}
+    for cc in CEE:
+        d = D[cc]
+        axy = ANCHOR[cc]
+        nx, ny = NUDGE.get(cc, (0, 0))
+        LABELPT[cc] = ABROAD[cc] if cc in ABROAD else (axy[0] + nx, axy[1] + ny)
+        if cc in ABROAD:
+            tx, ty = ABROAD[cc]
+            ax.plot([axy[0], tx], [axy[1], ty], color="#9aa2ae", lw=0.9, zorder=6,
+                    solid_capstyle="round")
+            ax.plot([axy[0]], [axy[1]], marker="o", ms=3.4, color="#9aa2ae", zorder=6)
+            ax.add_patch(Rectangle((tx - 62, ty - 34), 124, 68, facecolor="#ffffff",
+                                   edgecolor=FAINT, lw=1.0, zorder=6.5))
+            label(tx, ty, d, INK)
+        else:
+            label(axy[0] + nx, axy[1] + ny, d, ink_for[bin_of(d[M["key"]])])
+
+    # ---- net flow on every border, sized by volume ------------------------
+    # Drawn between the two countries' own anchors so the arrow sits across the
+    # border it describes, and centred there so it does not reach into either
+    # country's label.
+    for (lo, hi), f in sorted(_acc.items()):
+        fl = FLOW[(lo, hi)]
+        pa, pb = ANCHOR[fl["src"]], ANCHOR[fl["dst"]]
+        dist = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
+        # Kept short and hugging the border. Hungary has five of these and at
+        # full length they all converged on its own label.
+        half = min(37.0, dist * 0.17)
+        mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
+        a = shrink(mid, pa, half)
+        b = shrink(mid, pb, half)
+        w = (fl["gwh"] / GMAX) ** 0.55
+        lw = 1.5 + 5.2 * w
+        head = 12 + 17 * w
+        # A white casing under the arrow, so it stays legible over a dark fill
+        # as well as a light one.
+        for col, extra, z in ((SEAM, 2.8, 5.2), (ARROW, 0.0, 5.4)):
+            ax.annotate("", xy=b, xytext=a,
+                        arrowprops=dict(arrowstyle="-|>", color=col,
+                                        lw=lw + extra, mutation_scale=head + extra * 2,
+                                        shrinkA=0, shrinkB=0,
+                                        joinstyle="miter", capstyle="butt"),
+                        zorder=z, annotation_clip=False)
+        # Number beside the shaft, not on it, so it never breaks the arrow in two.
+        ux, uy = (b[0] - a[0]) / (2 * half or 1), (b[1] - a[1]) / (2 * half or 1)
+        px, py = -uy, ux
+        ax.text(mid[0] + px * 16, mid[1] + py * 16, f"{fl['gwh']:.1f}",
+                ha="center", va="center", fontsize=7.4, color=ARROW,
+                fontweight="bold", zorder=5.6,
+                bbox=dict(boxstyle="round,pad=0.22", facecolor="#ffffff",
+                          edgecolor="#c9d2c6", linewidth=0.8))
+
+    ax.annotate(
+        f"Romania and Greece both ran about\n"
+        f"{D['RO']['resh']:.0f}% renewable, {EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.\n"
+        f"Romania imported {D['RO']['imp']:.0f}% of its power\n"
+        f"that week; Greece exported {-D['GR']['imp']:.0f}%.",
+        xy=(250, 250), xytext=(250, 250),
+        fontsize=9.2, color=INK, linespacing=1.5, ha="center", va="center",
+        zorder=8, annotation_clip=False,
+        bbox=dict(boxstyle="round,pad=0.55", facecolor="#ffffff",
+                  edgecolor="#c9d2c6", linewidth=1.1))
+
+    # ---- legend ----------------------------------------------------------
+    lx = 0.055
+    fig.text(lx, TOP - 0.012, M["legend"], fontsize=10.4, fontweight="bold",
+             color=INK, va="top", linespacing=1.35)
+    y = TOP - 0.062
+    for i, lab in enumerate(M["labels"]):
+        fig.patches.append(Rectangle((lx, y - 0.0125), 0.052, 0.0175,
+                                     transform=fig.transFigure, facecolor=ramp[i],
+                                     edgecolor="#d4dad2", linewidth=0.7, zorder=3))
+        fig.text(lx + 0.064, y - 0.0042, lab, fontsize=9.5, color=MUTED, va="center")
+        y -= 0.0285
+
+    y -= 0.022
+    fig.lines.append(plt.Line2D([lx, lx + 0.175], [y, y], transform=fig.transFigure,
+                                color=FAINT, lw=1))
+    y -= 0.030
+    fig.text(lx, y, "Net flow", fontsize=10.4, fontweight="bold", color=INK, va="top")
+    y -= 0.026
+    fig.text(lx, y, f"GWh per day, {int(round(min(f['gwh'] for f in FLOW.values())))}"
+                    f"{NDASH}{int(round(GMAX))}.\nArrow width scales with volume.",
+             fontsize=8.8, color=MUTED, va="top", linespacing=1.45)
+    # Two sample arrows at the extremes of the scale, so the widths mean something.
+    y -= 0.052
+    for gv in (min(f["gwh"] for f in FLOW.values()), GMAX):
+        w = (gv / GMAX) ** 0.55
+        fig.patches.append(FancyArrowPatch(
+            (lx + 0.004, y), (lx + 0.062, y), transform=fig.transFigure,
+            arrowstyle="-|>", mutation_scale=12 + 17 * w, lw=1.5 + 5.2 * w,
+            color=ARROW, shrinkA=0, shrinkB=0, zorder=4))
+        fig.text(lx + 0.074, y, f"{gv:.1f}", fontsize=8.8, color=MUTED, va="center")
+        y -= 0.030
+
+    # ---- footer ----------------------------------------------------------
+    fig.lines.append(plt.Line2D([0.055, 0.945], [0.088, 0.088],
+                                transform=fig.transFigure, color=FAINT, lw=1))
+    fig.text(0.055, 0.078,
+             f"Net trade is the balance of physical cross-border flows over the country's "
+             f"own demand. Arrows are the mean net flow across each border on days when\n"
+             f"either end was in a heatwave; every border is collapsed to one direction "
+             f"first, since ENTSO-E reports each one twice. All of each country's\n"
+             f"interconnectors are included, the Balkan and non-EU borders among them. A "
+             f"heatwave day is 3+ consecutive days above the local day-of-year 90th\n"
+             f"percentile of daily maximum temperature, or at or above 30 {MIDDOT}C, against the "
+             f"same country's non-heatwave days in the same season, weekday to weekday.\n"
+             f"Price is the unweighted daily mean of day-ahead prices. "
+             f"Source: ENTSO-E Transparency Platform; ERA5 via Open-Meteo.",
+             fontsize=7.2, color=MUTED, va="top", linespacing=1.6)
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    for ext in ("pdf", "png"):
+        p = OUT / f"{M['file']}.{ext}"
+        fig.savefig(p, facecolor="#ffffff")
+        print(f"wrote {p}  ({p.stat().st_size / 1024:.0f} KB)")
+    plt.close(fig)
+
+
+for _m in MODES:
+    render(_m)
