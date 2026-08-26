@@ -472,7 +472,11 @@ def render(mode):
         label(axy[0] + nx, axy[1] + ny, d, ink_for[bin_of(d[M["key"]])])
 
     # ---- net flow on every border, sized by volume ----
-    placed = []
+    # Seeded with the country labels, so a number box treats a country's name
+    # as an obstacle too. Checking only against other boxes let one land square
+    # on a label, which no amount of spacing between boxes would have caught.
+    placed = [(ANCHOR[c][0] + NUDGE.get(c, (0, 0))[0],
+               ANCHOR[c][1] + NUDGE.get(c, (0, 0))[1]) for c in CEE]
     for (lo, hi) in sorted(_acc, key=lambda k: -FLOW[k]["gwh"]):
         fl = FLOW[(lo, hi)]
         pa, pb = ANCHOR[fl["src"]], ANCHOR[fl["dst"]]
@@ -492,7 +496,7 @@ def render(mode):
         off = 26 + 16 * (fl["gwh"] / GMAX) ** 0.55
         for sx, mult in ((1, 1.0), (-1, 1.0), (1, 1.7), (-1, 1.7), (1, 2.4)):
             cand = (mid[0] + px * off * sx * mult, mid[1] + py * off * sx * mult)
-            if all(math.dist(cand, q) > 40 for q in placed):
+            if all(math.dist(cand, q) > 46 for q in placed):
                 break
         placed.append(cand)
         ax.text(cand[0], cand[1], f"{fl['gwh']:.1f}", ha="center", va="center",
@@ -503,10 +507,12 @@ def render(mode):
 
     # Square corners, no bevel, simple outline on white - per the guide.
     ax.annotate(
-        f"Romania and Greece both ran about {D['RO']['resh']:.0f}% renewable,\n"
-        f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart. Romania imported "
-        f"{D['RO']['imp']:.0f}% of its\npower that week; Greece exported {-D['GR']['imp']:.0f}%.",
-        xy=(310, 152), xytext=(310, 152), fontsize=8, color=SMOKY,
+        f"Romania and Greece both ran\n"
+        f"about {D['RO']['resh']:.0f}% renewable, "
+        f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.\n"
+        f"Romania imported {D['RO']['imp']:.0f}% of its power\n"
+        f"that week; Greece exported {-D['GR']['imp']:.0f}%.",
+        xy=(238, 118), xytext=(238, 118), fontsize=8, color=SMOKY,
         linespacing=1.5, ha="center", va="center", zorder=8,
         annotation_clip=False, fontfamily=SANS,
         bbox=dict(boxstyle="square,pad=0.55", facecolor="#ffffff",
