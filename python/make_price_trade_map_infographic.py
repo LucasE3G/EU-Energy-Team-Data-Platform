@@ -81,7 +81,14 @@ EURO, NDASH, MIDDOT, MINUS = "€", "–", "·", "−"
 ABROAD = {}
 # Hand nudges for labels that would otherwise sit on a border or over a
 # neighbour's text.
-NUDGE = {"SK": (2, 30), "AT": (-10, 0), "HU": (4, -8),
+# Slovakia sits on its own centroid. It is shallow and its northern border is
+# notched, and its ink is white because its fill is dark - so a label nudged up
+# to clear the arrow crosses the border and turns white on white.
+# Slovakia sits on its own centroid. It is shallow, its northern border is
+# notched and its western end is narrow, so nudging the label in any direction
+# runs it off the country - and its ink is white, because its fill is dark, so
+# off the country means invisible. The arrows move instead.
+NUDGE = {"SK": (0, 0), "AT": (-10, 0), "HU": (-16, -19),
          "GR": (4, 12), "RO": (6, 0)}
 
 
@@ -470,8 +477,14 @@ def render(mode):
         fl = FLOW[(lo, hi)]
         pa, pb = ANCHOR[fl["src"]], ANCHOR[fl["dst"]]
         dist = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
-        half = min(37.0, dist * 0.17)
-        mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
+        half = min(34.0, dist * 0.16)
+        # Biased toward the destination rather than centred on the two capitals.
+        # Centred, the Slovakia-Hungary arrow - the largest on the map - reached
+        # far enough back into Slovakia to cross its own label, and Slovakia is
+        # too small to move the label anywhere else. Sitting inside the receiving
+        # country also reads correctly: this is power arriving.
+        t = 0.62
+        mid = (pa[0] + t * (pb[0] - pa[0]), pa[1] + t * (pb[1] - pa[1]))
         a, b = shrink(mid, pa, half), shrink(mid, pb, half)
         ax.add_patch(flow_arrow(a, b, fl["gwh"], zorder=5.4))
         ux, uy = (b[0] - a[0]) / (2 * half or 1), (b[1] - a[1]) / (2 * half or 1)
