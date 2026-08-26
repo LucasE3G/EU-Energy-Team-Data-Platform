@@ -81,9 +81,6 @@ EURO, NDASH, MIDDOT, MINUS = "€", "–", "·", "−"
 ABROAD = {}
 # Hand nudges for labels that would otherwise sit on a border or over a
 # neighbour's text.
-# Slovakia sits on its own centroid. It is shallow and its northern border is
-# notched, and its ink is white because its fill is dark - so a label nudged up
-# to clear the arrow crosses the border and turns white on white.
 # Slovakia sits on its own centroid. It is shallow, its northern border is
 # notched and its western end is narrow, so nudging the label in any direction
 # runs it off the country - and its ink is white, because its fill is dark, so
@@ -130,6 +127,7 @@ for cc in CEE:
     dem = float(u["heatwave_mean_mw"]) * 24 / 1000.0
     net = float(t["heatwave_net_import_gwh"])
     D[cc] = dict(
+        cc=cc,
         name=NAMES[cc],
         price=float(p["heatwave_price_eur"]),
         normal_price=float(p["normal_price_eur"]),
@@ -335,24 +333,23 @@ MODES = {
         labels=["exports 20%+", "exports 5-20%", "balanced",
                 "imports 5-15%", "imports 15%+"],
         legend="NET TRADE, % OF OWN DEMAND  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
-        title=("Interconnectivity was key to address power supply needs\n"
-               "in Hungary and Romania. Price differences in the region\n"
-               "still suggest the need for further market integration"),
+        title=("Interconnectivity was key to address power supply\n"
+               "needs in Hungary and Romania"),
         file="heatwave_price_trade_map",
     ),
     "price": dict(
         key="price",
-        bins=[120, 126, 131, 136],
+        bins=[126, 131, 136],
         # Sequential: one hue, light to dark, per the guide's rule for data that
-        # is sequential rather than categorical.
-        ramp=["#ebb0ba", "#de808f", "#cd3951", "#9c2b3d", "#6b1c29"],
-        ink=[SMOKY, SMOKY, "#ffffff", "#ffffff", "#ffffff"],
-        labels=[f"under {EURO}120", f"{EURO}120-125", f"{EURO}126-130",
-                f"{EURO}131-135", f"{EURO}136+"],
+        # is sequential rather than categorical. Four steps, not five: no country
+        # here falls under 120, so that band was a key to an empty set.
+        ramp=["#de808f", "#cd3951", "#9c2b3d", "#6b1c29"],
+        ink=[SMOKY, "#ffffff", "#ffffff", "#ffffff"],
+        labels=[f"{EURO}120-125", f"{EURO}126-130", f"{EURO}131-135",
+                f"{EURO}136+"],
         legend="DAY-AHEAD PRICE, EUR/MWH  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
-        title=("Interconnectivity was key to address power supply needs\n"
-               "in Hungary and Romania. Price differences in the region\n"
-               "still suggest the need for further market integration"),
+        title=("Price differences in the region still suggest\n"
+               "the need for further market integration"),
         file="heatwave_price_level_map",
     ),
 }
@@ -405,7 +402,7 @@ def render(mode):
 
     fig.text(0.5, 0.988, M["title"], ha="center", va="top",
              linespacing=1.35, **TITLE_FONT)
-    fig.text(0.5, 0.872, M["legend"], ha="center", va="top", fontsize=10,
+    fig.text(0.5, 0.906, M["legend"], ha="center", va="top", fontsize=10,
              fontweight="bold", color=AMARANTH, fontfamily=SANS)
 
     # ---- key across the top, since 15cm leaves no room for a side column ----
@@ -415,14 +412,14 @@ def render(mode):
     x0 = (1.0 - total) / 2
     for i, lab in enumerate(M["labels"]):
         x = x0 + i * (sw_w + gap)
-        fig.patches.append(Rectangle((x, 0.836), sw_w, 0.011,
+        fig.patches.append(Rectangle((x, 0.870), sw_w, 0.011,
                                      transform=fig.transFigure, facecolor=ramp[i],
                                      edgecolor="#ffffff", linewidth=0.6, zorder=3))
-        fig.text(x + sw_w / 2, 0.831, lab, ha="center", va="top", fontsize=8,
+        fig.text(x + sw_w / 2, 0.865, lab, ha="center", va="top", fontsize=8,
                  color=SMOKY, fontfamily=SANS)
 
     # Arrow key on its own line beneath the swatches.
-    ky = 0.806
+    ky = 0.840
     fig.text(0.5, ky, "Net flow, GWh per day  –  arrows point downstream and widen with volume",
              ha="center", va="top", fontsize=8, color=SMOKY, fontfamily=SANS)
     for j, gv in enumerate((GMIN, GMAX)):
@@ -435,7 +432,7 @@ def render(mode):
                  fontfamily=SANS, va="center")
 
     # ---- map takes the full column width ----
-    ax = fig.add_axes([0.015, 0.108, 0.97, 0.645])
+    ax = fig.add_axes([0.015, 0.108, 0.97, 0.679])
     ax.set_xlim(-16, W + 16)
     ax.set_ylim(-16, H + 16)
     ax.set_aspect("equal")
@@ -446,9 +443,11 @@ def render(mode):
         on_cor = cc in CORRIDOR
         for pts in rings:
             ax.add_patch(PathPatch(MPath(pts, closed=True), facecolor=ramp[b],
-                                   edgecolor=ROYAL if on_cor else "#ffffff",
-                                   linewidth=1.1 if on_cor else 0.8,
+                                   edgecolor="#ffffff",
+                                   linewidth=1.3 if on_cor else 0.8,
                                    zorder=2.5 if on_cor else 2))
+
+    COMPACT = {"SK"}
 
     def label(x, y, d, ink):
         """Three lines stacked in POINTS, not map units - offsetting in data
@@ -462,8 +461,9 @@ def render(mode):
         v = d["imp"]
         txt = (f"imports {v:.0f}%" if v >= 5 else
                f"exports {-v:.0f}%" if v <= -5 else "balanced")
-        ax.annotate(txt, (x, y), xytext=(0, -12), va="center", fontsize=8,
-                    color=ink, **common)
+        if d["cc"] not in COMPACT:
+            ax.annotate(txt, (x, y), xytext=(0, -12), va="center", fontsize=8,
+                        color=ink, **common)
 
     for cc in CEE:
         d = D[cc]
@@ -506,7 +506,7 @@ def render(mode):
         f"Romania and Greece both ran about {D['RO']['resh']:.0f}% renewable,\n"
         f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart. Romania imported "
         f"{D['RO']['imp']:.0f}% of its\npower that week; Greece exported {-D['GR']['imp']:.0f}%.",
-        xy=(250, 250), xytext=(250, 250), fontsize=8, color=SMOKY,
+        xy=(310, 152), xytext=(310, 152), fontsize=8, color=SMOKY,
         linespacing=1.5, ha="center", va="center", zorder=8,
         annotation_clip=False, fontfamily=SANS,
         bbox=dict(boxstyle="square,pad=0.55", facecolor="#ffffff",
