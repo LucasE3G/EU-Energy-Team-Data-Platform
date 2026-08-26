@@ -81,8 +81,8 @@ EURO, NDASH, MIDDOT, MINUS = "€", "–", "·", "−"
 ABROAD = {}
 # Hand nudges for labels that would otherwise sit on a border or over a
 # neighbour's text.
-NUDGE = {"SK": (10, 12), "AT": (-10, 0), "HU": (4, -8),
-         "GR": (-2, -4), "RO": (6, 0)}
+NUDGE = {"SK": (2, 30), "AT": (-10, 0), "HU": (4, -8),
+         "GR": (4, 12), "RO": (6, 0)}
 
 
 def load_env() -> dict:
@@ -292,42 +292,67 @@ print(f"  {len(SHAPES)} outlines")
 
 
 # ---------------------------------------------------------------- draw
-# Two versions of the same map. Only the fill and its legend change: the labels,
-# the flow arrows and the corridor emphasis are identical, so the pair can be
-# read against each other without re-learning the picture.
+# Built to the E3G visual guidelines (Comms, September 2025).
+#
+#   Size      15cm column width is a hard ceiling. The side legend that used to
+#             sit beside the map does not fit inside it, so the key runs across
+#             the top and the map takes the full width.
+#   Title     Georgia bold 14pt Royal Blue, centred.
+#   Subtitle  Open Sans bold, all caps, 10pt, Amaranth - the lead colour of the
+#             energy narrative this sits in.
+#   Colour    Both scales come from the E3G ramps. Price is sequential, so it is
+#             tints and shades of one hue, as the guide directs for sequential
+#             data. Trade is diverging because it has a sign, so it runs E3G
+#             blues through a neutral to E3G reds. Every step carries a value
+#             and was checked for 4.5:1 against the ink chosen for it.
+#   Arrows    Smoky Black, the guide's colour for connecting lines and arrows.
+#   Source    Open Sans italic 8pt Smoky Black, bottom left, naming the database
+#             and access date, and E3G as the analyst.
+#   Caption   NOT in the image - the guide sets it as document text below.
+CM = 1 / 2.54
+COL_W_CM, FIG_H_CM = 15.0, 20.0
+
+ROYAL, VISTA, AMARANTH = "#282970", "#82a4dd", "#cd3951"
+SMOKY, FLORAL, GREY_RULE = "#1b1817", "#fffaf0", "#c4c2ba"
+SANS = "Open Sans"
+TITLE_FONT = {"family": "Georgia", "weight": "bold", "size": 14, "color": ROYAL}
+
 MODES = {
     "trade": dict(
         key="imp",
+        bins=[-20, -5, 5, 15],
         # Diverging: importing and exporting are opposite states, not more and
         # less of one thing, so lightness peaks at the balanced midpoint.
-        bins=[-20, -5, 5, 15],
-        ramp=["#146b7a", "#84bcc7", "#eeeeea", "#eeb078", "#b3541d"],
-        ink=["#ffffff", "#152a19", "#152a19", "#152a19", "#ffffff"],
-        labels=["exports 20%+ of demand", "exports 5-20%", "broadly balanced",
+        ramp=["#455294", "#83a4de", "#f6f4ea", "#de808f", "#b52247"],
+        ink=["#ffffff", SMOKY, SMOKY, SMOKY, "#ffffff"],
+        labels=["exports 20%+", "exports 5-20%", "balanced",
                 "imports 5-15%", "imports 15%+"],
-        legend="Net trade on\nheatwave days",
-        title=("The two that imported most", "were the two that paid most"),
+        legend="NET TRADE, % OF OWN DEMAND  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
+        title=("Interconnectivity was key to address power supply needs\n"
+               "in Hungary and Romania. Price differences in the region\n"
+               "still suggest the need for further market integration"),
         file="heatwave_price_trade_map",
     ),
     "price": dict(
         key="price",
-        # Sequential: price is a magnitude, so one hue, light to dark. Every
-        # step was checked for 4.5:1 against the ink chosen for it and adjacent
-        # steps are at least 1.3:1 apart in luminance.
         bins=[120, 126, 131, 136],
-        ramp=["#fdf1dc", "#f7cf99", "#eda75d", "#d97b34", "#a8431a"],
-        ink=["#152a19", "#152a19", "#152a19", "#152a19", "#ffffff"],
+        # Sequential: one hue, light to dark, per the guide's rule for data that
+        # is sequential rather than categorical.
+        ramp=["#ebb0ba", "#de808f", "#cd3951", "#9c2b3d", "#6b1c29"],
+        ink=[SMOKY, SMOKY, "#ffffff", "#ffffff", "#ffffff"],
         labels=[f"under {EURO}120", f"{EURO}120-125", f"{EURO}126-130",
-                f"{EURO}131-135", f"{EURO}136 and over"],
-        legend="Day-ahead price on\nheatwave days",
-        title=("Power flowed out of the cheap markets", "and into the dear ones"),
+                f"{EURO}131-135", f"{EURO}136+"],
+        legend="DAY-AHEAD PRICE, EUR/MWH  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
+        title=("Interconnectivity was key to address power supply needs\n"
+               "in Hungary and Romania. Price differences in the region\n"
+               "still suggest the need for further market integration"),
         file="heatwave_price_level_map",
     ),
 }
 
-CSPREAD = max(D[c]["price"] for c in CORRIDOR) - min(D[c]["price"] for c in CORRIDOR)
 GMAX = max(f["gwh"] for f in FLOW.values())
-ARROW = "#22313d"
+GMIN = min(f["gwh"] for f in FLOW.values())
+ARROW = SMOKY
 
 
 def shrink(p, q, by):
@@ -338,27 +363,23 @@ def shrink(p, q, by):
     return p[0] + dx / n * by, p[1] + dy / n * by
 
 
-def flow_arrow(a, b, gwh, zorder):
+def flow_arrow(a, b, gwh, zorder, scale=1.0):
     """One filled polygon, outlined.
 
-    Built from a line plus a separate arrowhead first, with a second wider
-    arrow drawn underneath as a white casing. That looked wrong: the casing's
-    head is scaled independently of the shaft, so it protruded around the dark
-    head as a ragged white wedge. A single 'simple' arrow is one closed shape,
-    and a stroke path-effect outlines the whole silhouette evenly - which is
-    what the casing was trying to be.
+    A line plus a separate arrowhead scales the two independently, so a white
+    casing drawn underneath protrudes around the dark head as a ragged wedge.
+    A 'simple' arrow is one closed shape and a stroke outlines the whole
+    silhouette evenly.
     """
     w = (gwh / GMAX) ** 0.55
-    tail = 1.8 + 5.4 * w
-    head_w = tail * 2.5
-    head_l = tail * 2.3
+    tail = (1.4 + 4.0 * w) * scale
     return FancyArrowPatch(
         a, b,
-        arrowstyle=f"simple,head_width={head_w:.2f},head_length={head_l:.2f},"
-                   f"tail_width={tail:.2f}",
+        arrowstyle=f"simple,head_width={tail * 2.5:.2f},"
+                   f"head_length={tail * 2.3:.2f},tail_width={tail:.2f}",
         mutation_scale=1, facecolor=ARROW, edgecolor="none",
         shrinkA=0, shrinkB=0, zorder=zorder,
-        path_effects=[pe.withStroke(linewidth=2.4, foreground=SEAM)])
+        path_effects=[pe.withStroke(linewidth=2.0, foreground="#ffffff")])
 
 
 def render(mode):
@@ -371,28 +392,43 @@ def render(mode):
             i += 1
         return i
 
-    # Shorter than it was: without Poland and Czechia the frame is nearly square
-    # rather than portrait, and the old canvas left a band of white below Greece.
-    fig = plt.figure(figsize=(9.0, 9.6), dpi=200)
+    plt.rcParams["font.family"] = [SANS]
+    fig = plt.figure(figsize=(COL_W_CM * CM, FIG_H_CM * CM), dpi=300)
     fig.patch.set_facecolor("#ffffff")
 
-    TOP = 0.818
-    fig.text(0.055, 0.972, M["title"][0], fontsize=18, fontweight="bold",
-             color=INK, va="top")
-    fig.text(0.055, 0.947, M["title"][1], fontsize=18, fontweight="bold",
-             color=INK, va="top")
-    fig.text(0.055, 0.919,
-             f"Net trade, day-ahead price and net cross-border flow on heatwave days, "
-             f"May{NDASH}September 2026.\nPower ran toward the dearer market on "
-             f"{'every one of the' if TOWARD == NBORDERS else str(TOWARD) + ' of the'} "
-             f"{NBORDERS} borders between these {len(CEE)}. It is not that importing\n"
-             f"raises the price: a country imports because it is short, and being short "
-             f"is what costs.\nRenewable share does not order them {MIDDOT} Romania and Greece "
-             f"ran the same {D['RO']['resh']:.0f}% and sit "
-             f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.",
-             fontsize=10.2, color=MUTED, va="top", linespacing=1.5)
+    fig.text(0.5, 0.988, M["title"], ha="center", va="top",
+             linespacing=1.35, **TITLE_FONT)
+    fig.text(0.5, 0.872, M["legend"], ha="center", va="top", fontsize=10,
+             fontweight="bold", color=AMARANTH, fontfamily=SANS)
 
-    ax = fig.add_axes([0.235, 0.100, 0.755, 0.730])
+    # ---- key across the top, since 15cm leaves no room for a side column ----
+    n = len(ramp)
+    sw_w, gap = 0.088, 0.010
+    total = n * sw_w + (n - 1) * gap
+    x0 = (1.0 - total) / 2
+    for i, lab in enumerate(M["labels"]):
+        x = x0 + i * (sw_w + gap)
+        fig.patches.append(Rectangle((x, 0.836), sw_w, 0.011,
+                                     transform=fig.transFigure, facecolor=ramp[i],
+                                     edgecolor="#ffffff", linewidth=0.6, zorder=3))
+        fig.text(x + sw_w / 2, 0.831, lab, ha="center", va="top", fontsize=8,
+                 color=SMOKY, fontfamily=SANS)
+
+    # Arrow key on its own line beneath the swatches.
+    ky = 0.806
+    fig.text(0.5, ky, "Net flow, GWh per day  –  arrows point downstream and widen with volume",
+             ha="center", va="top", fontsize=8, color=SMOKY, fontfamily=SANS)
+    for j, gv in enumerate((GMIN, GMAX)):
+        ax0 = 0.335 + j * 0.20
+        arr = flow_arrow((ax0, ky - 0.030), (ax0 + 0.055, ky - 0.030), gv,
+                         zorder=4, scale=0.75)
+        arr.set_transform(fig.transFigure)
+        fig.patches.append(arr)
+        fig.text(ax0 + 0.065, ky - 0.030, f"{gv:.1f}", fontsize=8, color=SMOKY,
+                 fontfamily=SANS, va="center")
+
+    # ---- map takes the full column width ----
+    ax = fig.add_axes([0.015, 0.108, 0.97, 0.645])
     ax.set_xlim(-16, W + 16)
     ax.set_ylim(-16, H + 16)
     ax.set_aspect("equal")
@@ -403,143 +439,74 @@ def render(mode):
         on_cor = cc in CORRIDOR
         for pts in rings:
             ax.add_patch(PathPatch(MPath(pts, closed=True), facecolor=ramp[b],
-                                   edgecolor="#5d6b58" if on_cor else SEAM,
-                                   linewidth=1.7 if on_cor else 1.3,
+                                   edgecolor=ROYAL if on_cor else "#ffffff",
+                                   linewidth=1.1 if on_cor else 0.8,
                                    zorder=2.5 if on_cor else 2))
 
     def label(x, y, d, ink):
-        """Three lines stacked in POINTS, not in map units - offsetting in data
-        coordinates made the spacing depend on how the map happened to scale."""
+        """Three lines stacked in POINTS, not map units - offsetting in data
+        coordinates makes the spacing depend on how the map happens to scale."""
         common = dict(xycoords="data", textcoords="offset points", ha="center",
-                      annotation_clip=False, zorder=7)
-        ax.annotate(d["name"], (x, y), xytext=(0, 14), va="center", fontsize=8.6,
+                      annotation_clip=False, zorder=7, fontfamily=SANS)
+        ax.annotate(d["name"], (x, y), xytext=(0, 11), va="center", fontsize=8,
                     color=ink, fontweight="bold", **common)
         ax.annotate(f"{EURO}{d['price']:.0f}", (x, y), xytext=(0, -1), va="center",
-                    fontsize=15.5, color=ink, fontweight="bold", **common)
+                    fontsize=12, color=ink, fontweight="bold", **common)
         v = d["imp"]
         txt = (f"imports {v:.0f}%" if v >= 5 else
                f"exports {-v:.0f}%" if v <= -5 else "balanced")
-        ax.annotate(txt, (x, y), xytext=(0, -15), va="center",
-                    fontsize=8.2, color=ink, alpha=.82, **common)
+        ax.annotate(txt, (x, y), xytext=(0, -12), va="center", fontsize=8,
+                    color=ink, **common)
 
-    LABELPT = {}
     for cc in CEE:
         d = D[cc]
         axy = ANCHOR[cc]
         nx, ny = NUDGE.get(cc, (0, 0))
-        LABELPT[cc] = ABROAD[cc] if cc in ABROAD else (axy[0] + nx, axy[1] + ny)
-        if cc in ABROAD:
-            tx, ty = ABROAD[cc]
-            ax.plot([axy[0], tx], [axy[1], ty], color="#9aa2ae", lw=0.9, zorder=6,
-                    solid_capstyle="round")
-            ax.plot([axy[0]], [axy[1]], marker="o", ms=3.4, color="#9aa2ae", zorder=6)
-            ax.add_patch(Rectangle((tx - 62, ty - 34), 124, 68, facecolor="#ffffff",
-                                   edgecolor=FAINT, lw=1.0, zorder=6.5))
-            label(tx, ty, d, INK)
-        else:
-            label(axy[0] + nx, axy[1] + ny, d, ink_for[bin_of(d[M["key"]])])
+        label(axy[0] + nx, axy[1] + ny, d, ink_for[bin_of(d[M["key"]])])
 
-    # ---- net flow on every border, sized by volume ------------------------
-    # Drawn between the two countries' own anchors so the arrow sits across the
-    # border it describes, and centred there so it does not reach into either
-    # country's label.
+    # ---- net flow on every border, sized by volume ----
     placed = []
-    # Biggest first, so the flows that matter most get the clearest spot and the
-    # small ones move aside for them rather than the other way round.
     for (lo, hi) in sorted(_acc, key=lambda k: -FLOW[k]["gwh"]):
         fl = FLOW[(lo, hi)]
         pa, pb = ANCHOR[fl["src"]], ANCHOR[fl["dst"]]
         dist = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
-        # Kept short and hugging the border. Hungary has five of these and at
-        # full length they all converged on its own label.
         half = min(37.0, dist * 0.17)
         mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-        a = shrink(mid, pa, half)
-        b = shrink(mid, pb, half)
+        a, b = shrink(mid, pa, half), shrink(mid, pb, half)
         ax.add_patch(flow_arrow(a, b, fl["gwh"], zorder=5.4))
-        # Number beside the shaft, not on it, so it never breaks the arrow in two.
         ux, uy = (b[0] - a[0]) / (2 * half or 1), (b[1] - a[1]) / (2 * half or 1)
         px, py = -uy, ux
-        # Clear of the shaft, not on it: the offset has to grow with the arrow,
-        # since the widest heads are about as across as the badge is tall.
-        off = 28 + 17 * (fl["gwh"] / GMAX) ** 0.55
-        # Four borders meet within a few pixels around Slovenia, so the first
-        # choice of side is not always free. Try the other side, then further
-        # out, and take the first spot clear of the badges already placed.
+        off = 26 + 16 * (fl["gwh"] / GMAX) ** 0.55
         for sx, mult in ((1, 1.0), (-1, 1.0), (1, 1.7), (-1, 1.7), (1, 2.4)):
             cand = (mid[0] + px * off * sx * mult, mid[1] + py * off * sx * mult)
             if all(math.dist(cand, q) > 40 for q in placed):
                 break
         placed.append(cand)
-        # Volume only. The spread between any two is the difference between the
-        # two prices already printed on them, so putting it here spent a line
-        # restating something the reader can take straight off the map.
-        ax.text(cand[0], cand[1], f"{fl['gwh']:.1f}",
-                ha="center", va="center", fontsize=8.4, color=ARROW,
-                fontweight="bold", zorder=5.6,
-                bbox=dict(boxstyle="round,pad=0.26", facecolor="#ffffff",
-                          edgecolor="#c9d2c6", linewidth=0.8))
+        ax.text(cand[0], cand[1], f"{fl['gwh']:.1f}", ha="center", va="center",
+                fontsize=8, color=SMOKY, fontweight="bold", zorder=5.6,
+                fontfamily=SANS,
+                bbox=dict(boxstyle="square,pad=0.26", facecolor="#ffffff",
+                          edgecolor=GREY_RULE, linewidth=0.6))
 
+    # Square corners, no bevel, simple outline on white - per the guide.
     ax.annotate(
-        f"Romania and Greece both ran about\n"
-        f"{D['RO']['resh']:.0f}% renewable, {EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.\n"
-        f"Romania imported {D['RO']['imp']:.0f}% of its power\n"
-        f"that week; Greece exported {-D['GR']['imp']:.0f}%.",
-        xy=(250, 250), xytext=(250, 250),
-        fontsize=9.2, color=INK, linespacing=1.5, ha="center", va="center",
-        zorder=8, annotation_clip=False,
-        bbox=dict(boxstyle="round,pad=0.55", facecolor="#ffffff",
-                  edgecolor="#c9d2c6", linewidth=1.1))
+        f"Romania and Greece both ran about {D['RO']['resh']:.0f}% renewable,\n"
+        f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart. Romania imported "
+        f"{D['RO']['imp']:.0f}% of its\npower that week; Greece exported {-D['GR']['imp']:.0f}%.",
+        xy=(250, 250), xytext=(250, 250), fontsize=8, color=SMOKY,
+        linespacing=1.5, ha="center", va="center", zorder=8,
+        annotation_clip=False, fontfamily=SANS,
+        bbox=dict(boxstyle="square,pad=0.55", facecolor="#ffffff",
+                  edgecolor=GREY_RULE, linewidth=0.8))
 
-    # ---- legend ----------------------------------------------------------
-    lx = 0.055
-    fig.text(lx, TOP - 0.012, M["legend"], fontsize=10.4, fontweight="bold",
-             color=INK, va="top", linespacing=1.35)
-    y = TOP - 0.062
-    for i, lab in enumerate(M["labels"]):
-        fig.patches.append(Rectangle((lx, y - 0.0125), 0.052, 0.0175,
-                                     transform=fig.transFigure, facecolor=ramp[i],
-                                     edgecolor="#d4dad2", linewidth=0.7, zorder=3))
-        fig.text(lx + 0.064, y - 0.0042, lab, fontsize=9.5, color=MUTED, va="center")
-        y -= 0.0285
-
-    y -= 0.022
-    fig.lines.append(plt.Line2D([lx, lx + 0.175], [y, y], transform=fig.transFigure,
-                                color=FAINT, lw=1))
-    y -= 0.030
-    fig.text(lx, y, "On each border", fontsize=10.4, fontweight="bold",
-             color=INK, va="top")
-    y -= 0.026
-    # Kept narrow: the left column is only as wide as the legend swatches, and
-    # a longer line reaches across into Slovenia's label box.
-    fig.text(lx, y, f"Net flow in GWh per day.\n"
-                    f"Arrows point downstream\nand widen with the volume.",
-             fontsize=8.6, color=MUTED, va="top", linespacing=1.45)
-    y -= 0.028
-    # Two sample arrows at the extremes of the scale, so the widths mean something.
-    y -= 0.052
-    for gv in (min(f["gwh"] for f in FLOW.values()), GMAX):
-        arr = flow_arrow((lx + 0.004, y), (lx + 0.062, y), gv, zorder=4)
-        arr.set_transform(fig.transFigure)
-        fig.patches.append(arr)
-        fig.text(lx + 0.074, y, f"{gv:.1f}", fontsize=8.8, color=MUTED, va="center")
-        y -= 0.030
-
-    # ---- footer ----------------------------------------------------------
-    fig.lines.append(plt.Line2D([0.055, 0.945], [0.088, 0.088],
-                                transform=fig.transFigure, color=FAINT, lw=1))
-    fig.text(0.055, 0.078,
-             f"Net trade is the balance of physical cross-border flows over the country's "
-             f"own demand. Arrows are the mean net flow across each border on days when\n"
-             f"either end was in a heatwave; every border is collapsed to one direction "
-             f"first, since ENTSO-E reports each one twice. All of each country's\n"
-             f"interconnectors are included, the Balkan and non-EU borders among them. A "
-             f"heatwave day is 3+ consecutive days above the local day-of-year 90th\n"
-             f"percentile of daily maximum temperature, or at or above 30 {MIDDOT}C, against the "
-             f"same country's non-heatwave days in the same season, weekday to weekday.\n"
-             f"Price is the unweighted daily mean of day-ahead prices. "
-             f"Source: ENTSO-E Transparency Platform; ERA5 via Open-Meteo.",
-             fontsize=7.2, color=MUTED, va="top", linespacing=1.6)
+    fig.text(0.02, 0.086,
+             "Net trade is the balance of physical cross-border flows over the country's own demand.",
+             fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
+    fig.text(0.02, 0.012,
+             "Source: ENTSO-E Transparency Platform, accessed August 2026 (day-ahead prices, physical "
+             "cross-border\nflows, actual total load); ERA5 via Open-Meteo, August 2026. E3G analysis.",
+             fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
+             linespacing=1.4)
 
     OUT.mkdir(parents=True, exist_ok=True)
     for ext in ("pdf", "png"):
