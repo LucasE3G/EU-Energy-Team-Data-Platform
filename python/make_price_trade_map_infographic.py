@@ -85,7 +85,7 @@ ABROAD = {}
 # notched and its western end is narrow, so nudging the label in any direction
 # runs it off the country - and its ink is white, because its fill is dark, so
 # off the country means invisible. The arrows move instead.
-NUDGE = {"SK": (0, 0), "AT": (-10, 0), "HU": (-16, -19),
+NUDGE = {"SK": (0, 3), "AT": (-10, 0), "HU": (-16, -19),
          "GR": (4, 12), "RO": (6, 0)}
 
 
@@ -386,6 +386,18 @@ def flow_arrow(a, b, gwh, zorder, scale=1.0):
         path_effects=[pe.withStroke(linewidth=2.0, foreground="#ffffff")])
 
 
+def text_width(txt, size, weight):
+    """Width of a string in points, from the renderer rather than a guess at
+    average character width - the euro sign and the digits are nothing like the
+    same width as lowercase letters."""
+    fig = plt.figure(figsize=(1, 1))
+    t = fig.text(0, 0, txt, fontsize=size, fontweight=weight, fontfamily=SANS)
+    fig.canvas.draw()
+    w = t.get_window_extent(fig.canvas.get_renderer()).width * 72.0 / fig.dpi
+    plt.close(fig)
+    return w
+
+
 def render(mode):
     M = MODES[mode]
     ramp, ink_for, bins = M["ramp"], M["ink"], M["bins"]
@@ -450,20 +462,37 @@ def render(mode):
     COMPACT = {"SK"}
 
     def label(x, y, d, ink):
-        """Three lines stacked in POINTS, not map units - offsetting in data
+        """Lines stacked in POINTS, not map units - offsetting in data
         coordinates makes the spacing depend on how the map happens to scale."""
-        common = dict(xycoords="data", textcoords="offset points", ha="center",
-                      annotation_clip=False, zorder=7, fontfamily=SANS)
-        ax.annotate(d["name"], (x, y), xytext=(0, 11), va="center", fontsize=8,
-                    color=ink, fontweight="bold", **common)
-        ax.annotate(f"{EURO}{d['price']:.0f}", (x, y), xytext=(0, -1), va="center",
-                    fontsize=12, color=ink, fontweight="bold", **common)
+        base = dict(xycoords="data", textcoords="offset points",
+                    annotation_clip=False, zorder=7, fontfamily=SANS)
         v = d["imp"]
         txt = (f"imports {v:.0f}%" if v >= 5 else
                f"exports {-v:.0f}%" if v <= -5 else "balanced")
-        if d["cc"] not in COMPACT:
-            ax.annotate(txt, (x, y), xytext=(0, -12), va="center", fontsize=8,
-                        color=ink, **common)
+        ax.annotate(d["name"], (x, y), xytext=(0, 11), va="center", ha="center",
+                    fontsize=8, color=ink, fontweight="bold", **base)
+        if d["cc"] in COMPACT:
+            # Two lines rather than three, because the country is too shallow
+            # for a third - the status moves up beside the price instead of
+            # being dropped. Two text objects straddling the centre, since a
+            # single one cannot carry two sizes.
+            price_s, gap = f"{EURO}{d['price']:.0f}", 5.0
+            # Measured, not guessed: the two are hung either side of one point,
+            # so the pair only lands centred if the offsets account for the
+            # status being the wider of the two.
+            wp = text_width(price_s, 12, "bold")
+            ws = text_width(txt, 8, "normal")
+            ax.annotate(price_s, (x, y), xytext=((wp - gap - ws) / 2, -3),
+                        va="center", ha="right", fontsize=12, color=ink,
+                        fontweight="bold", **base)
+            ax.annotate(txt, (x, y), xytext=((wp + gap - ws) / 2, -2),
+                        va="center", ha="left", fontsize=8, color=ink, **base)
+        else:
+            ax.annotate(f"{EURO}{d['price']:.0f}", (x, y), xytext=(0, -1),
+                        va="center", ha="center", fontsize=12, color=ink,
+                        fontweight="bold", **base)
+            ax.annotate(txt, (x, y), xytext=(0, -12), va="center", ha="center",
+                        fontsize=8, color=ink, **base)
 
     for cc in CEE:
         d = D[cc]
