@@ -32,7 +32,6 @@ OUT = ROOT / "python" / "output"
 
 # Italy dropped at request; these four keep the panels legible at this width.
 COUNTRIES = [("FR", "France"), ("GR", "Greece"), ("HU", "Hungary"), ("RO", "Romania")]
-HW_DAYS = {"GR": 16, "HU": 14, "RO": 13, "FR": 8}
 
 # Bottom to top. Must-run and traded volume underneath; then fossil, then the
 # two that define the day's shape - storage and solar - on top, so the midday
@@ -146,12 +145,13 @@ def build(prof: dict, price: dict):
     fig = plt.figure(figsize=(13.2, 8.0), dpi=200)
     fig.patch.set_facecolor("#ffffff")
 
-    fig.text(0.045, 0.962, "Solar carried the middle of the day; gas carried the evening,",
+    fig.text(0.045, 0.962,
+             f"28 July {NDASH} 12 August heatwaves: solar addressed daytime needs.",
              fontsize=18, fontweight="bold", color=INK, va="top")
-    fig.text(0.045, 0.918, "and the price followed it",
+    fig.text(0.045, 0.918, "Evening peak demand still depended on gas",
              fontsize=18, fontweight="bold", color=INK, va="top")
     fig.text(0.045, 0.878,
-             f"Average hourly generation and day-ahead price during the 28 July {NDASH} 12 August 2026 heatwave",
+             "Average generation and day-ahead price by local hour, on each country's own heatwave days",
              fontsize=10.2, color=MUTED, va="top")
 
     present = {k for cc, _ in COUNTRIES for h in prof.get(cc, {}).values()
@@ -175,10 +175,12 @@ def build(prof: dict, price: dict):
         xs = sorted(series)
         peak = max(series[h].get("demand", 0.0) for h in xs)
         ax = fig.add_subplot(gs[0, i])
-        draw_dispatch(ax, xs, series, name,
-                      f"peak {peak:.1f} GWh  {MIDDOT}  {HW_DAYS.get(cc, 0)} heatwave days")
+        # GW, not GWh: the series is an average over the hour, which is a rate.
+        # The two are numerically identical here - a GWh delivered in an hour is
+        # a GW - but GWh on an axis reads as a running total, which this is not.
+        draw_dispatch(ax, xs, series, name, f"peak demand {peak:.1f} GW")
         if i == 0:
-            ax.set_ylabel("GWh per hour", fontsize=8.6, color=MUTED, labelpad=4)
+            ax.set_ylabel("GW", fontsize=8.6, color=MUTED, labelpad=4)
         axp = fig.add_subplot(gs[1, i])
         draw_price(axp, xs, price.get(cc, {}))
         if i == 0:
@@ -188,7 +190,7 @@ def build(prof: dict, price: dict):
     # line cannot silently print it on top of the next one.
     foot = [
         f"Solar and storage are drawn at the top of the stack, with fossil directly beneath: the midday solar bulge and the evening fossil surge then read as one handover. The price panel is the same hours and days.",
-        f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GWh, Greece near 8.",
+        f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GW, Greece near 8.",
         f"Generation stacks above zero and net exports fall below it, which is why France, an exporter throughout, carries a band beneath the axis.",
         f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector is included, the Balkan and non-EU borders",
         f"among them {MIDDOT} Hungary now balances exactly. Greece's export band is still understated: ENTSO-E reports its Albanian and Italian flows for well under a third of these hours, and an unreported hour counts as none.",
