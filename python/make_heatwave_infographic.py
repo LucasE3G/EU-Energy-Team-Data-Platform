@@ -1,19 +1,37 @@
 """Shareable infographic: hourly demand, generation and price during the late-July
-2026 heatwave, in the Ember small-multiples format.
+2026 heatwave, built to the E3G visual guidelines (Comms, September 2025).
 
-Writes PDF (vector, for decks and print) and PNG (for chat and slides) to
-python/output/.
+Writes PDF (vector, for the report) and PNG to python/output/.
 
 Data comes from v_hw_event_profile and v_hw_event_price - each country's own
 heatwave days inside 28 July - 12 August 2026, averaged by local hour.
 
 Solar and storage sit at the TOP of the stack, with fossil directly beneath
 them. The chart has one job - to show the handover from solar in the middle of
-the day to gas in the evening - and putting the two on top of each other makes
-it a single shape: the solar band swells and collapses, and the fossil band
-underneath grows into the space it leaves. Solar on top also puts it directly
-above the zero line's mirror image, so the midday hours where solar pushes the
-country into net export can be read against the export band below the axis.
+the day to gas in the evening - and putting the two against each other makes it
+a single shape: the solar band swells and collapses, and the fossil band
+underneath grows into the space it leaves.
+
+Where the guidelines drove the design:
+
+  Size      15cm column width is a hard ceiling, so the four countries are a
+            2x2 grid rather than a row. At four across each panel would have
+            been 3.5cm wide and the hourly shape unreadable.
+  Title     Georgia bold 14pt Royal Blue, centred.
+  Subtitle  Open Sans bold, all caps, 10pt, Amaranth - this is an energy
+            narrative visual, and Amaranth is that narrative's lead colour.
+  Colour    Every fill is from the E3G palette. Amaranth leads because fossil
+            is the story; Royal Blue carries demand as the hero colour. The
+            guide warns that Amaranth and Avocado converge under deuteranopia,
+            so the six fills were checked in OKLab under simulated protanopia
+            and deuteranopia before use, and separated until they passed.
+  Stacks    White lines between segments, as the guide requires.
+  Legend    The guide prefers direct labels and allows a legend where there is
+            no room for them, as here: six categories across four small panels.
+  Source    Open Sans italic 8pt Smoky Black, bottom left, naming the database
+            and the access date rather than just the organisation.
+  Caption   NOT in the image. The guide sets the caption as document text below
+            the figure, so the takeaway line belongs in the report, not here.
 """
 from __future__ import annotations
 
@@ -30,22 +48,35 @@ from matplotlib.patches import Patch
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "python" / "output"
 
-# Italy dropped at request; these four keep the panels legible at this width.
+CM = 1 / 2.54
+COL_W_CM = 15.0          # E3G report column width; figures may be smaller, never wider
+# The guide caps width, not height. At 8pt - its own size for secondary text -
+# the labels take a fixed share of a 15cm-wide figure, so the only way to give
+# eight small panels room to breathe is to make it taller.
+FIG_H_CM = 20.5
+
 COUNTRIES = [("FR", "France"), ("GR", "Greece"), ("HU", "Hungary"), ("RO", "Romania")]
 
 # Bottom to top. Must-run and traded volume underneath; then fossil, then the
-# two that define the day's shape - storage and solar - on top, so the midday
-# solar bulge and the evening fossil surge sit against each other.
+# two that define the day's shape - storage and solar - on top.
 STACK = ["nuclear", "other_renewables", "net_import", "fossil", "storage", "solar"]
 LABEL = {"nuclear": "Nuclear", "fossil": "Fossil", "other_renewables": "Other renewables",
          "solar": "Solar", "storage": "Storage", "net_import": "Net import"}
-COLOR = {"solar": "#22c55e", "storage": "#f5c542", "nuclear": "#6b74a8",
-         "other_renewables": "#a5e8e0", "fossil": "#d94f3d", "net_import": "#7cc3ea"}
-DEMAND = "#12315e"
-PRICE = "#c0392b"
-INK, MUTED, GRID = "#14203a", "#6b7280", "#e6e8ec"
+
+# --- E3G palette ---------------------------------------------------------
+ROYAL, VISTA, AMARANTH, GOLD, SAGE = "#282970", "#82a4dd", "#cd3951", "#a69700", "#d1c688"
+SMOKY, FLORAL, EMINENCE, GOLDENROD, AVOCADO = "#1b1817", "#fffaf0", "#6d1a81", "#deae2f", "#507514"
+GOLD_TINT, RED_DEEP, GREY_RULE = "#ede8d1", "#852433", "#c4c2ba"
+
+COLOR = {"solar": GOLDENROD, "storage": GOLD_TINT, "nuclear": EMINENCE,
+         "other_renewables": AVOCADO, "fossil": AMARANTH, "net_import": VISTA}
+DEMAND = ROYAL
+PRICE = RED_DEEP
 
 NDASH, MIDDOT = "–", "·"
+
+TITLE_FONT = {"family": "Georgia", "weight": "bold", "size": 14, "color": ROYAL}
+SANS = "Open Sans"
 
 
 def load_env() -> dict:
@@ -78,7 +109,7 @@ def fetch() -> tuple[dict, dict]:
     return prof, price
 
 
-def draw_dispatch(ax, xs, series, title, note):
+def draw_dispatch(ax, xs, series, title, note, show_ylabel):
     pos = [0.0] * len(xs)
     neg = [0.0] * len(xs)
     for key in STACK:
@@ -89,84 +120,103 @@ def draw_dispatch(ax, xs, series, title, note):
         # changes sign tapers to zero at the crossing instead of leaping.
         upper = [max(v, 0.0) for v in vals]
         lower = [min(v, 0.0) for v in vals]
+        # White edge between segments, per the guide - it also does the work of
+        # separating Amaranth from Avocado, which converge under deuteranopia.
+        edge = dict(edgecolor="#ffffff", linewidth=0.5)
         if any(v > 0 for v in upper):
             hi = [pos[i] + upper[i] for i in range(len(xs))]
-            ax.fill_between(xs, pos, hi, facecolor=COLOR[key], linewidth=0, zorder=2)
+            ax.fill_between(xs, pos, hi, facecolor=COLOR[key], zorder=2, **edge)
             pos = hi
         if any(v < 0 for v in lower):
             lo = [neg[i] + lower[i] for i in range(len(xs))]
-            ax.fill_between(xs, lo, neg, facecolor=COLOR[key], linewidth=0, zorder=2)
+            ax.fill_between(xs, lo, neg, facecolor=COLOR[key], zorder=2, **edge)
             neg = lo
 
     ax.plot(xs, [series[h].get("demand", 0.0) for h in xs],
-            color=DEMAND, linewidth=2.2, zorder=4, solid_capstyle="round")
-    ax.axhline(0, color="#9aa3b2", linewidth=0.9, zorder=3)
+            color=DEMAND, linewidth=1.5, zorder=4, solid_capstyle="round")
+    ax.axhline(0, color=GREY_RULE, linewidth=0.7, zorder=3)
 
-    ax.set_title(title, loc="left", fontsize=12, fontweight="bold", color=INK, pad=19)
-    ax.annotate(note, xy=(0, 1.0), xycoords="axes fraction", xytext=(0, 4),
-                textcoords="offset points", fontsize=8.2, color=MUTED, va="bottom")
+    ax.set_title(title, loc="left", fontsize=9, fontweight="bold", color=SMOKY,
+                 fontfamily=SANS, pad=11)
+    ax.annotate(note, xy=(0, 1.0), xycoords="axes fraction", xytext=(0, 2),
+                textcoords="offset points", fontsize=8, color=SMOKY,
+                fontfamily=SANS, va="bottom")
+    if show_ylabel:
+        ax.set_ylabel("GW", fontsize=8, color=SMOKY, fontfamily=SANS, labelpad=2)
     ax.set_xlim(0, 23)
     ax.set_xticks([0, 6, 12, 18])
     ax.set_xticklabels([])
-    ax.grid(axis="y", color=GRID, linewidth=0.8, zorder=0)
+    ax.grid(axis="y", color=GREY_RULE, linewidth=0.5, alpha=0.55, zorder=0)
     ax.set_axisbelow(True)
     for s in ("top", "right", "bottom", "left"):
         ax.spines[s].set_visible(False)
-    ax.tick_params(labelsize=8.4, colors=MUTED, length=0, pad=3)
+    ax.tick_params(labelsize=8, colors=SMOKY, length=0, pad=2)
+    for lb in ax.get_yticklabels():
+        lb.set_fontfamily(SANS)
 
 
-def draw_price(ax, xs, px):
+def draw_price(ax, xs, px, show_ylabel):
     hs = [h for h in xs if h in px]
-    ax.plot(hs, [px[h] for h in hs], color=PRICE, linewidth=2.0,
+    ax.plot(hs, [px[h] for h in hs], color=PRICE, linewidth=1.4,
             zorder=3, solid_capstyle="round")
     ax.fill_between(hs, 0, [px[h] for h in hs], color=PRICE, alpha=0.10, zorder=2)
     ax.set_xlim(0, 23)
     ax.set_xticks([0, 6, 12, 18])
-    ax.set_xticklabels(["00", "06", "12", "18"])
+    ax.set_xticklabels(["00", "06", "12", "18"], fontfamily=SANS)
     ax.set_ylim(bottom=0)
-    ax.grid(axis="y", color=GRID, linewidth=0.8, zorder=0)
+    if show_ylabel:
+        ax.set_ylabel("€/MWh", fontsize=8, color=SMOKY, fontfamily=SANS, labelpad=2)
+    ax.grid(axis="y", color=GREY_RULE, linewidth=0.5, alpha=0.55, zorder=0)
     ax.set_axisbelow(True)
     for s in ("top", "right", "bottom", "left"):
         ax.spines[s].set_visible(False)
-    ax.tick_params(labelsize=8.2, colors=MUTED, length=0, pad=3)
+    ax.tick_params(labelsize=8, colors=SMOKY, length=0, pad=2)
+    for lb in ax.get_yticklabels():
+        lb.set_fontfamily(SANS)
     if hs:
         lo_h = min(hs, key=lambda h: px[h])
         hi_h = max(hs, key=lambda h: px[h])
-        ax.annotate(f"{px[hi_h]:.0f}", xy=(hi_h, px[hi_h]), xytext=(0, 3),
-                    textcoords="offset points", ha="center", fontsize=8.4,
-                    fontweight="bold", color=PRICE)
-        ax.annotate(f"{px[lo_h]:.0f}", xy=(lo_h, px[lo_h]), xytext=(0, -4),
+        ax.annotate(f"{px[hi_h]:.0f}", xy=(hi_h, px[hi_h]), xytext=(0, 2),
+                    textcoords="offset points", ha="center", fontsize=8,
+                    fontweight="bold", color=PRICE, fontfamily=SANS)
+        ax.annotate(f"{px[lo_h]:.0f}", xy=(lo_h, px[lo_h]), xytext=(0, -3),
                     textcoords="offset points", ha="center", va="top",
-                    fontsize=8.4, color=PRICE)
+                    fontsize=8, color=PRICE, fontfamily=SANS)
 
 
 def build(prof: dict, price: dict):
-    plt.rcParams["font.family"] = ["DejaVu Sans"]
-    fig = plt.figure(figsize=(13.2, 8.0), dpi=200)
+    plt.rcParams["font.family"] = [SANS]
+    fig = plt.figure(figsize=(COL_W_CM * CM, FIG_H_CM * CM), dpi=300)
     fig.patch.set_facecolor("#ffffff")
 
-    fig.text(0.045, 0.962,
-             f"28 July {NDASH} 12 August heatwaves: solar addressed daytime needs.",
-             fontsize=18, fontweight="bold", color=INK, va="top")
-    fig.text(0.045, 0.918, "Evening peak demand still depended on gas",
-             fontsize=18, fontweight="bold", color=INK, va="top")
-    fig.text(0.045, 0.878,
-             "Average generation and day-ahead price by local hour, on each country's own heatwave days",
-             fontsize=10.2, color=MUTED, va="top")
+    # Title: Georgia bold 14pt Royal Blue, centred.
+    fig.text(0.5, 0.988, "Hourly generation and day-ahead price",
+             ha="center", va="top", **TITLE_FONT)
+    # Subtitle: Open Sans bold, all caps, 10pt, Amaranth for the energy narrative.
+    fig.text(0.5, 0.958,
+             f"DURING THE 28 JULY {NDASH} 12 AUGUST 2026 HEATWAVES",
+             ha="center", va="top", fontsize=10, fontweight="bold",
+             color=AMARANTH, fontfamily=SANS)
 
     present = {k for cc, _ in COUNTRIES for h in prof.get(cc, {}).values()
                for k in h if abs(h.get(k, 0.0)) > 1e-9}
-    handles = [Line2D([], [], color=DEMAND, linewidth=2.2, label="Demand")]
-    handles += [Patch(facecolor=COLOR[k], label=LABEL[k])
-                for k in reversed(STACK) if k in present]
-    handles += [Line2D([], [], color=PRICE, linewidth=2.0, label="Day-ahead price")]
-    # One row, always. Wrapping puts the second line on top of the France title.
-    fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.042, 0.845),
-               ncol=len(handles), frameon=False, fontsize=9, handlelength=1.5,
-               handleheight=0.9, columnspacing=1.3, labelcolor=INK)
+    handles = [Line2D([], [], color=DEMAND, linewidth=1.5, label="Demand")]
+    handles += [Patch(facecolor=COLOR[k], edgecolor="#ffffff", linewidth=0.5,
+                      label=LABEL[k]) for k in reversed(STACK) if k in present]
+    handles += [Line2D([], [], color=PRICE, linewidth=1.4, label="Day-ahead price")]
+    # Eight entries will not fit one row inside 15cm at 8pt, so it is two rows
+    # of four and the panels start below them.
+    leg = fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.938),
+                     ncol=4, frameon=False, fontsize=8, handlelength=1.4,
+                     handleheight=0.85, columnspacing=1.0, labelspacing=0.5,
+                     labelcolor=SMOKY)
+    for t in leg.get_texts():
+        t.set_fontfamily(SANS)
 
-    gs = fig.add_gridspec(2, 4, left=0.045, right=0.985, top=0.745, bottom=0.205,
-                          hspace=0.10, wspace=0.19, height_ratios=[3.0, 1.15])
+    # Two countries per row; a spacer row keeps the pairs visually grouped.
+    gs = fig.add_gridspec(5, 2, left=0.115, right=0.985, top=0.828, bottom=0.130,
+                          hspace=0.16, wspace=0.26,
+                          height_ratios=[3.0, 1.15, 0.55, 3.0, 1.15])
 
     for i, (cc, name) in enumerate(COUNTRIES):
         if cc not in prof:
@@ -174,57 +224,54 @@ def build(prof: dict, price: dict):
         series = prof[cc]
         xs = sorted(series)
         peak = max(series[h].get("demand", 0.0) for h in xs)
-        ax = fig.add_subplot(gs[0, i])
+        row, col = (0 if i < 2 else 3), i % 2
+        ax = fig.add_subplot(gs[row, col])
         # GW, not GWh: the series is an average over the hour, which is a rate.
-        # The two are numerically identical here - a GWh delivered in an hour is
-        # a GW - but GWh on an axis reads as a running total, which this is not.
-        draw_dispatch(ax, xs, series, name, f"peak demand {peak:.1f} GW")
-        if i == 0:
-            ax.set_ylabel("GW", fontsize=8.6, color=MUTED, labelpad=4)
-        axp = fig.add_subplot(gs[1, i])
-        draw_price(axp, xs, price.get(cc, {}))
-        if i == 0:
-            axp.set_ylabel("€/MWh", fontsize=8.6, color=MUTED, labelpad=4)
+        draw_dispatch(ax, xs, series, name, f"peak demand {peak:.1f} GW",
+                      show_ylabel=(col == 0))
+        axp = fig.add_subplot(gs[row + 1, col])
+        draw_price(axp, xs, price.get(cc, {}), show_ylabel=(col == 0))
 
-    # Laid out from a single start and step rather than hand-placed, so adding a
-    # line cannot silently print it on top of the next one.
-    foot = [
-        f"Solar and storage are drawn at the top of the stack, with fossil directly beneath: the midday solar bulge and the evening fossil surge then read as one handover. The price panel is the same hours and days.",
-        f"Hours are local, so Greece and Romania (EEST) line up with France and Hungary (CEST). Each panel has its own scale {MIDDOT} France peaks near 47 GW, Greece near 8.",
-        f"Generation stacks above zero and net exports fall below it, which is why France, an exporter throughout, carries a band beneath the axis.",
-        f"Storage is discharge only: ENTSO-E publishes pumping separately, and Hungary and Romania report no pumped storage at all. Every interconnector is included, the Balkan and non-EU borders",
-        f"among them {MIDDOT} Hungary now balances exactly. Greece's export band is still understated: ENTSO-E reports its Albanian and Italian flows for well under a third of these hours, and an unreported hour counts as none.",
-        f"Source: ENTSO-E Transparency Platform (generation, load, cross-border flows, day-ahead prices) {MIDDOT} ERA5 via Open-Meteo (temperature)",
+    # Wrapped by hand to the 15cm column: at 8pt roughly 100 characters fit, and
+    # matplotlib will not wrap for us - it would simply run off the edge.
+    notes = [
+        "Hours are local; each panel has its own scale. Generation stacks above zero, net exports below it.",
+        "Greece's exports are understated: ENTSO-E reports few of its Albanian and Italian flow hours.",
     ]
-    y = 0.170
-    for txt in foot:
-        fig.text(0.045, y, txt, fontsize=7.5, color=MUTED, va="top")
-        y -= 0.0235
+    y = 0.098
+    for txt in notes:
+        fig.text(0.02, y, txt, fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
+        y -= 0.019
 
-    fig.add_artist(Line2D([0.045, 0.26], [0.985, 0.985], color="#22c55e",
-                          linewidth=3.4, solid_capstyle="butt"))
+    # Source: Open Sans italic, 8pt, Smoky Black, bottom left, aligned to the
+    # left edge. Names the database and when it was read, not just the body.
+    fig.text(0.02, 0.012,
+             "Source: ENTSO-E Transparency Platform, accessed August 2026 (generation per production "
+             "type, total load,\nphysical cross-border flows, day-ahead prices); ERA5 via Open-Meteo, "
+             "August 2026. E3G analysis.",
+             fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
+             linespacing=1.4)
     return fig
 
 
-def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
+def main() -> int:
     prof, price = fetch()
     for cc, name in COUNTRIES:
         px = price.get(cc, {})
         if px:
             lo = min(px, key=lambda h: px[h])
             hi = max(px, key=lambda h: px[h])
-            print(f"{name}: price {px[lo]:.0f} at {lo:02d}h -> {px[hi]:.0f} at {hi:02d}h "
-                  f"({px[hi]/max(px[lo], 0.01):.1f}x)")
+            print(f"{name}: price {px[lo]:.0f} at {lo}h -> {px[hi]:.0f} at {hi}h "
+                  f"({px[hi] / max(px[lo], 1):.1f}x)")
     fig = build(prof, price)
-    pdf = OUT / "heatwave_july_august_2026.pdf"
-    png = OUT / "heatwave_july_august_2026.png"
-    fig.savefig(pdf, format="pdf", facecolor=fig.get_facecolor())
-    fig.savefig(png, format="png", dpi=200, facecolor=fig.get_facecolor())
-    plt.close(fig)
-    for p in (pdf, png):
+    OUT.mkdir(parents=True, exist_ok=True)
+    for ext in ("pdf", "png"):
+        p = OUT / f"heatwave_july_august_2026.{ext}"
+        fig.savefig(p, facecolor="#ffffff")
         print(f"{p}  ({p.stat().st_size / 1024:.0f} KB)")
+    plt.close(fig)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
