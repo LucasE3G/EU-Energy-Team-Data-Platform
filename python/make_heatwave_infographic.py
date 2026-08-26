@@ -44,6 +44,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from matplotlib.ticker import MaxNLocator
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "python" / "output"
@@ -57,9 +58,11 @@ FIG_H_CM = 20.5
 
 COUNTRIES = [("FR", "France"), ("GR", "Greece"), ("HU", "Hungary"), ("RO", "Romania")]
 
-# Bottom to top. Must-run and traded volume underneath; then fossil, then the
-# two that define the day's shape - storage and solar - on top.
-STACK = ["nuclear", "other_renewables", "net_import", "fossil", "storage", "solar"]
+# Bottom to top. Storage and solar stay on top with fossil directly beneath, so
+# the midday solar bulge and the evening fossil surge read as one handover.
+# Net import sits between nuclear and other renewables rather than above them:
+# those two carry the two palest blues, and this is what keeps them apart.
+STACK = ["nuclear", "net_import", "other_renewables", "fossil", "storage", "solar"]
 LABEL = {"nuclear": "Nuclear", "fossil": "Fossil", "other_renewables": "Other renewables",
          "solar": "Solar", "storage": "Storage", "net_import": "Net import"}
 
@@ -68,9 +71,23 @@ ROYAL, VISTA, AMARANTH, GOLD, SAGE = "#282970", "#82a4dd", "#cd3951", "#a69700",
 SMOKY, FLORAL, EMINENCE, GOLDENROD, AVOCADO = "#1b1817", "#fffaf0", "#6d1a81", "#deae2f", "#507514"
 GOLD_TINT, RED_DEEP, GREY_RULE = "#ede8d1", "#852433", "#c4c2ba"
 
-COLOR = {"solar": GOLDENROD, "storage": GOLD_TINT, "nuclear": EMINENCE,
-         "other_renewables": AVOCADO, "fossil": AMARANTH, "net_import": VISTA}
-DEMAND = ROYAL
+# Yellow and red are spent on the two categories the chart is about - solar and
+# fossil - and Royal Blue on net imports, the third thing the text picks out.
+# Everything that barely moves takes a pale blue so it does not compete: shades
+# from the E3G blue ramp, two steps apart, as Comms advise. Red and green
+# together were the previous version's worst problem for colour-blind readers,
+# and there is now no green in the chart at all.
+# Which blue goes where is decided by which bands touch. Nuclear and other
+# renewables sit against each other in every panel, so they take the two ends of
+# the range and are 30 apart in OKLab. The closest pair left is storage against
+# other renewables, and fossil sits between those two in the stack, so they
+# never meet.
+BLUE_4, BLUE_2, BLUE_0 = "#667aba", "#9cb5e5", "#ccd9f2"
+COLOR = {"solar": GOLDENROD, "fossil": AMARANTH, "net_import": ROYAL,
+         "storage": BLUE_2, "nuclear": BLUE_4, "other_renewables": BLUE_0}
+# Royal Blue now belongs to imports, so demand takes Smoky Black - the guide's
+# colour for neutral lines, and it reads as a reference rather than a category.
+DEMAND = SMOKY
 PRICE = RED_DEEP
 
 NDASH, MIDDOT = "–", "·"
@@ -109,7 +126,7 @@ def fetch() -> tuple[dict, dict]:
     return prof, price
 
 
-def draw_dispatch(ax, xs, series, title, note, show_ylabel):
+def draw_dispatch(ax, xs, series, title, note, show_ylabel, ylim=None):
     pos = [0.0] * len(xs)
     neg = [0.0] * len(xs)
     for key in STACK:
@@ -120,8 +137,8 @@ def draw_dispatch(ax, xs, series, title, note, show_ylabel):
         # changes sign tapers to zero at the crossing instead of leaping.
         upper = [max(v, 0.0) for v in vals]
         lower = [min(v, 0.0) for v in vals]
-        # White edge between segments, per the guide - it also does the work of
-        # separating Amaranth from Avocado, which converge under deuteranopia.
+        # White edge between segments, per the guide. It also does the work of
+        # separating the two palest blues where they meet.
         edge = dict(edgecolor="#ffffff", linewidth=0.5)
         if any(v > 0 for v in upper):
             hi = [pos[i] + upper[i] for i in range(len(xs))]
@@ -146,6 +163,9 @@ def draw_dispatch(ax, xs, series, title, note, show_ylabel):
     ax.set_xlim(0, 23)
     ax.set_xticks([0, 6, 12, 18])
     ax.set_xticklabels([])
+    if ylim:
+        ax.set_ylim(*ylim)
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
     ax.grid(axis="y", color=GREY_RULE, linewidth=0.5, alpha=0.55, zorder=0)
     ax.set_axisbelow(True)
     for s in ("top", "right", "bottom", "left"):
@@ -166,7 +186,7 @@ def draw_price(ax, xs, px, show_ylabel):
     ax.set_ylim(bottom=0)
     if show_ylabel:
         ax.set_ylabel("€/MWh", fontsize=8, color=SMOKY, fontfamily=SANS, labelpad=2)
-    ax.grid(axis="y", color=GREY_RULE, linewidth=0.5, alpha=0.55, zorder=0)
+    ax.set_yticks([])
     ax.set_axisbelow(True)
     for s in ("top", "right", "bottom", "left"):
         ax.spines[s].set_visible(False)
@@ -218,6 +238,24 @@ def build(prof: dict, price: dict):
                           hspace=0.16, wspace=0.26,
                           height_ratios=[3.0, 1.15, 0.55, 3.0, 1.15])
 
+    def extent(cc):
+        """How far the stack reaches above and below zero in one panel."""
+        ser = prof[cc]
+        hi = lo = 0.0
+        for h in ser:
+            up = sum(v for k, v in ser[h].items() if k in STACK and v > 0)
+            dn = sum(v for k, v in ser[h].items() if k in STACK and v < 0)
+            hi = max(hi, up, ser[h].get("demand", 0.0))
+            lo = min(lo, dn)
+        return lo, hi
+
+    SHARED = ("HU", "RO")
+    pad = 0.06
+    los = [extent(c)[0] for c in SHARED if c in prof]
+    his = [extent(c)[1] for c in SHARED if c in prof]
+    span = max(his) - min(los)
+    shared_ylim = (min(los) - span * pad, max(his) + span * pad)
+
     for i, (cc, name) in enumerate(COUNTRIES):
         if cc not in prof:
             continue
@@ -228,24 +266,25 @@ def build(prof: dict, price: dict):
         ax = fig.add_subplot(gs[row, col])
         # GW, not GWh: the series is an average over the hour, which is a rate.
         draw_dispatch(ax, xs, series, name, f"peak demand {peak:.1f} GW",
-                      show_ylabel=(col == 0))
+                      show_ylabel=(col == 0),
+                      ylim=shared_ylim if cc in SHARED else None)
         axp = fig.add_subplot(gs[row + 1, col])
         draw_price(axp, xs, price.get(cc, {}), show_ylabel=(col == 0))
 
     # Wrapped by hand to the 15cm column: at 8pt roughly 100 characters fit, and
     # matplotlib will not wrap for us - it would simply run off the edge.
     notes = [
-        "Hours are local; each panel has its own scale. Generation stacks above zero, net exports below it.",
+        "Hours are local. Hungary and Romania share a scale; France and Greece have their own. Net exports fall below zero.",
         "Greece's exports are understated: ENTSO-E reports few of its Albanian and Italian flow hours.",
     ]
-    y = 0.098
+    y = 0.104
     for txt in notes:
         fig.text(0.02, y, txt, fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
         y -= 0.019
 
     # Source: Open Sans italic, 8pt, Smoky Black, bottom left, aligned to the
     # left edge. Names the database and when it was read, not just the body.
-    fig.text(0.02, 0.012,
+    fig.text(0.02, 0.010,
              "Source: ENTSO-E Transparency Platform, accessed August 2026 (generation per production "
              "type, total load,\nphysical cross-border flows, day-ahead prices); ERA5 via Open-Meteo, "
              "August 2026. E3G analysis.",
