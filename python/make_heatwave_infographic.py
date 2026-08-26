@@ -199,8 +199,10 @@ def draw_price(ax, xs, px, show_ylabel):
         ax.annotate(f"{px[hi_h]:.0f}", xy=(hi_h, px[hi_h]), xytext=(0, 2),
                     textcoords="offset points", ha="center", fontsize=8,
                     fontweight="bold", color=PRICE, fontfamily=SANS)
-        ax.annotate(f"{px[lo_h]:.0f}", xy=(lo_h, px[lo_h]), xytext=(0, -3),
-                    textcoords="offset points", ha="center", va="top",
+        # Above the line, like the peak label. Below it, the trough sits close
+        # enough to the axis that its value landed on the hour tick underneath.
+        ax.annotate(f"{px[lo_h]:.0f}", xy=(lo_h, px[lo_h]), xytext=(0, 3),
+                    textcoords="offset points", ha="center", va="bottom",
                     fontsize=8, color=PRICE, fontfamily=SANS)
 
 
