@@ -215,7 +215,7 @@ def build(prof: dict, price: dict):
     fig.text(0.5, 0.988, "Hourly generation and electricity prices",
              ha="center", va="top", **TITLE_FONT)
     # Subtitle: Open Sans bold, all caps, 10pt, Amaranth for the energy narrative.
-    fig.text(0.5, 0.958, f"28 JULY {NDASH} 12 AUGUST 2026 HEATWAVES",
+    fig.text(0.5, 0.958, f"28 JULY {NDASH} 12 AUGUST 2026 HEATWAVE",
              ha="center", va="top", fontsize=10, fontweight="bold",
              color=AMARANTH, fontfamily=SANS)
 

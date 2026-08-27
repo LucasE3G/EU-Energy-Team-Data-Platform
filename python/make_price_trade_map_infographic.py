@@ -180,14 +180,22 @@ for (lo, hi), days in _acc.items():
                                            days=len(days))
 print(f"  {len(_acc)} borders with flow on heatwave days")
 
-# The period the figures actually cover. Taken from the data, not typed in: the
-# warm season runs to September but the season is not over, and a label that
-# says otherwise claims coverage that does not exist. The first heatwave day
-# this year was in early May; the last is whatever the series reaches.
-_last = max(d for days in hw_days.values() for d in days)
-_y, _m, _d = _last.split("-")
-PERIOD_END = f"{int(_d)} {['January','February','March','April','May','June','July','August','September','October','November','December'][int(_m) - 1]} {_y}"
-print(f"  data runs to {PERIOD_END}")
+# The period the figures actually cover, both ends taken from the data rather
+# than typed in. The warm season is defined to September, but the season is not
+# over and a label saying otherwise claims coverage that does not exist.
+_MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+           "August", "September", "October", "November", "December"]
+
+
+def _pretty(iso, with_year=True):
+    y, m, d = iso.split("-")
+    return f"{int(d)} {_MONTHS[int(m) - 1]}" + (f" {y}" if with_year else "")
+
+
+_all_days = [d for days in hw_days.values() for d in days]
+PERIOD_START = _pretty(min(_all_days), with_year=False)
+PERIOD_END = _pretty(max(_all_days))
+print(f"  period covered: {PERIOD_START} to {PERIOD_END}")
 
 # Coupling is supposed to send power toward the dearer market. Count how often
 # it actually did, rather than asserting that it did.
@@ -424,7 +432,7 @@ def render(mode):
     fig.text(0.5, 0.988, M["title"], ha="center", va="top",
              linespacing=1.35, **TITLE_FONT)
     fig.text(0.5, 0.906,
-             f'{M["legend"]}  {MIDDOT}  HEATWAVE DAYS, MAY TO {PERIOD_END.upper()}',
+             f'{M["legend"]}  {MIDDOT}  HEATWAVE DAYS, {PERIOD_START.upper()} TO {PERIOD_END.upper()}',
              ha="center", va="top", fontsize=10,
              fontweight="bold", color=AMARANTH, fontfamily=SANS)
 
@@ -550,7 +558,7 @@ def render(mode):
              "Net trade is the balance of physical cross-border flows over the country's own demand.",
              fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
     fig.text(0.02, 0.012,
-             f"Source: E3G analysis based on ENTSO-E Transparency Platform, May to {PERIOD_END}\n"
+             f"Source: E3G analysis based on ENTSO-E Transparency Platform, {PERIOD_START} to {PERIOD_END}\n"
              f"(day-ahead prices, physical cross-border flows, total load) and ERA5 reanalysis via "
              f"Open-Meteo.",
              fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
