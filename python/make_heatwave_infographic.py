@@ -287,9 +287,9 @@ def build(prof: dict, price: dict):
     # Source: Open Sans italic, 8pt, Smoky Black, bottom left, aligned to the
     # left edge. Names the database and when it was read, not just the body.
     fig.text(0.02, 0.010,
-             f"E3G analysis based on ENTSO-E Transparency Platform, July{NDASH}August 2026 (generation "
-             f"per production type,\ntotal load, physical cross-border flows, day-ahead prices) and "
-             f"ERA5 reanalysis via Open-Meteo.",
+             f"Source: E3G analysis based on ENTSO-E Transparency Platform, July{NDASH}August 2026 "
+             f"(generation per\nproduction type, total load, cross-border flows, day-ahead prices) and "
+             f"ERA5 via Open-Meteo.",
              fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
              linespacing=1.4)
     return fig
