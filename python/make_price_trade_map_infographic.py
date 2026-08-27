@@ -539,9 +539,9 @@ def render(mode):
              "Net trade is the balance of physical cross-border flows over the country's own demand.",
              fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
     fig.text(0.02, 0.012,
-             f"E3G, based on ENTSO-E Transparency Platform, May{NDASH}September 2026 (day-ahead prices, "
-             f"physical\ncross-border flows, actual total load) and ERA5 reanalysis via Open-Meteo, "
-             f"May{NDASH}September 2026.",
+             f"E3G analysis based on ENTSO-E Transparency Platform, May{NDASH}September 2026 "
+             f"(day-ahead prices,\nphysical cross-border flows, total load) and ERA5 reanalysis via "
+             f"Open-Meteo.",
              fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
              linespacing=1.4)
 
