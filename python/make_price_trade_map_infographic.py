@@ -180,6 +180,15 @@ for (lo, hi), days in _acc.items():
                                            days=len(days))
 print(f"  {len(_acc)} borders with flow on heatwave days")
 
+# The period the figures actually cover. Taken from the data, not typed in: the
+# warm season runs to September but the season is not over, and a label that
+# says otherwise claims coverage that does not exist. The first heatwave day
+# this year was in early May; the last is whatever the series reaches.
+_last = max(d for days in hw_days.values() for d in days)
+_y, _m, _d = _last.split("-")
+PERIOD_END = f"{int(_d)} {['January','February','March','April','May','June','July','August','September','October','November','December'][int(_m) - 1]} {_y}"
+print(f"  data runs to {PERIOD_END}")
+
 # Coupling is supposed to send power toward the dearer market. Count how often
 # it actually did, rather than asserting that it did.
 _pairs = [k for k in _acc if k[0] in D and k[1] in D]
@@ -332,7 +341,7 @@ MODES = {
         ink=["#ffffff", SMOKY, SMOKY, SMOKY, "#ffffff"],
         labels=["exports 20%+", "exports 5-20%", "balanced",
                 "imports 5-15%", "imports 15%+"],
-        legend="NET TRADE, % OF OWN DEMAND  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
+        legend="NET TRADE, % OF OWN DEMAND",
         title=("Interconnectivity was key to address power supply\n"
                "needs in Hungary and Romania"),
         file="heatwave_price_trade_map",
@@ -347,7 +356,7 @@ MODES = {
         ink=[SMOKY, "#ffffff", "#ffffff", "#ffffff"],
         labels=[f"{EURO}120-125", f"{EURO}126-130", f"{EURO}131-135",
                 f"{EURO}136+"],
-        legend="DAY-AHEAD PRICE, EUR/MWH  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
+        legend="DAY-AHEAD PRICE, EUR/MWH",
         title=("Electricity price differences in the region still\n"
                "suggest the need for further market integration"),
         file="heatwave_price_level_map",
@@ -414,7 +423,9 @@ def render(mode):
 
     fig.text(0.5, 0.988, M["title"], ha="center", va="top",
              linespacing=1.35, **TITLE_FONT)
-    fig.text(0.5, 0.906, M["legend"], ha="center", va="top", fontsize=10,
+    fig.text(0.5, 0.906,
+             f'{M["legend"]}  {MIDDOT}  HEATWAVE DAYS, MAY TO {PERIOD_END.upper()}',
+             ha="center", va="top", fontsize=10,
              fontweight="bold", color=AMARANTH, fontfamily=SANS)
 
     # ---- key across the top, since 15cm leaves no room for a side column ----
@@ -539,7 +550,7 @@ def render(mode):
              "Net trade is the balance of physical cross-border flows over the country's own demand.",
              fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
     fig.text(0.02, 0.012,
-             f"Source: E3G analysis based on ENTSO-E Transparency Platform, May{NDASH}September 2026\n"
+             f"Source: E3G analysis based on ENTSO-E Transparency Platform, May to {PERIOD_END}\n"
              f"(day-ahead prices, physical cross-border flows, total load) and ERA5 reanalysis via "
              f"Open-Meteo.",
              fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
