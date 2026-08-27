@@ -348,8 +348,8 @@ MODES = {
         labels=[f"{EURO}120-125", f"{EURO}126-130", f"{EURO}131-135",
                 f"{EURO}136+"],
         legend="DAY-AHEAD PRICE, EUR/MWH  ·  HEATWAVE DAYS, MAY–SEPTEMBER 2026",
-        title=("Price differences in the region still suggest\n"
-               "the need for further market integration"),
+        title=("Electricity price differences in the region still\n"
+               "suggest the need for further market integration"),
         file="heatwave_price_level_map",
     ),
 }
@@ -535,24 +535,13 @@ def render(mode):
                           edgecolor=GREY_RULE, linewidth=0.6))
 
     # Square corners, no bevel, simple outline on white - per the guide.
-    ax.annotate(
-        f"Romania and Greece both ran\n"
-        f"about {D['RO']['resh']:.0f}% renewable, "
-        f"{EURO}{D['RO']['price'] - D['GR']['price']:.0f}/MWh apart.\n"
-        f"Romania imported {D['RO']['imp']:.0f}% of its power\n"
-        f"that week; Greece exported {-D['GR']['imp']:.0f}%.",
-        xy=(238, 118), xytext=(238, 118), fontsize=8, color=SMOKY,
-        linespacing=1.5, ha="center", va="center", zorder=8,
-        annotation_clip=False, fontfamily=SANS,
-        bbox=dict(boxstyle="square,pad=0.55", facecolor="#ffffff",
-                  edgecolor=GREY_RULE, linewidth=0.8))
-
     fig.text(0.02, 0.086,
              "Net trade is the balance of physical cross-border flows over the country's own demand.",
              fontsize=8, color=SMOKY, fontfamily=SANS, va="top")
     fig.text(0.02, 0.012,
-             "Source: ENTSO-E Transparency Platform, accessed August 2026 (day-ahead prices, physical "
-             "cross-border\nflows, actual total load); ERA5 via Open-Meteo, August 2026. E3G analysis.",
+             f"E3G, based on ENTSO-E Transparency Platform, May{NDASH}September 2026 (day-ahead prices, "
+             f"physical\ncross-border flows, actual total load) and ERA5 reanalysis via Open-Meteo, "
+             f"May{NDASH}September 2026.",
              fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
              linespacing=1.4)
 
