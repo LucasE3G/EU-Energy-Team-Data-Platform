@@ -212,13 +212,8 @@ def build(prof: dict, price: dict):
     fig.patch.set_facecolor("#ffffff")
 
     # Title: Georgia bold 14pt Royal Blue, centred.
-    fig.text(0.5, 0.988, "Hourly generation and day-ahead price",
+    fig.text(0.5, 0.988, "Hourly generation and electricity prices",
              ha="center", va="top", **TITLE_FONT)
-    # Subtitle: Open Sans bold, all caps, 10pt, Amaranth for the energy narrative.
-    fig.text(0.5, 0.958,
-             f"DURING THE 28 JULY {NDASH} 12 AUGUST 2026 HEATWAVES",
-             ha="center", va="top", fontsize=10, fontweight="bold",
-             color=AMARANTH, fontfamily=SANS)
 
     present = {k for cc, _ in COUNTRIES for h in prof.get(cc, {}).values()
                for k in h if abs(h.get(k, 0.0)) > 1e-9}
@@ -228,7 +223,7 @@ def build(prof: dict, price: dict):
     handles += [Line2D([], [], color=PRICE, linewidth=1.4, label="Day-ahead price")]
     # Eight entries will not fit one row inside 15cm at 8pt, so it is two rows
     # of four and the panels start below them.
-    leg = fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.938),
+    leg = fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.948),
                      ncol=4, frameon=False, fontsize=8, handlelength=1.4,
                      handleheight=0.85, columnspacing=1.0, labelspacing=0.5,
                      labelcolor=SMOKY)
@@ -236,7 +231,7 @@ def build(prof: dict, price: dict):
         t.set_fontfamily(SANS)
 
     # Two countries per row; a spacer row keeps the pairs visually grouped.
-    gs = fig.add_gridspec(5, 2, left=0.115, right=0.985, top=0.828, bottom=0.130,
+    gs = fig.add_gridspec(5, 2, left=0.115, right=0.985, top=0.845, bottom=0.130,
                           hspace=0.16, wspace=0.26,
                           height_ratios=[3.0, 1.15, 0.55, 3.0, 1.15])
 
@@ -276,8 +271,9 @@ def build(prof: dict, price: dict):
     # Wrapped by hand to the 15cm column: at 8pt roughly 100 characters fit, and
     # matplotlib will not wrap for us - it would simply run off the edge.
     notes = [
-        "Hours are local. Hungary and Romania share a scale; France and Greece have their own. Net exports fall below zero.",
-        "Greece's exports are understated: ENTSO-E reports few of its Albanian and Italian flow hours.",
+        "Hours are local. Hungary and Romania share a scale; France and Greece have their own."
+        ,
+        "Net exports fall below zero. Greece's exports are understated by patchy ENTSO-E border reporting.",
     ]
     y = 0.104
     for txt in notes:
@@ -287,9 +283,9 @@ def build(prof: dict, price: dict):
     # Source: Open Sans italic, 8pt, Smoky Black, bottom left, aligned to the
     # left edge. Names the database and when it was read, not just the body.
     fig.text(0.02, 0.010,
-             "Source: ENTSO-E Transparency Platform, accessed August 2026 (generation per production "
-             "type, total load,\nphysical cross-border flows, day-ahead prices); ERA5 via Open-Meteo, "
-             "August 2026. E3G analysis.",
+             f"E3G, based on ENTSO-E Transparency Platform, July{NDASH}August 2026 (actual generation "
+             f"per production type, actual total\nload, physical cross-border flows, day-ahead prices) "
+             f"and ERA5 reanalysis via Open-Meteo, July{NDASH}August 2026.",
              fontsize=8, style="italic", color=SMOKY, fontfamily=SANS, va="bottom",
              linespacing=1.4)
     return fig
