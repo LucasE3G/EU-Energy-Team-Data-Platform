@@ -3,9 +3,14 @@ Native Austria gas-demand backfill from AGGM (via WIFO mirror, Bruegel methodolo
 
 AGGM (Austrian Gas Grid Management) publishes daily total gas consumption.
 WIFO mirrors this data as a daily-updated CSV at
-https://energie.wifo.ac.at/data/gas/consumption-aggm.csv.
+https://energie.wifo.ac.at/data/gas/consumption.csv.
 
-The CSV has columns: date, variable, value (in TWh/day).
+(Until 2026-10 the file lived at .../consumption-aggm.csv; that path started
+returning 404 on 2026-10-02 and the daily run failed every day until the URL
+was updated on 2026-10-15.)
+
+The CSV has columns: date, variable, value (in TWh/day), year, date20. Only
+rows with variable == "value" carry the daily consumption.
 """
 from __future__ import annotations
 import csv
@@ -21,7 +26,7 @@ from dotenv import load_dotenv
 from gas_recompute_mixed_months_budget import make_retrying_session, upsert_rows
 from gas_native_splits_helper import enrich_rows_with_split
 
-SRC_URL = "https://energie.wifo.ac.at/data/gas/consumption-aggm.csv"
+SRC_URL = "https://energie.wifo.ac.at/data/gas/consumption.csv"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "text/csv,application/json,*/*",

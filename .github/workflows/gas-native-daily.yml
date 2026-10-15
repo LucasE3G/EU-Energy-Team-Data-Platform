@@ -30,7 +30,10 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Every extractor re-fetches ~5 years daily, so a full run takes 30-50 min;
+    # 45 min cut DE off on 5 of 14 days in October 2026. The orchestrator still
+    # kills any single extractor after 45 min.
+    timeout-minutes: 90
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -46,7 +49,7 @@ jobs:
       GAS_NATIVE_PT_START_YEAR: ${{ github.event.inputs.start_year }}
       GAS_NATIVE_ENTSOG_START_YEAR: ${{ github.event.inputs.start_year }}
       # Limits ENTSOG-POINTS to a 90-day lookback on daily incremental runs so all
-      # 13 countries finish within the 45-min job limit. When start_year is provided
+      # 13 countries finish within the job time limit. When start_year is provided
       # via workflow_dispatch for full backfills, the script uses start_year instead.
       GAS_NATIVE_ENTSOG_DAYS_BACK: "90"
 
