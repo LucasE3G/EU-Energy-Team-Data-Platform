@@ -38,3 +38,11 @@ begin
   end if;
 end $$;
 
+-- Data API grants. From 2026-10-30 Supabase no longer grants new public tables
+-- to the API roles automatically, so a fresh run of this file needs these.
+-- anon reads go through the policy above; service_role is what the ingest
+-- functions write with.
+grant select on public.energy_mix_snapshots to anon, authenticated;
+grant all on public.energy_mix_snapshots to service_role;
+grant usage, select on sequence public.energy_mix_snapshots_id_seq to service_role;
+

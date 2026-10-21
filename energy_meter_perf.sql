@@ -131,3 +131,13 @@ group by 1;
 create index if not exists energy_eu_15m_mv_ts_desc
   on public.energy_eu_15m_mv (ts desc);
 
+-- Data API grants. The front-end reads all three EU aggregates with the anon
+-- key (app.js picks daily/weekly for the 6m/1y/5y ranges). On 2026-10-21 the
+-- daily and weekly ones had lost their anon grant and those ranges failed with
+-- "permission denied"; and from 2026-10-30 Supabase no longer grants new
+-- public objects automatically, so a rerun of the drop/create above would
+-- strip them again without these lines.
+grant select on public.energy_eu_15m_mv    to anon;
+grant select on public.energy_eu_daily_mv  to anon;
+grant select on public.energy_eu_weekly_mv to anon;
+

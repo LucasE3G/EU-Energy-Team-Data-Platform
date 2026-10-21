@@ -110,3 +110,9 @@ CREATE POLICY "Allow public read access" ON countries FOR SELECT USING (true);
 CREATE POLICY "Allow public read access" ON data_tables FOR SELECT USING (true);
 CREATE POLICY "Allow public read access" ON data_points FOR SELECT USING (true);
 CREATE POLICY "Allow public read access" ON measures FOR SELECT USING (true);
+
+-- Data API grants. From 2026-10-30 Supabase no longer grants new public tables
+-- to the API roles automatically, so a fresh run of this file needs these.
+GRANT SELECT ON countries, data_tables, data_points, measures TO anon, authenticated;
+GRANT ALL ON countries, data_tables, data_points, measures TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE countries_id_seq, data_tables_id_seq, data_points_id_seq, measures_id_seq TO service_role;
